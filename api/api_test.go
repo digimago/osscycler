@@ -239,11 +239,16 @@ type stubRides struct {
 	stopped    int
 	difficulty float64
 	err        error
+	against    time.Time
 }
 
 func (s *stubRides) Courses() []*course.Course { return s.courses }
 func (s *stubRides) Start(id string) error     { s.started = id; return s.err }
-func (s *stubRides) Stop() error               { s.stopped++; return nil }
+func (s *stubRides) StartAgainst(id string, finished time.Time) error {
+	s.started, s.against = id, finished
+	return s.err
+}
+func (s *stubRides) Stop() error { s.stopped++; return nil }
 func (s *stubRides) SetDifficulty(p float64) float64 {
 	s.difficulty = max(0, min(p, 100))
 	return s.difficulty
@@ -288,6 +293,20 @@ func TestRideRPCs(t *testing.T) {
 	if _, err := cl.StartRide(ctx, &pb.StartRideRequest{CourseId: "hill"}); status.Code(err) != codes.FailedPrecondition {
 		t.Errorf("ride active: %v", err)
 	}
+	// Racing an earlier ride.
+	rides.err = nil
+	when := time.Date(2026, 10, 7, 18, 0, 0, 0, time.UTC)
+	ms := when.UnixMilli()
+	if _, err := cl.StartRide(ctx, &pb.StartRideRequest{CourseId: "hill", AgainstFinishedUnixMs: &ms}); err != nil || !rides.against.Equal(when) {
+		t.Errorf("race: %v, against %v", err, rides.against)
+	}
+	for e, code := range map[error]codes.Code{ride.ErrUnknownRide: codes.NotFound, ride.ErrCourseChanged: codes.FailedPrecondition} {
+		rides.err = e
+		if _, err := cl.StartRide(ctx, &pb.StartRideRequest{CourseId: "hill", AgainstFinishedUnixMs: &ms}); status.Code(err) != code {
+			t.Errorf("race, %v: %v, want %v", e, err, code)
+		}
+	}
+	rides.err = nil
 	if _, err := cl.StopRide(ctx, &pb.StopRideRequest{}); err != nil || rides.stopped != 1 {
 		t.Errorf("StopRide: %v, stops %d", err, rides.stopped)
 	}

@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"math"
 	"sync"
+	"time"
 
 	"github.com/digimago/osscycler/erg"
 	"github.com/digimago/osscycler/fec"
@@ -164,6 +165,13 @@ func (r Rides) Start(courseID string) error {
 		return fmt.Errorf("%w: a course ride needs the rider's weight", profile.ErrIncomplete)
 	}
 	return r.Session.Start(courseID)
+}
+
+func (r Rides) StartAgainst(courseID string, finished time.Time) error {
+	if r.s.m.Get().WeightKg <= 0 {
+		return fmt.Errorf("%w: a course ride needs the rider's weight", profile.ErrIncomplete)
+	}
+	return r.Session.StartAgainst(courseID, finished)
 }
 
 func (r Rides) SetDifficulty(pct float64) float64 {

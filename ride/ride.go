@@ -148,9 +148,19 @@ func (s *Session) find(id string) *course.Course {
 	return nil
 }
 
-// Start arms a ride on the course; the clock starts at the first pedal
-// stroke. The trainer gets the opening grade straight away.
-func (s *Session) Start(courseID string) error {
+// Start arms a ride on the course, racing the personal best; the clock
+// starts at the first pedal stroke. The trainer gets the opening grade
+// straight away.
+func (s *Session) Start(courseID string) error { return s.start(courseID, nil) }
+
+// StartAgainst arms a ride racing an earlier ride on the course, the one
+// that finished at finished: from where that one started, with it as the
+// ghost.
+func (s *Session) StartAgainst(courseID string, finished time.Time) error {
+	return s.start(courseID, &finished)
+}
+
+func (s *Session) start(courseID string, against *time.Time) error {
 	c := s.find(courseID)
 	if c == nil {
 		return ErrUnknownCourse
@@ -164,7 +174,15 @@ func (s *Session) Start(courseID string) error {
 	s.mu.Unlock()
 	// Loading a ghost reads and replays a recording: not under the lock.
 	var ghost *Ghost
-	if ghosts != nil {
+	switch {
+	case against != nil && ghosts == nil:
+		return ErrUnknownRide
+	case against != nil:
+		var err error
+		if ghost, start, err = ghosts.Race(c, *against); err != nil {
+			return err
+		}
+	case ghosts != nil:
 		var err error
 		if ghost, err = ghosts.Ghost(c, start); err != nil {
 			s.log.Warn("no ghost for this ride", "course", c.Name, "err", err)

@@ -1369,7 +1369,9 @@ type RideResult struct {
 	ClimbedM      float64 `protobuf:"fixed64,8,opt,name=climbed_m,json=climbedM,proto3" json:"climbed_m,omitempty"`
 	DifficultyPct float64 `protobuf:"fixed64,9,opt,name=difficulty_pct,json=difficultyPct,proto3" json:"difficulty_pct,omitempty"`
 	// The fastest ride on this stretch.
-	PersonalBest  bool `protobuf:"varint,10,opt,name=personal_best,json=personalBest,proto3" json:"personal_best,omitempty"`
+	PersonalBest bool `protobuf:"varint,10,opt,name=personal_best,json=personalBest,proto3" json:"personal_best,omitempty"`
+	// The recording (an Activity name) the ride is in.
+	File          string `protobuf:"bytes,11,opt,name=file,proto3" json:"file,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1472,6 +1474,13 @@ func (x *RideResult) GetPersonalBest() bool {
 		return x.PersonalBest
 	}
 	return false
+}
+
+func (x *RideResult) GetFile() string {
+	if x != nil {
+		return x.File
+	}
+	return ""
 }
 
 type EndActivityRequest struct {
@@ -2949,10 +2958,14 @@ func (x *Building) GetKind() BuildingKind {
 }
 
 type StartRideRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	CourseId      string                 `protobuf:"bytes,1,opt,name=course_id,json=courseId,proto3" json:"course_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	CourseId string                 `protobuf:"bytes,1,opt,name=course_id,json=courseId,proto3" json:"course_id,omitempty"`
+	// Race this earlier ride (a RideResult's finished_unix_ms) instead of
+	// the personal best: the ride starts where that one started, and that
+	// one is the ghost.
+	AgainstFinishedUnixMs *int64 `protobuf:"varint,2,opt,name=against_finished_unix_ms,json=againstFinishedUnixMs,proto3,oneof" json:"against_finished_unix_ms,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *StartRideRequest) Reset() {
@@ -2990,6 +3003,13 @@ func (x *StartRideRequest) GetCourseId() string {
 		return x.CourseId
 	}
 	return ""
+}
+
+func (x *StartRideRequest) GetAgainstFinishedUnixMs() int64 {
+	if x != nil && x.AgainstFinishedUnixMs != nil {
+		return *x.AgainstFinishedUnixMs
+	}
+	return 0
 }
 
 type StartRideResponse struct {
@@ -4712,7 +4732,7 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\aprofile\x18\x01 \x01(\v2\x1a.osscycler.v1.RiderProfileR\aprofile\"\x14\n" +
 	"\x12ListResultsRequest\"I\n" +
 	"\x13ListResultsResponse\x122\n" +
-	"\aresults\x18\x01 \x03(\v2\x18.osscycler.v1.RideResultR\aresults\"\xd2\x02\n" +
+	"\aresults\x18\x01 \x03(\v2\x18.osscycler.v1.RideResultR\aresults\"\xe6\x02\n" +
 	"\n" +
 	"RideResult\x12(\n" +
 	"\x10finished_unix_ms\x18\x01 \x01(\x03R\x0efinishedUnixMs\x12\x1b\n" +
@@ -4727,7 +4747,8 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\tclimbed_m\x18\b \x01(\x01R\bclimbedM\x12%\n" +
 	"\x0edifficulty_pct\x18\t \x01(\x01R\rdifficultyPct\x12#\n" +
 	"\rpersonal_best\x18\n" +
-	" \x01(\bR\fpersonalBest\".\n" +
+	" \x01(\bR\fpersonalBest\x12\x12\n" +
+	"\x04file\x18\v \x01(\tR\x04file\".\n" +
 	"\x12EndActivityRequest\x12\x18\n" +
 	"\adiscard\x18\x01 \x01(\bR\adiscard\")\n" +
 	"\x13EndActivityResponse\x12\x12\n" +
@@ -4826,9 +4847,11 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\blength_m\x18\x03 \x01(\x01R\alengthM\x12\x17\n" +
 	"\adepth_m\x18\x04 \x01(\x01R\x06depthM\x12\x19\n" +
 	"\bheight_m\x18\x05 \x01(\x01R\aheightM\x12.\n" +
-	"\x04kind\x18\x06 \x01(\x0e2\x1a.osscycler.v1.BuildingKindR\x04kind\"/\n" +
+	"\x04kind\x18\x06 \x01(\x0e2\x1a.osscycler.v1.BuildingKindR\x04kind\"\x8a\x01\n" +
 	"\x10StartRideRequest\x12\x1b\n" +
-	"\tcourse_id\x18\x01 \x01(\tR\bcourseId\"\x13\n" +
+	"\tcourse_id\x18\x01 \x01(\tR\bcourseId\x12<\n" +
+	"\x18against_finished_unix_ms\x18\x02 \x01(\x03H\x00R\x15againstFinishedUnixMs\x88\x01\x01B\x1b\n" +
+	"\x19_against_finished_unix_ms\"\x13\n" +
 	"\x11StartRideResponse\"\x11\n" +
 	"\x0fStopRideRequest\"\x12\n" +
 	"\x10StopRideResponse\"L\n" +
@@ -5268,6 +5291,7 @@ func file_osscycler_v1_telemetry_proto_init() {
 		(*SetTrainerControlRequest_LevelPct)(nil),
 	}
 	file_osscycler_v1_telemetry_proto_msgTypes[9].OneofWrappers = []any{}
+	file_osscycler_v1_telemetry_proto_msgTypes[40].OneofWrappers = []any{}
 	file_osscycler_v1_telemetry_proto_msgTypes[59].OneofWrappers = []any{}
 	file_osscycler_v1_telemetry_proto_msgTypes[60].OneofWrappers = []any{}
 	file_osscycler_v1_telemetry_proto_msgTypes[61].OneofWrappers = []any{}

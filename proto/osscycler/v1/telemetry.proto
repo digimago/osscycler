@@ -26,8 +26,9 @@ service TelemetryService {
   rpc ListCourses(ListCoursesRequest) returns (ListCoursesResponse);
 
   // StartRide arms a ride on a course; the clock starts at the first pedal
-  // stroke. FAILED_PRECONDITION if a ride is under way, NOT_FOUND for an
-  // unknown course.
+  // stroke. FAILED_PRECONDITION if a ride is under way or the course has
+  // changed since the ride to race, NOT_FOUND for an unknown course or
+  // ride to race.
   rpc StartRide(StartRideRequest) returns (StartRideResponse);
 
   // StopRide aborts a ride under way, or dismisses a finished one.
@@ -180,6 +181,8 @@ message RideResult {
   double difficulty_pct = 9;
   // The fastest ride on this stretch.
   bool personal_best = 10;
+  // The recording (an Activity name) the ride is in.
+  string file = 11;
 }
 
 message EndActivityRequest {
@@ -372,6 +375,10 @@ message Building {
 
 message StartRideRequest {
   string course_id = 1;
+  // Race this earlier ride (a RideResult's finished_unix_ms) instead of
+  // the personal best: the ride starts where that one started, and that
+  // one is the ghost.
+  optional int64 against_finished_unix_ms = 2;
 }
 
 message StartRideResponse {}

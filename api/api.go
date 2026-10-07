@@ -49,6 +49,8 @@ const (
 type Rides interface {
 	Courses() []*course.Course
 	Start(courseID string) error
+	// StartAgainst races the earlier ride that finished at finished.
+	StartAgainst(courseID string, finished time.Time) error
 	Stop() error
 	SetDifficulty(pct float64) float64
 }
@@ -299,7 +301,7 @@ func (s *telemetryServer) ListResults(context.Context, *pb.ListResultsRequest) (
 		resp.Results = append(resp.Results, &pb.RideResult{
 			FinishedUnixMs: e.Finished.UnixMilli(), CourseId: e.CourseID, CourseName: e.CourseName,
 			StartM: e.StartM, DistanceM: e.DistanceM, ElapsedS: e.ElapsedS, AvgPowerW: e.AvgPowerW,
-			ClimbedM: e.ClimbedM, DifficultyPct: e.DifficultyPct, PersonalBest: e.PB,
+			ClimbedM: e.ClimbedM, DifficultyPct: e.DifficultyPct, PersonalBest: e.PB, File: e.File,
 		})
 	}
 	return resp, nil
@@ -340,10 +342,16 @@ func (s *telemetryServer) StartRide(_ context.Context, req *pb.StartRideRequest)
 	if s.rides == nil {
 		return nil, status.Error(codes.Unimplemented, "this core has no courses")
 	}
-	switch err := s.rides.Start(req.GetCourseId()); {
-	case errors.Is(err, ride.ErrUnknownCourse):
+	var err error
+	if req.AgainstFinishedUnixMs != nil {
+		err = s.rides.StartAgainst(req.GetCourseId(), time.UnixMilli(req.GetAgainstFinishedUnixMs()))
+	} else {
+		err = s.rides.Start(req.GetCourseId())
+	}
+	switch {
+	case errors.Is(err, ride.ErrUnknownCourse), errors.Is(err, ride.ErrUnknownRide):
 		return nil, status.Error(codes.NotFound, err.Error())
-	case errors.Is(err, ride.ErrRideActive), errors.Is(err, profile.ErrIncomplete):
+	case errors.Is(err, ride.ErrRideActive), errors.Is(err, profile.ErrIncomplete), errors.Is(err, ride.ErrCourseChanged):
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	case err != nil:
 		return nil, status.Error(codes.Internal, err.Error())

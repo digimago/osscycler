@@ -75,32 +75,62 @@ func (s *Store) Best(courseID string, startM, distanceM float64) (Entry, bool) {
 	return Entry{}, false
 }
 
-// Ghost is the personal best on course c from startM, ready to race: its
-// recorded lap replayed into a trace, timed to finish on the recorded
-// time so the gap at the line agrees with the history. nil, nil when the
-// stretch has no PB yet.
+// Ghost is the personal best on course c from startM, ready to race.
+// nil, nil when the stretch has no PB yet.
 func (s *Store) Ghost(c *course.Course, startM float64) (*ride.Ghost, error) {
 	best, ok := s.Best(c.ID, startM, c.Distance-startM)
 	if !ok {
 		return nil, nil
 	}
-	power, err := replay.LapPower(filepath.Join(s.Dir, best.File), best.Lap)
+	return s.ghost(c, best)
+}
+
+// Race is the ride on course c that finished at finished (to the second,
+// as results are kept), ready to race from where it started.
+func (s *Store) Race(c *course.Course, finished time.Time) (*ride.Ghost, float64, error) {
+	es, err := s.Results()
+	if err != nil {
+		return nil, 0, err
+	}
+	for _, e := range es {
+		if e.CourseID != c.ID || !e.Finished.Equal(finished.Truncate(time.Second)) {
+			continue
+		}
+		if !SameStretch(e.Result, record.Result{CourseID: c.ID, StartM: e.StartM, DistanceM: c.Distance - e.StartM}) {
+			return nil, 0, ride.ErrCourseChanged
+		}
+		g, err := s.ghost(c, e)
+		return g, e.StartM, err
+	}
+	return nil, 0, ride.ErrUnknownRide
+}
+
+// ghost replays a finished ride's recorded lap into a trace, timed to
+// finish on the recorded time so the gap at the line agrees with the
+// history.
+func (s *Store) ghost(c *course.Course, e Entry) (*ride.Ghost, error) {
+	power, err := replay.LapPower(filepath.Join(s.Dir, e.File), e.Lap)
 	if err != nil {
 		return nil, err
 	}
-	params, ok := best.Sim.Params()
+	params, ok := e.Sim.Params()
 	if !ok {
 		params = sim.DefaultParams(75, 9)
 	}
-	res := ride.Replay(c, params, startM, power)
-	if !res.Finished || res.Elapsed <= 0 {
-		return nil, fmt.Errorf("the PB of %s doesn't replay to the finish", best.Finished.Local().Format("2 Jan"))
+	day := e.Finished.Local().Format("2 Jan")
+	label := "PB " + day
+	if !e.PB {
+		label = day + " " + e.Finished.Local().Format("15:04")
 	}
-	recorded := time.Duration(best.ElapsedS * float64(time.Second))
+	res := ride.Replay(c, params, e.StartM, power)
+	if !res.Finished || res.Elapsed <= 0 {
+		return nil, fmt.Errorf("the ride of %s doesn't replay to the finish", label)
+	}
+	recorded := time.Duration(e.ElapsedS * float64(time.Second))
 	scale := float64(recorded) / float64(res.Elapsed)
 	trace := make([]ride.TracePoint, len(res.Trace))
 	for i, p := range res.Trace {
 		trace[i] = ride.TracePoint{At: time.Duration(float64(p.At) * scale), DistanceM: p.DistanceM}
 	}
-	return &ride.Ghost{Label: "PB " + best.Finished.Local().Format("2 Jan"), Elapsed: recorded, Trace: trace}, nil
+	return &ride.Ghost{Label: label, Elapsed: recorded, Trace: trace}, nil
 }

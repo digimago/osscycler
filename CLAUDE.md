@@ -68,6 +68,7 @@ Trainer, HRM <-> ANT+ stick <-> telemetry service <-> sim core -> renderer (swap
 - Run `make check` before committing (gofmt, vet, staticcheck pinned via `go run`, race tests).
 
 ## Decisions so far
+
 - ANT+ FE-C first, BLE FTMS as a second transport behind the same interface.
 - State stream at about 60 Hz over gRPC server streaming (chosen 2026-10-06); control via reliable unary requests. Timestamp samples in the core with a monotonic clock; the renderer interpolates.
 - Schema-first: state messages are in protobuf (control messages still to come). `api` tests run a real gRPC server over bufconn as the fake renderer.
@@ -79,8 +80,9 @@ Trainer, HRM <-> ANT+ stick <-> telemetry service <-> sim core -> renderer (swap
 - Container USB: with the tty transport, `--device /dev/ttyANT` is enough (major 188, ttyUSB). The libusb route would need the `/dev/bus/usb` node or a cgroup rule for major 189. Avoid `--privileged`.
 
 ## Protocol notes
+
 - Device type 17 (fitness equipment), channel period 8192 (about 4 Hz), RF frequency 57 (2457 MHz).
-- Specs: the ANT+ adopter programme ended 2025-06-30; documents are now a free download from https://developer.garmin.com/ant-program/downloads/ under the ANT+ Adopter Agreement, which forbids redistribution. They live locally in `_antdocs/` (zips in `_antdocs/zip/`, extracted alongside, text conversions in `_antdocs/txt/`). Directories starting with `_` are git-ignored by convention. Relevant: FE profile rev 5.0 (D000001231), Common Data Pages rev 3.1 (D00001198), ANT Message Protocol and Usage rev 5.1.
+- Specs: the ANT+ adopter programme ended 2025-06-30; documents are now a free download from <https://developer.garmin.com/ant-program/downloads/> under the ANT+ Adopter Agreement, which forbids redistribution. They live locally in `_antdocs/` (zips in `_antdocs/zip/`, extracted alongside, text conversions in `_antdocs/txt/`). Directories starting with `_` are git-ignored by convention. Relevant: FE profile rev 5.0 (D000001231), Common Data Pages rev 3.1 (D00001198), ANT Message Protocol and Usage rev 5.1.
 - The `fec` page layouts and the `ant` message IDs, channel types and event codes were checked against those documents on 2026-10-06.
 - Do not commit the network key to the repo; load it from config or environment. A test (`cmd/osscycler-core/key_test.go`) fails if any file git would commit contains it in any formatting; it runs wherever the key is known (local key file, CI secret).
 - Release binaries carry the key compiled in (owner's decision 2026-10-07): every ANT+ product ships the key in its binary or firmware (Zwift and other apps don't make users fetch it), and the adopter agreement exists so adopters can ship products; its no-sharing clause covers the ANT+ documents and design tools. The owner has accepted the adopter agreement (click-through at developer.garmin.com/ant-program/downloads, no registration). The source must never contain the key (ANT+ Shared Source License). `make release` (`scripts/release.sh`) injects it with `-ldflags -X main.builtinNetworkKey` from `ANT_PLUS_NETWORK_KEY` or `_secrets/ant-network-key` (mode 600) and builds (owner's request 2026-10-07): Linux amd64/arm64 `.tar.gz` + `.deb` + `.rpm` (nfpm, `deploy/packaging/`: binaries in /usr/bin, udev rule in /usr/lib/udev/rules.d, postinstall creates the `ant` group and reloads udev; checked by installing in Debian and Fedora containers), a macOS universal `.tar.gz` (konoui/lipo, runs on the Linux runner; unsigned, so Gatekeeper quarantines it until signing/notarisation is set up), and `SHA256SUMS`; no Windows. Tools run pinned via `go run` (nfpm v2.47.0, lipo v0.10.0). Linux setup without manual steps: packages install the udev rule, create `ant`, reload udev; `TAG+="uaccess"` gives a desktop user the stick without the group; the `.tar.gz` has `install-udev.sh` (sudo; adds `$SUDO_USER` to `ant`). Headless Pi: `osscycler@.service` (a template, `sudo systemctl enable --now osscycler@$USER`) runs the core as that user with `SupplementaryGroups=ant` (no group membership needed) and their `~/osscycler`, from boot, waiting for the stick (Restart=on-failure only for real failures); packages try-restart running instances on upgrade and stop them on removal. Checked under real systemd in a privileged Fedora container (runs as the user with ant, records, saves the ride on stop). Package versions (dpkg and rpm order checked): `v0.1.0` → 0.1.0, between tags `v0.1.0-3-gabc1234` → 0.1.0+3.gabc1234 (after 0.1.0), pre-releases `-rc1` → `~rc1` (before). The core's stick transport is Linux-only, so on macOS the binaries serve the TUI (against a Linux core) and `-fake` until a libusb transport exists. No LICENSE file yet: choose one before the first public release. `.github/workflows/release.yml` uses the repository secret of that name. `$ANT_PLUS_NETWORK_KEY` overrides the built-in key; `-key-check` reports the source without printing it. Optional before a commercial or public release: ask Garmin's ANT+ support to confirm in writing. The old thisisant.developer.garmin.com pages are behind a Cloudflare block; link developer.garmin.com.
@@ -89,12 +91,14 @@ Trainer, HRM <-> ANT+ stick <-> telemetry service <-> sim core -> renderer (swap
 - Network key comes from env `ANT_PLUS_NETWORK_KEY`; `ant.NetworkKey` redacts itself when printed.
 
 ## Sim core notes
+
 - Speed from power each tick using rolling resistance, aerodynamic drag and gravity on the current grade. Keep parameters (mass, CdA, Crr, air density) configurable.
 - Smooth grade changes before sending them to the trainer; account for response lag.
 - ERG mode: send target power, handle the trainer's ramp behaviour.
 - Keep the sim free of renderer and USB dependencies so it can be unit-tested and replayed from recorded rides.
 
 ## Build order
+
 1. Done: telemetry spike, headless: open the stick, find the trainer, read FE-C pages, send grade and ERG targets, log raw packets.
 2. Done 2026-10-07: sim physics, GPX courses (despiked, smoothed, positions kept), timed course rides with the trainer following the grade, and replays of recorded rides (`replay`, `osscycler-replay`). Still to check on the trainer: replaying a real Flux ride.
 3. Mostly done: state schema, authenticated gRPC API, fake-renderer tests, TUI renderer (dashboard, calibration, course picker, ride screen with look-ahead grade strip), ANT+ HRM, calibration and ride RPCs, manual trainer control (2026-10-07).
@@ -104,6 +108,7 @@ Trainer, HRM <-> ANT+ stick <-> telemetry service <-> sim core -> renderer (swap
 7. Later: multiplayer (needs its own server design).
 
 ## Next up (in order)
+
 1. Renderer prototype (build step 5), in a new branch: choose the engine first (Godot 4 or Bevy, see Open questions), then one route with the GPX spline and DEM terrain. Everything a renderer needs is in the gRPC state stream and RPCs; the TUI is just one client.
 2. Next trainer session (the owner was away from the trainer for the whole 2026-10-07 session, so none of that day's work has met the hardware):
    - First course rides (Mountain Mash, then a hilly ride of the owner's): grade feel on climbs, the 1 s look-ahead against the Flux's response, believable speeds and times. Then `make replay`: a real ride should replay within a second or two of its recorded time.
@@ -114,6 +119,7 @@ Trainer, HRM <-> ANT+ stick <-> telemetry service <-> sim core -> renderer (swap
 3. Before a public release: a LICENSE, macOS signing/notarisation, and a libusb transport so the core drives the stick on macOS.
 
 ## TODO
+
 - Next trainer session (with manual control): g -5 vs g 0 (does a negative grade feel lighter?), l at a few levels (0x30), w 150 → 250 (ERG ramp behaviour).
 - Workouts: repeat groups of 3+ blocks (Zwift-style multi-stage sets). Parked 2026-10-07; first check how Zwift writes them in a real .zwo export.
 - Recorder: a workout_step / lap per workout segment.
@@ -123,9 +129,11 @@ Trainer, HRM <-> ANT+ stick <-> telemetry service <-> sim core -> renderer (swap
 - Courses: support GPX without elevation by looking it up from a DEM (step 5 territory).
 
 ## Known course data
+
 - `_gpx/` holds the owner's own exported rides (local only). One of them has a real 14.8 % ramp; its first point is an altimeter glitch that despiking removes.
 
 ## Open questions
+
 - Uploads of course rides with GPS (since 2026-10-07): check on the first upload to intervals.icu / Garmin Connect that they come through as indoor/virtual rides. Courses made from the owner's own rides start and end at home: mind privacy where uploads are public, or ride with `-record-gps=false`.
 - Whether the Tacx stick enumerates cleanly under libusb on the target Linux box (only matters for a Mac/libusb transport).
 - Is a 1 s grade look-ahead right for the Flux's response, or should it depend on the size of the grade change?
@@ -133,6 +141,7 @@ Trainer, HRM <-> ANT+ stick <-> telemetry service <-> sim core -> renderer (swap
 - How many routes and what content fidelity are realistic; world content is the dominant cost.
 
 ## Working conventions for Claude Code
+
 - Prefer small, testable packages: `ant`, `fec`, `hrm`, `telemetry`, `course`, `sim`, `ride`, `record`, `api`, `tui`.
 - Never hardcode the ANT+ network key or any API token.
 - Log raw frames behind a debug flag; hardware debugging needs them.

@@ -130,7 +130,8 @@ func (m Model) rideKey(key string) (Model, tea.Cmd, bool) {
 			_, err := cmds.SetDifficulty(ctx, want)
 			return err
 		}), true
-	case (key == "r" || key == "w") && !m.rideActive() && !m.workoutActive() && !m.calibrationActive() && m.countdown == 0:
+	// w also on a loop: a workout rides on it.
+	case (key == "r" && !m.rideActive() || key == "w" && !m.courseRide()) && !m.workoutActive() && !m.calibrationActive() && m.countdown == 0:
 		m.notice = ""
 		m.picking = true
 		switch {
@@ -146,7 +147,11 @@ func (m Model) rideKey(key string) (Model, tea.Cmd, bool) {
 			return m, m.command("abort ride", m.cmds.StopRide), true
 		}
 		m.abortUntil = m.now().Add(abortConfirm)
-		m = m.ask("press x again to abort the ride", m.abortUntil)
+		question := "press x again to abort the ride"
+		if m.onLoop() {
+			question = "press x again to end the ride"
+		}
+		m = m.ask(question, m.abortUntil)
 		return m, nil, true
 	case key == "v" && m.rideActive() && m.roadScene() != nil:
 		m.tiles = !m.tiles
@@ -198,7 +203,9 @@ func (m Model) ridePos() float64 {
 	if r.GetPhase() == pb.RidePhase_RIDE_PHASE_RIDING && !m.posAt.IsZero() {
 		dt := math.Max(0, m.now().Sub(m.posAt).Seconds())
 		d += r.GetSpeedMps()*math.Min(dt, 0.5) + m.posErr*math.Max(0, 1-dt/posBlend)
-		d = math.Min(d, r.GetCourseDistanceM())
+		if !r.GetLoop() { // a loop's road goes on over the line
+			d = math.Min(d, r.GetCourseDistanceM())
+		}
 	}
 	return d
 }
@@ -245,11 +252,17 @@ func (m Model) pickerPanel(width, height int) string {
 				style = style.Bold(true).Foreground(lipgloss.Color("220"))
 			}
 			pbText := ""
-			if r, ok := m.coursePB(c.GetId()); ok {
+			if r, ok := m.coursePB(c.GetId()); ok && c.GetLoop() {
+				pbText = pbStyle.Render("  lap PB " + lapTime(r.GetElapsedS()))
+			} else if ok {
 				pbText = pbStyle.Render("  PB " + clock(r.GetElapsedS()))
 			}
+			name := c.GetName()
+			if c.GetLoop() {
+				name = "↻ " + name
+			}
 			lines = append(lines, style.Render(fmt.Sprintf("%s%-34s %6.2f km  +%4.0f m  max %4.1f%%",
-				cursor, truncate(c.GetName(), 34), c.GetDistanceM()/1000, c.GetGainM(), c.GetMaxGradePct()))+pbText)
+				cursor, truncate(name, 34), c.GetDistanceM()/1000, c.GetGainM(), c.GetMaxGradePct()))+pbText)
 		}
 		if len(m.courseList) == 0 {
 			lines = append(lines, dimStyle.Render("  no courses: start the core with -courses DIR"))
@@ -343,7 +356,12 @@ func (m Model) roadBody(sc *roadScene, ms []metric, width, height int, info, pro
 	if roadH < minRoad {
 		return ""
 	}
-	road := sc.render(m.ridePos(), m.ghostAt(), width, roadH)
+	pos := m.ridePos()
+	ghost := m.ghostMoving()
+	if ghost >= 0 {
+		ghost = m.nearPos(ghost, pos)
+	}
+	road := sc.render(pos, ghost, width, roadH)
 	if profile == "" {
 		return lipgloss.JoinVertical(lipgloss.Left, row, road, info)
 	}
@@ -372,6 +390,19 @@ func (m Model) rideInfo(width int) string {
 	credit := ""
 	if sc := m.roadScene(); sc != nil && !m.tiles && sc.attribution != "" {
 		credit = dimStyle.Render(" · " + sc.attribution)
+	}
+	if r.GetLoop() {
+		parts := []string{ms[1].value + " bpm", ms[2].value + " rpm", fmt.Sprintf("%.1f km/h", r.GetSpeedMps()*3.6),
+			"ride " + clock(r.GetElapsedS()), fmt.Sprintf("%.0f m climbed", r.GetClimbedM())}
+		if b := r.GetBestLap(); b != nil {
+			parts = append(parts, fmt.Sprintf("best lap %s (lap %d)", lapTime(b.GetTimeS()), b.GetNumber()))
+		}
+		parts = append(parts, dimStyle.Render(r.GetCourseName()))
+		// One line: the name, then the best lap (in the pop-in too) go first.
+		for len(parts) > 5 && lipgloss.Width(strings.Join(parts, " · ")) > width {
+			parts = parts[:len(parts)-1]
+		}
+		return center.Render(strings.Join(parts, " · "))
 	}
 	return center.Render(fmt.Sprintf("%s bpm · %s rpm · %.1f km/h · %.0f/%.0f m climbed · %s",
 		ms[1].value, ms[2].value, r.GetSpeedMps()*3.6, r.GetClimbedM(), r.GetCourseGainM(),
@@ -408,6 +439,14 @@ func (m Model) rideResult(width, height int, finished bool) string {
 			bigOK.Render(t), "", verdict, "",
 			fmt.Sprintf("%.0f W average · %.1f km/h · %.0f m climbed", r.GetAvgPowerW(), avgSpeed, r.GetClimbedM()),
 			"", dimStyle.Render("x or enter to close"))
+	} else if r.GetLoop() {
+		laps := r.GetLap() - 1
+		lines = append(lines, bigOK.Render("RIDE ENDED  "+r.GetCourseName()), "",
+			fmt.Sprintf("%d lap%s in %s · %.0f W average · %.0f m climbed", laps, map[bool]string{true: "", false: "s"}[laps == 1],
+				clock(r.GetElapsedS()), r.GetAvgPowerW(), r.GetClimbedM()))
+		if b := r.GetBestLap(); b != nil {
+			lines = append(lines, "", lapFastest.Render(fmt.Sprintf("best lap %s (lap %d, %.0f W)", lapTime(b.GetTimeS()), b.GetNumber(), b.GetAvgPowerW())))
+		}
 	} else {
 		lines = append(lines, warnStyle.Render("ride aborted"),
 			fmt.Sprintf("%.2f of %.2f km in %s", r.GetDistanceM()/1000, r.GetCourseDistanceM()/1000, clock(r.GetElapsedS())))
@@ -426,6 +465,7 @@ func gradeStrip(c *pb.Course, pos, ghost float64, width int) string {
 		return ""
 	}
 	finish := c.GetDistanceM()
+	loop := c.GetLoop() && finish > 0
 	bg := make([]color.Color, width) // background per column
 	label := []rune(strings.Repeat(" ", width))
 	ruler := []rune(strings.Repeat(" ", width))
@@ -446,7 +486,18 @@ func gradeStrip(c *pb.Course, pos, ghost float64, width int) string {
 		mid := pos + (float64(i)+0.5)*lookaheadCellM
 		onLabel := math.Mod(float64(i)*lookaheadCellM, labelEveryM) == 0
 		var cellBG color.Color
+		from, to := pos+float64(i)*lookaheadCellM, pos+float64(i+1)*lookaheadCellM
 		switch {
+		case loop && math.Floor(from/finish) != math.Floor(to/finish):
+			// The line, every lap.
+			cellBG = finishColor(i)
+			put(label, col, "LAP")
+		case loop:
+			g := gradeAt(c, math.Mod(mid, finish))
+			cellBG = gradeColor(g)
+			if onLabel {
+				put(label, col, fmt.Sprintf("%.0f%%", g))
+			}
 		case mid > finish:
 			cellBG = finishColor(i)
 			if !finishLabelled {

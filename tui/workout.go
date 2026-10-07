@@ -149,7 +149,7 @@ func (m Model) workoutKey(key string) (Model, tea.Cmd, bool) {
 		}
 	}
 	switch {
-	case key == "f" && !m.workoutActive() && !m.rideActive():
+	case key == "f" && !m.workoutActive() && !m.courseRide():
 		m.input = &input{prompt: "FTP in watts: ", value: fmt.Sprintf("%.0f", m.wk().GetFtpW())}
 		return m, nil, true
 	case !m.workoutActive():
@@ -284,6 +284,12 @@ func (m Model) workoutBody(width, height int) string {
 	tilesH := height - lipgloss.Height(info)
 
 	tiles := m.screenTiles(screenWorkout)
+	// On a loop the workout rides along the road.
+	if sc := m.roadScene(); sc != nil && m.onLoop() && !m.tiles {
+		if body := m.roadBody(sc, tiles, width, tilesH, info, ""); body != "" {
+			return body
+		}
+	}
 	body := m.grid(tiles, width, tilesH)
 	if body == "" {
 		body = tileList(tiles, 18, width, max(tilesH, 4))

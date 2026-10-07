@@ -6,6 +6,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+
+	pb "github.com/digimago/osscycler/gen/osscycler/v1"
 )
 
 // The start menu: what the rider can do, shown when the TUI starts and
@@ -20,7 +22,7 @@ type menuItem struct {
 }
 
 var menuItems = []menuItem{
-	{"f", "Free ride", "just ride: the dashboard, no course or target"},
+	{"f", "Free ride", "just ride: round a test track, or the numbers alone"},
 	{"r", "Ride a course", "a GPX course, racing your best time on it"},
 	{"w", "Workout", "a structured workout, or a fixed power (ERG)"},
 	{"a", "Activities", "your recorded rides: save FIT files, race past rides"},
@@ -35,7 +37,13 @@ func (m Model) WithMenu() Model {
 	return m
 }
 
-type menuState struct{ sel int }
+type menuState struct {
+	sel int
+	// tracks: Free ride's choice, where to ride: the numbers alone, or
+	// round a test track. tsel is the choice, 0 for the numbers.
+	tracks bool
+	tsel   int
+}
 
 // busy reports whether something is already going on that the menu would
 // be in the way of: a ride, a workout, manual control or a calibration.
@@ -64,6 +72,9 @@ func (m Model) menuKey(key string) (Model, tea.Cmd, bool) {
 	}
 	s := *m.menu
 	m.menu = &s
+	if s.tracks {
+		return m.trackKey(key)
+	}
 	switch key {
 	case "up", "k":
 		s.sel = (s.sel + len(menuItems) - 1) % len(menuItems)
@@ -113,7 +124,78 @@ func (m Model) choose(item string) (Model, tea.Cmd, bool) {
 		next, cmd, _ := m.calibrationKey("C")
 		return next, cmd, true
 	}
-	return m, nil, true // f: the dashboard is free riding
+	// f: free riding, round a track or on the dashboard.
+	if len(m.loopTracks()) > 0 {
+		m.menu = &menuState{sel: 0, tracks: true}
+	}
+	return m, nil, true
+}
+
+// trackKey handles Free ride's choice of where to ride.
+func (m Model) trackKey(key string) (Model, tea.Cmd, bool) {
+	s := m.menu
+	tracks := m.loopTracks()
+	n := len(tracks) + 1
+	switch key {
+	case "up", "k":
+		s.tsel = (s.tsel + n - 1) % n
+	case "down", "j", "tab":
+		s.tsel = (s.tsel + 1) % n
+	case "esc":
+		s.tracks = false // back to the menu
+	case "enter", "space", " ":
+		return m.rideTrack(s.tsel, tracks)
+	default:
+		for i := range n {
+			if key == fmt.Sprint(i+1) {
+				return m.rideTrack(i, tracks)
+			}
+		}
+	}
+	return m, nil, true
+}
+
+// rideTrack frees the rider to ride: choice 0 is the dashboard, the rest
+// the tracks.
+func (m Model) rideTrack(choice int, tracks []*pb.Course) (Model, tea.Cmd, bool) {
+	m.menu = nil
+	if choice == 0 || choice > len(tracks) {
+		return m, nil, true
+	}
+	return m, m.rideLoop(tracks[choice-1].GetId()), true
+}
+
+// trackPanel lists where Free ride can go.
+func (m Model) trackPanel(width, height int) string {
+	lines := []string{titleStyle.Render("FREE RIDE"), dimStyle.Render("where to?"), ""}
+	rows := [][2]string{{"Just the numbers", "the dashboard: power, heart rate, cadence, speed"}}
+	for _, c := range m.loopTracks() {
+		what := fmt.Sprintf("%.2f km round", c.GetDistanceM()/1000)
+		if c.GetGainM() >= 1 {
+			what += fmt.Sprintf(", %.0f m up and down", c.GetGainM())
+		} else {
+			what += ", flat"
+		}
+		if r, ok := m.coursePB(c.GetId()); ok {
+			what += ", best lap " + lapTime(r.GetElapsedS())
+		}
+		rows = append(rows, [2]string{"↻ " + c.GetName(), what})
+	}
+	labelW := 0
+	for _, r := range rows {
+		labelW = max(labelW, lipgloss.Width(r[0]))
+	}
+	for i, r := range rows {
+		key := fmt.Sprint(i + 1)
+		label := " " + menuKeyStyle.Render(key) + "  " + r[0] + strings.Repeat(" ", labelW-lipgloss.Width(r[0])) + " "
+		if i == m.menu.tsel {
+			label = menuSelStyle.Render(" " + key + "  " + r[0] + strings.Repeat(" ", labelW-lipgloss.Width(r[0])) + " ")
+		}
+		lines = append(lines, label+"  "+dimStyle.Render(truncate(r[1], max(10, width-labelW-12))))
+	}
+	lines = append(lines, "", dimStyle.Render("the trainer follows the track's grade; w starts a workout on it"))
+	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center,
+		lipgloss.JoinVertical(lipgloss.Left, lines...))
 }
 
 var (
@@ -122,6 +204,9 @@ var (
 )
 
 func (m Model) menuPanel(width, height int) string {
+	if m.menu.tracks {
+		return m.trackPanel(width, height)
+	}
 	labelW := 0
 	for _, it := range menuItems {
 		labelW = max(labelW, lipgloss.Width(it.label))

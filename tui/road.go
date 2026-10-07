@@ -69,6 +69,7 @@ func mix(a, b rgb, t float64) rgb {
 // metres, with elevation, per profile sample.
 type roadScene struct {
 	step, finish     float64
+	loop             bool // the finish is the start: the road goes round
 	east, north, ele []float64
 	// From map data, when the core has it: four land uses per sample (left
 	// far, left near, right near, right far) and the buildings by distance.
@@ -85,9 +86,12 @@ func newRoadScene(c *pb.Course) *roadScene {
 		return nil
 	}
 	k := int(math.Round(roadSmoothM / step / 2))
-	sc := &roadScene{step: step, finish: c.GetDistanceM(),
+	sc := &roadScene{step: step, finish: c.GetDistanceM(), loop: c.GetLoop(),
 		east: movingAverage(e, k), north: movingAverage(n, k), ele: movingAverage(ele, 0),
 		buildings: c.GetBuildings(), attribution: c.GetAttribution()}
+	if sc.loop {
+		sc.east, sc.north = loopAverage(e, k), loopAverage(n, k)
+	}
 	if l := c.GetLandUse(); len(l) == 4*len(e) {
 		sc.land = l
 	}
@@ -130,9 +134,34 @@ func movingAverage(v []float32, k int) []float64 {
 	return out
 }
 
+// loopAverage is movingAverage round a loop: the last sample is the
+// first again, and the average reaches across the line.
+func loopAverage(v []float32, k int) []float64 {
+	n := len(v) - 1 // distinct samples
+	out := make([]float64, len(v))
+	for i := range n {
+		var sum float64
+		for j := i - k; j <= i+k; j++ {
+			sum += float64(v[((j%n)+n)%n])
+		}
+		out[i] = sum / float64(2*k+1)
+	}
+	out[n] = out[0]
+	return out
+}
+
+// lapPos is s within the lap on a loop; s itself otherwise.
+func (sc *roadScene) lapPos(s float64) float64 {
+	if !sc.loop {
+		return s
+	}
+	return math.Mod(math.Mod(s, sc.finish)+sc.finish, sc.finish)
+}
+
 // at returns the road's centre at distance s: east, north and elevation.
-// Past either end the road runs on straight and level.
+// Past either end the road runs on straight and level; a loop goes round.
 func (sc *roadScene) at(s float64) (x, y, z float64) {
+	s = sc.lapPos(s)
 	last := len(sc.east) - 1
 	pos := s / sc.step
 	i := max(0, min(int(math.Floor(pos)), last-1))
@@ -307,8 +336,8 @@ func (sc *roadScene) pixels(pos, ghost float64, w, h int) []rgb {
 		draw func()
 	}
 	var sprites []sprite
-	for k := int(math.Floor((pos + roadDrawM) / roadTreeM)); float64(k)*roadTreeM > pos+8; k-- {
-		s := float64(k) * roadTreeM
+	for _, t := range sc.treeSpots(pos+8, pos+roadDrawM) {
+		s, k := t.s, t.k
 		g, ok := segAt(s)
 		if !ok {
 			continue
@@ -359,6 +388,34 @@ func (sc *roadScene) pixels(pos, ghost float64, w, h int) []rgb {
 	return px
 }
 
+// treeSpot is a place for roadside trees: s along the road, k seeding
+// what grows there.
+type treeSpot struct {
+	s float64
+	k int
+}
+
+// treeSpots lists the tree places in (from, to], far to near: every
+// roadTreeM metres, and on a loop the same ones every lap.
+func (sc *roadScene) treeSpots(from, to float64) []treeSpot {
+	var out []treeSpot
+	if !sc.loop {
+		for k := int(math.Floor(to / roadTreeM)); float64(k)*roadTreeM > from; k-- {
+			out = append(out, treeSpot{float64(k) * roadTreeM, k})
+		}
+		return out
+	}
+	perLap := int(sc.finish / roadTreeM)
+	for lap := math.Floor(to / sc.finish); lap >= math.Floor(from/sc.finish); lap-- {
+		for k := perLap - 1; k >= 0; k-- {
+			if s := lap*sc.finish + float64(k)*roadTreeM; s > from && s <= to {
+				out = append(out, treeSpot{s, k})
+			}
+		}
+	}
+	return out
+}
+
 // nextGrid is the next road point after s: on the roadSegM grid, at least
 // half a step on so no band gets too thin.
 func nextGrid(s, pos float64) float64 {
@@ -394,7 +451,11 @@ func (sc *roadScene) band(px []rgb, w int, cam roadCamera, near, far roadSeg, cl
 			grass, asphalt = grassB, asphaltB
 		}
 		dash := math.Mod(s, 2*roadDashM) < roadDashM
-		finish := s >= sc.finish && s < sc.finish+2
+		line := s - sc.finish // into the chequered line, 2 m deep
+		if sc.loop {
+			line = sc.lapPos(s) // a line every lap
+		}
+		finish := line >= 0 && line < 2
 		row := px[y*w : (y+1)*w]
 		for x := range row {
 			lateral := (float64(x) + 0.5 - mid) * mPerPx
@@ -405,7 +466,7 @@ func (sc *roadScene) band(px []rgb, w int, cam roadCamera, near, far roadSeg, cl
 				c = sc.ground(s, lateral, odd, grass)
 			case finish:
 				c = lineColor
-				if (int(math.Floor(lateral/0.5))+int(math.Floor((s-sc.finish)/0.5)))%2 != 0 {
+				if (int(math.Floor(lateral/0.5))+int(math.Floor(line/0.5)))%2 != 0 {
 					c = finishDark
 				}
 			case ax > roadHalfM-roadLineM, dash && ax < roadLineM/2:

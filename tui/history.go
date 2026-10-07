@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"math"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -95,18 +96,71 @@ func (m Model) ghostAt() float64 {
 	return -1
 }
 
+// followGhost notes where the ghost is reported and how fast it goes, so
+// the road view can carry it forward between the core's updates (4 a
+// second) as it does the rider; drawn where reported, it moved in steps
+// past the smoothly moving road.
+func (m Model) followGhost(old *pb.Ride) Model {
+	g, r := m.ride().GetGhost(), m.ride()
+	if g == nil || r.GetPhase() != pb.RidePhase_RIDE_PHASE_RIDING {
+		m.ghostV, m.ghostSeen = 0, time.Time{}
+		return m
+	}
+	d, now := g.GetDistanceM(), m.now()
+	if r.GetCourseId() != old.GetCourseId() || m.ghostSeen.IsZero() {
+		m.ghostV, m.ghostD, m.ghostSeen = 0, d, now // a new ride: from here
+		return m
+	}
+	if d == m.ghostD {
+		return m
+	}
+	moved := d - m.ghostD
+	if l := r.GetCourseDistanceM(); r.GetLoop() && moved < -l/2 {
+		moved += l // over the line
+	}
+	// Faster than any rider is a jump (a new ghost, a new lap), not speed.
+	if dt := now.Sub(m.ghostSeen).Seconds(); dt > 0.05 && dt < 2 && moved >= 0 && moved/dt < 30 {
+		m.ghostV = 0.5*m.ghostV + 0.5*moved/dt // the reports arrive a little unevenly
+	}
+	m.ghostD, m.ghostSeen = d, now
+	return m
+}
+
+// ghostMoving is the ghost's distance for drawing: carried forward from
+// its last report at its speed, as ridePos does for the rider; it stops at
+// a finish line it has reached.
+func (m Model) ghostMoving() float64 {
+	g := m.ghostAt()
+	r := m.ride()
+	if g < 0 || m.ghostSeen.IsZero() || r.GetPhase() != pb.RidePhase_RIDE_PHASE_RIDING || g >= r.GetCourseDistanceM()-0.01 {
+		return g // waiting at the line, done
+	}
+	g += m.ghostV * math.Min(math.Max(0, m.now().Sub(m.ghostSeen).Seconds()), 0.5)
+	if !r.GetLoop() {
+		g = math.Min(g, r.GetCourseDistanceM())
+	}
+	return g
+}
+
 // timeTile is the ride clock, with the gap to the ghost under it: green
 // ahead, red behind.
 func (m Model) timeTile() metric {
 	r := m.ride()
 	t := metric{label: "TIME", value: clock(r.GetElapsedS()), style: lipgloss.NewStyle()}
+	if r.GetLoop() { // a loop is timed lap by lap
+		t.label, t.value = fmt.Sprintf("LAP %d", r.GetLap()), clock(r.GetLapElapsedS())
+	}
 	g := r.GetGhost()
 	if g == nil {
 		return t
 	}
-	t.label = "TIME vs " + g.GetLabel()
+	if !r.GetLoop() { // on a loop the ghost is always the best lap
+		t.label += " vs " + g.GetLabel()
+	}
 	gap := g.GetGapS()
 	switch {
+	case r.GetPhase() == pb.RidePhase_RIDE_PHASE_ARMED && r.GetLoop():
+		t.unit = "lap PB " + lapTime(g.GetTimeS())
 	case r.GetPhase() == pb.RidePhase_RIDE_PHASE_ARMED:
 		t.unit = "PB " + clock(g.GetTimeS())
 	case gap < 0:

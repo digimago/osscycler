@@ -110,6 +110,16 @@ func (m Model) helpContext() (string, []helpEntry) {
 			layout[0], layout[1],
 			{"q", "quit the screen (the workout goes on in the core)"},
 		}, always...)
+	case m.onLoop():
+		return "TRACK", append([]helpEntry{
+			{"+ / -", fmt.Sprintf("trainer difficulty in 10 %% steps (now %.0f %%)", m.difficulty())},
+			{"v", "road view or big numbers"},
+			{"w", "a workout or a fixed power on this track (the track goes on)"},
+			{"g / l", "a fixed grade / brake level instead of the track's"},
+			layout[0], layout[1],
+			{"x x", "end the ride (each lap is kept; your best lap is the ghost)"},
+			{"q", "quit the screen (the ride goes on in the core)"},
+		}, always...)
 	case m.showRide() && m.rideActive():
 		return "COURSE RIDE", append([]helpEntry{
 			{"+ / -", fmt.Sprintf("trainer difficulty in 10 %% steps (now %.0f %%)", m.difficulty())},

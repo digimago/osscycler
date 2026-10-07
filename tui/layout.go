@@ -175,9 +175,17 @@ func (m Model) tile(id string) metric {
 	case "time":
 		return m.timeTile()
 	case "to_go":
-		return metric{"TO GO", fmt.Sprintf("%.2f", math.Max(0, r.GetCourseDistanceM()-r.GetDistanceM())/1000), "km", speedStyle, nil}
+		label := "TO GO"
+		if r.GetLoop() {
+			label = "LAP TO GO"
+		}
+		return metric{label, fmt.Sprintf("%.2f", math.Max(0, r.GetCourseDistanceM()-r.GetDistanceM())/1000), "km", speedStyle, nil}
 	case "climbed":
-		return metric{"CLIMBED", fmt.Sprintf("%.0f", r.GetClimbedM()), fmt.Sprintf("of %.0f m", r.GetCourseGainM()), lipgloss.NewStyle(), nil}
+		unit := fmt.Sprintf("of %.0f m", r.GetCourseGainM())
+		if r.GetLoop() {
+			unit = "m" // round and round: no total to climb
+		}
+		return metric{"CLIMBED", fmt.Sprintf("%.0f", r.GetClimbedM()), unit, lipgloss.NewStyle(), nil}
 	case "avg_power":
 		avg := r.GetAvgPowerW()
 		if m.workoutActive() {

@@ -14,3 +14,10 @@ local.mk
 .osm/
 # A rider profile written in the repo root by a local run
 /profile.json
+# osscycler's own folder layout (see home): if a core or TUI ever runs with
+# the checkout as its folder, the rider's data stays out of the repo.
+/courses/
+/rides/
+/workouts/
+/api-token
+/tui.json

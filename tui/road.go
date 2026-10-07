@@ -236,11 +236,7 @@ func writeSGR(b *strings.Builder, kind int, c rgb) {
 func (sc *roadScene) pixels(pos, ghost float64, w, h int) []rgb {
 	cam := sc.camera(pos, w, h)
 	px := make([]rgb, w*h)
-	set := func(x, y int, c rgb) {
-		if x >= 0 && x < w && y >= 0 && y < h {
-			px[y*w+x] = c
-		}
-	}
+	cv := canvas{px: px, w: w, h: h}
 
 	// Sky, distant hills that pan as the road turns, and far-off land.
 	hz := cam.horizon()
@@ -256,8 +252,9 @@ func (sc *roadScene) pixels(pos, ghost float64, w, h int) []rgb {
 	for x := range w {
 		bearing := cam.heading + math.Atan((float64(x)+0.5-cam.cx)/cam.f)
 		top := hz - cam.f*hillAngle(bearing)
-		for y := int(math.Floor(top)); float64(y) < hz; y++ {
-			set(x, y, hillColor)
+		ya, yb := span(top, hz, cv.h)
+		for y := ya; y < yb; y++ {
+			cv.set(x, y, hillColor)
 		}
 	}
 
@@ -326,7 +323,7 @@ func (sc *roadScene) pixels(pos, ghost float64, w, h int) []rgb {
 				lateral := off * float64(2*side-1)
 				height := rule.minH + float64(hash>>20%100)/100*rule.spanH
 				pine := hash>>28%4 < rule.pine4
-				sprites = append(sprites, sprite{s, func() { drawTree(set, cam, g, lateral, height, pine) }})
+				sprites = append(sprites, sprite{s, func() { drawTree(cv, cam, g, lateral, height, pine) }})
 			}
 		}
 	}
@@ -345,10 +342,10 @@ func (sc *roadScene) pixels(pos, ghost float64, w, h int) []rgb {
 			far = segs[len(segs)-1]
 		}
 		front := s0 >= first
-		sprites = append(sprites, sprite{math.Max(s0, pos), func() { drawBuilding(set, cam, b, near, far, front) }})
+		sprites = append(sprites, sprite{math.Max(s0, pos), func() { drawBuilding(cv, cam, b, near, far, front) }})
 	}
 	if g, ok := segAt(ghost); ok && ghost > pos+2 {
-		sprites = append(sprites, sprite{ghost, func() { drawGhost(set, cam, g) }})
+		sprites = append(sprites, sprite{ghost, func() { drawGhost(cv, cam, g) }})
 	}
 	sort.SliceStable(sprites, func(i, j int) bool { return sprites[i].s > sprites[j].s })
 	for _, sp := range sprites {
@@ -424,7 +421,7 @@ func hillAngle(b float64) float64 {
 
 // drawTree stands a tree off metres beside the road (right is positive):
 // a pine or a leafy one.
-func drawTree(set func(x, y int, c rgb), cam roadCamera, g roadSeg, off, height float64, pine bool) {
+func drawTree(cv canvas, cam roadCamera, g roadSeg, off, height float64, pine bool) {
 	scale := cam.f / g.depth // pixels per metre
 	hPx := height * scale
 	if hPx < 1 {
@@ -437,7 +434,8 @@ func drawTree(set func(x, y int, c rgb), cam roadCamera, g roadSeg, off, height 
 		leaves = mix(pineColor, fogColor, fog)
 	}
 	crown := 0.45 * height * scale // half width
-	for y := int(math.Floor(g.sy - hPx)); float64(y) < math.Min(g.sy, g.clip); y++ {
+	ya, yb := span(g.sy-hPx, math.Min(g.sy, g.clip), cv.h)
+	for y := ya; y < yb; y++ {
 		q := (g.sy - float64(y) - 0.5) / hPx // 0 at the foot, 1 at the top
 		var half float64
 		c := leaves
@@ -450,14 +448,15 @@ func drawTree(set func(x, y int, c rgb), cam roadCamera, g roadSeg, off, height 
 		default:
 			half, c = math.Max(0.5, 0.15*scale), trunk
 		}
-		for x := int(math.Floor(cx - half)); float64(x) < cx+half; x++ {
-			set(x, y, c)
+		xa, xb := span(cx-half, cx+half, cv.w)
+		for x := xa; x < xb; x++ {
+			cv.set(x, y, c)
 		}
 	}
 }
 
 // drawGhost draws the ghost rider seen from behind, half see-through.
-func drawGhost(set func(x, y int, c rgb), cam roadCamera, g roadSeg) {
+func drawGhost(cv canvas, cam roadCamera, g roadSeg) {
 	scale := cam.f / g.depth
 	hPx := 1.75 * scale
 	if hPx < 1 {
@@ -465,7 +464,8 @@ func drawGhost(set func(x, y int, c rgb), cam roadCamera, g roadSeg) {
 	}
 	cx := g.sx + roadGhostM*scale
 	fog := (g.depth - roadFogFromM) / (roadDrawM - roadFogFromM)
-	for y := int(math.Floor(g.sy - hPx)); float64(y) < math.Min(g.sy, g.clip); y++ {
+	ya, yb := span(g.sy-hPx, math.Min(g.sy, g.clip), cv.h)
+	for y := ya; y < yb; y++ {
 		q := (g.sy - float64(y) - 0.5) / hPx
 		half, c := 0.06*scale, ghostBike // a wheel, edge on
 		switch {
@@ -478,8 +478,9 @@ func drawGhost(set func(x, y int, c rgb), cam roadCamera, g roadSeg) {
 		}
 		half = math.Max(half, 0.5)
 		c = mix(c, fogColor, fog)
-		for x := int(math.Floor(cx - half)); float64(x) < cx+half; x++ {
-			set(x, y, c)
+		xa, xb := span(cx-half, cx+half, cv.w)
+		for x := xa; x < xb; x++ {
+			cv.set(x, y, c)
 		}
 	}
 }
@@ -557,7 +558,7 @@ var (
 // the road from its near to its far end, then (when it is still ahead)
 // the end facing the rider, with a gable for pitched roofs and windows by
 // floor.
-func drawBuilding(set func(x, y int, c rgb), cam roadCamera, b *pb.Building, near, far roadSeg, front bool) {
+func drawBuilding(cv canvas, cam roadCamera, b *pb.Building, near, far roadSeg, front bool) {
 	hash := splitmix(math.Float64bits(b.GetDistanceM()) ^ math.Float64bits(b.GetOffsetM()))
 	kind := b.GetKind()
 	walls, ok := wallColors[kind]
@@ -589,7 +590,8 @@ func drawBuilding(set func(x, y int, c rgb), cam roadCamera, b *pb.Building, nea
 	xN, xF := near.sx+inner*fN, far.sx+inner*fF
 	if math.Abs(xF-xN) >= 0.5 {
 		lo, hi := math.Min(xN, xF), math.Max(xN, xF)
-		for x := int(math.Floor(lo)); float64(x) < hi; x++ {
+		xa, xb := span(lo, hi, cv.w)
+		for x := xa; x < xb; x++ {
 			t := (float64(x) + 0.5 - xN) / (xF - xN)
 			if t < 0 || t > 1 {
 				continue
@@ -600,14 +602,15 @@ func drawBuilding(set func(x, y int, c rgb), cam roadCamera, b *pb.Building, nea
 			top := ground - wallH*f
 			along := (d - near.depth) / math.Max(far.depth-near.depth, 1e-9) * b.GetLengthM()
 			fog := fogAt(d)
-			for y := int(math.Floor(top - roofH*f*0.6)); float64(y) < math.Min(ground, clip); y++ {
+			ya, yb := span(top-roofH*f*0.6, math.Min(ground, clip), cv.h)
+			for y := ya; y < yb; y++ {
 				c := mix(wall, rgb{0, 0, 0}, 0.25) // in shade
 				if float64(y)+0.5 < top {
 					c = roof
 				} else if isWindow(along, (ground-float64(y)-0.5)/f, floorH) {
 					c = glassColor
 				}
-				set(x, y, mix(c, fogColor, fog))
+				cv.set(x, y, mix(c, fogColor, fog))
 			}
 		}
 	}
@@ -619,10 +622,12 @@ func drawBuilding(set func(x, y int, c rgb), cam roadCamera, b *pb.Building, nea
 	mid := near.sx + b.GetOffsetM()*fN
 	top := near.sy - wallH*fN
 	fog := fogAt(near.depth)
-	for x := int(math.Floor(left)); float64(x) < right; x++ {
+	xa, xb := span(left, right, cv.w)
+	for x := xa; x < xb; x++ {
 		across := (float64(x) + 0.5 - left) / fN
 		gable := roofH * fN * (1 - math.Abs(float64(x)+0.5-mid)/((right-left)/2))
-		for y := int(math.Floor(top - gable)); float64(y) < math.Min(near.sy, clip); y++ {
+		ya, yb := span(top-gable, math.Min(near.sy, clip), cv.h)
+		for y := ya; y < yb; y++ {
 			c := wall
 			switch {
 			case float64(y)+0.5 < top && kind == pb.BuildingKind_BUILDING_KIND_BARN:
@@ -632,7 +637,30 @@ func drawBuilding(set func(x, y int, c rgb), cam roadCamera, b *pb.Building, nea
 			case isWindow(across, (near.sy-float64(y)-0.5)/fN, floorH):
 				c = glassColor
 			}
-			set(x, y, mix(c, fogColor, fog))
+			cv.set(x, y, mix(c, fogColor, fog))
 		}
 	}
+}
+
+// canvas is the pixel buffer the scenery is drawn into.
+type canvas struct {
+	px   []rgb
+	w, h int
+}
+
+func (cv canvas) set(x, y int, c rgb) {
+	if x >= 0 && x < cv.w && y >= 0 && y < cv.h {
+		cv.px[y*cv.w+x] = c
+	}
+}
+
+// span clips the pixels from lo up to hi to 0..n-1. A sprite right beside
+// the rider projects to thousands of pixels across; only those on screen
+// are visited.
+func span(lo, hi float64, n int) (int, int) {
+	a, b := math.Max(0, math.Floor(lo)), math.Min(float64(n), math.Ceil(hi))
+	if !(a < b) { // also NaN
+		return 0, 0
+	}
+	return int(a), int(b)
 }

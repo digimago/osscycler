@@ -133,3 +133,34 @@ func TestRidePosSteady(t *testing.T) {
 		last = pos
 	}
 }
+
+func TestSpanClipsToScreen(t *testing.T) {
+	for _, c := range []struct {
+		lo, hi float64
+		a, b   int
+	}{
+		{2.5, 7.2, 2, 8},      // as the loop i := floor(lo); i < hi
+		{-1e9, 1e9, 0, 100},   // a sprite beside the rider: only the screen
+		{120, 130, 0, 0},      // off screen
+		{math.NaN(), 5, 0, 0}, // degenerate projection
+	} {
+		if a, b := span(c.lo, c.hi, 100); a != c.a || b != c.b {
+			t.Errorf("span(%v, %v) = %d, %d; want %d, %d", c.lo, c.hi, a, b, c.a, c.b)
+		}
+	}
+}
+
+// A building right beside the rider projects to millions of pixels; the
+// frame must only draw the ones on screen.
+func TestRoadBuildingBesideRider(t *testing.T) {
+	c := testCourse(200, flat, flat)
+	c.Buildings = []*pb.Building{{DistanceM: 105, OffsetM: 4.2, LengthM: 30, DepthM: 1, HeightM: 9, Kind: pb.BuildingKind_BUILDING_KIND_HOUSE}}
+	sc := newRoadScene(c)
+	start := time.Now()
+	for pos := 90.0; pos < 110; pos += 0.25 {
+		sc.render(pos, -1, 200, 45)
+	}
+	if el := time.Since(start); el > 2*time.Second {
+		t.Errorf("80 frames passing a building took %v", el)
+	}
+}

@@ -164,3 +164,16 @@ func TestRoadBuildingBesideRider(t *testing.T) {
 		t.Errorf("80 frames passing a building took %v", el)
 	}
 }
+
+// On a steady climb the road ahead must look like it climbs: well above
+// the middle of the view, not level with it (as when the view tilted
+// with the whole grade).
+func TestRoadClimbLooksSteep(t *testing.T) {
+	const w, h = 160, 60
+	sc := newRoadScene(testCourse(200, flat, func(d float64) float64 { return d * 0.1 }))
+	cam := sc.camera(800, w, h)
+	_, sy, _, ok := cam.project(sc.at(950))
+	if rise := (cam.axisY - sy) / cam.f; !ok || rise < 0.05 {
+		t.Errorf("150 m up a 10 %% climb: %.3f above the view's middle, want at least 0.05 (about 3°)", rise)
+	}
+}

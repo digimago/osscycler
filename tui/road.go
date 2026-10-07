@@ -28,8 +28,13 @@ const (
 	roadSmoothM  = 40.0  // the track is smoothed over this span (GPS jitter)
 	roadTreeM    = 6.0   // a tree may stand every this many metres
 	roadGhostM   = 1.0   // the ghost rides this far right of the centre line
-	roadNearM    = 15.0  // land use is given this far out from the centre line
-	roadFarM     = 60.0  // and this far
+	// roadPitchFollow is how much of the grade the view tilts with. A
+	// rider keeps their gaze nearer level than the bike: tilting with all
+	// of it made a steady 10 % climb look flat (Mountain Mash's first
+	// climb); at 0.15 the road visibly rises ahead.
+	roadPitchFollow = 0.15
+	roadNearM       = 15.0 // land use is given this far out from the centre line
+	roadFarM        = 60.0 // and this far
 	// roadFrame paces the animation between state updates.
 	roadFrame = 50 * time.Millisecond
 )
@@ -160,7 +165,7 @@ func (sc *roadScene) camera(pos float64, w, h int) roadCamera {
 	return roadCamera{
 		x: x, y: y, z: z + roadEyeM,
 		sinH: math.Sin(hd), cosH: math.Cos(hd), heading: hd,
-		pitch: math.Atan((zb - za) / 30),
+		pitch: math.Atan((zb-za)/30) * roadPitchFollow,
 		f:     float64(w) / 2 / math.Tan(roadFOVDeg/2*math.Pi/180),
 		cx:    float64(w) / 2, axisY: float64(h) * 0.4,
 	}

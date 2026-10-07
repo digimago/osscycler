@@ -116,6 +116,7 @@ type stubCommands struct {
 	started, cancelled int
 	courses            []*pb.Course
 	rides              []string
+	races              []string
 	stops              int
 	difficulties       []float64
 	workouts           []*pb.WorkoutDef
@@ -192,6 +193,10 @@ func (s *stubCommands) StartRide(_ context.Context, id string) error {
 	s.rides = append(s.rides, id)
 	return nil
 }
+func (s *stubCommands) StartRideAgainst(_ context.Context, id string, finished int64) error {
+	s.races = append(s.races, fmt.Sprintf("%s@%d", id, finished))
+	return nil
+}
 func (s *stubCommands) StopRide(context.Context) error { s.stops++; return nil }
 func (s *stubCommands) ListWorkouts(context.Context) ([]*pb.WorkoutDef, error) {
 	return s.workouts, nil
@@ -233,7 +238,7 @@ func calModel(cmds Commands) Model {
 func press(m Model, key string) (Model, tea.Cmd) {
 	var k tea.KeyPressMsg
 	named := map[string]rune{"esc": tea.KeyEscape, "enter": tea.KeyEnter, "tab": tea.KeyTab, "backspace": tea.KeyBackspace,
-		"up": tea.KeyUp, "down": tea.KeyDown, "left": tea.KeyLeft, "right": tea.KeyRight, "space": tea.KeySpace}
+		"up": tea.KeyUp, "down": tea.KeyDown, "left": tea.KeyLeft, "right": tea.KeyRight, "space": tea.KeySpace, "f1": tea.KeyF1}
 	switch code, ok := named[key]; {
 	case ok:
 		k = tea.KeyPressMsg{Code: code}
@@ -648,15 +653,22 @@ func workoutState(phase pb.WorkoutPhase, elapsed float64) *pb.State {
 func TestWorkoutPicker(t *testing.T) {
 	broken := &pb.WorkoutDef{Id: "broken", Name: "broken", Error: "parse .zwo: EOF"}
 	cmds := &stubCommands{courses: []*pb.Course{hillCourse()}, workouts: []*pb.WorkoutDef{testWorkoutDef(t), broken}}
-	m, cmd := press(calModel(cmds), "r")
+	m, cmd := press(calModel(cmds), "w")
 	m = run(m, cmd)
-	m, _ = press(m, "tab")
 	out := plain(m.render())
-	for _, want := range []string{"WORKOUTS", "Sweet Spot", "21:00", "broken", "parse .zwo", "n new", "e edit", "f FTP"} {
+	for _, want := range []string{"WORKOUTS", "Fixed power (ERG)", "Sweet Spot", "21:00", "broken", "parse .zwo", "n new", "e edit", "f FTP"} {
 		if !strings.Contains(out, want) {
-			t.Errorf("workout tab lacks %q:\n%s", want, out)
+			t.Errorf("workout picker lacks %q:\n%s", want, out)
 		}
 	}
+	if strings.Contains(out, "COURSES") {
+		t.Errorf("workout picker shows the ride tabs:\n%s", out)
+	}
+	// The first row asks for a fixed power instead.
+	if m2, _ := press(m, "enter"); m2.input == nil || m2.picking || !strings.Contains(plain(m2.render()), "ERG target in watts: 150") {
+		t.Errorf("fixed power row: input %+v", m2.input)
+	}
+	m = pressAll(m, "down")
 	m2, cmd := press(m, "enter")
 	run(m2, cmd)
 	if len(cmds.startedWorkouts) != 1 || cmds.startedWorkouts[0] != "sweet-spot" {
@@ -751,7 +763,7 @@ func TestFTPInput(t *testing.T) {
 // named key is typed letter by letter.
 func pressAll(m Model, keys ...string) Model {
 	for _, k := range keys {
-		if len(k) > 1 && !slices.Contains([]string{"esc", "enter", "tab", "backspace", "up", "down", "left", "right", "space"}, k) {
+		if len(k) > 1 && !slices.Contains([]string{"esc", "enter", "tab", "backspace", "up", "down", "left", "right", "space", "f1"}, k) {
 			for _, r := range k {
 				m, _ = press(m, string(r))
 			}
@@ -766,9 +778,9 @@ func formText(m Model) string { return workout.FormatText(tidy(m.draft.w)) }
 
 func TestFormEditor(t *testing.T) {
 	cmds := &stubCommands{courses: []*pb.Course{hillCourse()}}
-	m, cmd := press(calModel(cmds), "r")
+	m, cmd := press(calModel(cmds), "w")
 	m = run(m, cmd)
-	m = pressAll(m, "tab", "n")
+	m = pressAll(m, "n")
 	if m.draft == nil || m.draft.row != headerRows {
 		t.Fatalf("n: draft %+v", m.draft)
 	}
@@ -1050,7 +1062,7 @@ func TestHistoryTab(t *testing.T) {
 	if out := plain(m.render()); !strings.Contains(out, "PB 12:34") || strings.Contains(out, "PB 5:00") {
 		t.Errorf("course PB:\n%s", out)
 	}
-	m = pressAll(m, "tab", "tab")
+	m = pressAll(m, "tab")
 	out := plain(m.render())
 	for _, want := range []string{"HISTORY", "2026-10-07 18:30", "12:34", "231 W", "Hill from 1.48 km", "★ PB", "13:20"} {
 		if !strings.Contains(out, want) {
@@ -1067,8 +1079,36 @@ func TestHistoryTab(t *testing.T) {
 	if m2 := pressAll(m, "tab", "tab"); m2.tab != tabCourses {
 		t.Errorf("tabs don't go round: %d", m2.tab)
 	}
-	if m2 := pressAll(m, "left"); m2.tab != tabWorkouts {
+	if m2 := pressAll(m, "left"); m2.tab != tabCourses {
 		t.Errorf("left from history: %d", m2.tab)
+	}
+	// enter races the ride under the cursor (the one from 1.48 km).
+	m2, cmd := press(pressAll(m, "down"), "enter")
+	run(m2, cmd)
+	if want := fmt.Sprintf("hill@%d", at-86400000); fmt.Sprint(cmds.races) != "["+want+"]" || m2.picking {
+		t.Errorf("races %v, want [%s]", cmds.races, want)
+	}
+}
+
+func TestRaceFromActivity(t *testing.T) {
+	at := time.Date(2026, 10, 7, 18, 30, 0, 0, time.Local).UnixMilli()
+	cmds := &stubCommands{courses: []*pb.Course{hillCourse()},
+		results: []*pb.RideResult{{FinishedUnixMs: at, CourseId: hillCourse().GetId(), CourseName: "Hill", ElapsedS: 754, DistanceM: 3000, File: "2026-10-07-180000.fit"}},
+		activities: []*pb.Activity{
+			{Name: "2026-10-07-180000.fit", StartUnixMs: at - 900000, ElapsedS: 900, TimerS: 880, DistanceM: 3000, Virtual: true, Laps: 1},
+			{Name: "2026-10-06-180000.fit", StartUnixMs: at - 86400000, ElapsedS: 1800, TimerS: 1800, DistanceM: 9000, Laps: 1},
+		}}
+	m, cmd := press(calModel(cmds), "r")
+	m = run(m, cmd)
+	m = pressAll(m, "tab", "tab")
+	m2, cmd := press(m, "enter")
+	run(m2, cmd)
+	if want := fmt.Sprintf("[hill@%d]", at); fmt.Sprint(cmds.races) != want {
+		t.Errorf("races %v, want %s", cmds.races, want)
+	}
+	// A free ride has nothing to race: enter saves it as before.
+	if _, cmd := press(pressAll(m, "down"), "enter"); cmd == nil || len(cmds.races) != 1 {
+		t.Errorf("free ride: races %v, export %v", cmds.races, cmd != nil)
 	}
 }
 
@@ -1229,7 +1269,7 @@ func TestActivitiesExport(t *testing.T) {
 func TestManualControl(t *testing.T) {
 	cmds := &stubCommands{}
 	m := calModel(cmds)
-	m = pressAll(m, "w")
+	m = pressAll(m, "w", "enter") // the fixed power row
 	if out := plain(m.render()); !strings.Contains(out, "ERG target in watts: 150") {
 		t.Fatalf("prompt:\n%s", out)
 	}
@@ -1247,7 +1287,7 @@ func TestManualControl(t *testing.T) {
 	next, _ := m.Update(StateMsg{State: st})
 	m = next.(Model)
 	out := plain(m.render())
-	for _, want := range []string{"ERG 200 W", "+/- 5 · w watts · g grade · l level · x free ride"} {
+	for _, want := range []string{"ERG 200 W", "+/- 5 · w ERG or workout · g grade · l level · x free ride"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("control on: lacks %q\n%s", want, out)
 		}
@@ -1284,5 +1324,54 @@ func TestStickMissingFooter(t *testing.T) {
 	next, _ = m.Update(StateMsg{State: st})
 	if out := plain(next.(Model).render()); strings.Contains(out, "stick not found") || !strings.Contains(out, "trainer #47508") {
 		t.Errorf("stick present:\n%s", out)
+	}
+}
+
+func TestHelp(t *testing.T) {
+	cmds := &stubCommands{courses: []*pb.Course{hillCourse()}}
+	for _, c := range []struct {
+		name  string
+		setup func(Model) Model
+		want  []string
+	}{
+		{"dashboard", func(m Model) Model { return m }, []string{"KEYS: DASHBOARD", "workouts, or a fixed power", "spin-down"}},
+		{"rides", func(m Model) Model { return run(press(m, "r")) }, []string{"KEYS: RIDES", "COURSES, HISTORY, ACTIVITIES"}},
+		{"workouts", func(m Model) Model { return run(press(m, "w")) }, []string{"KEYS: WORKOUTS", "Fixed power", "write a new workout"}},
+		{"ride", func(m Model) Model {
+			next, _ := m.Update(StateMsg{State: rideState(pb.RidePhase_RIDE_PHASE_RIDING, 100)})
+			return next.(Model)
+		}, []string{"KEYS: COURSE RIDE", "road view or big numbers", "only a finished ride counts"}},
+	} {
+		for _, key := range []string{"?", "h", "f1"} {
+			m := c.setup(calModel(cmds))
+			m = pressAll(m, key)
+			out := plain(m.render())
+			for _, want := range c.want {
+				if !strings.Contains(out, want) {
+					t.Errorf("%s, %s: help lacks %q:\n%s", c.name, key, want, out)
+				}
+			}
+			// Any key closes it and does nothing else.
+			m2, cmd := press(m, "r")
+			if m2.help || cmd != nil || m2.picking != m.picking {
+				t.Errorf("%s: closing key acted: help %v, cmd %v", c.name, m2.help, cmd != nil)
+			}
+		}
+	}
+
+	// In the workout form, h is a letter while typing; F1 still helps.
+	m := pressAll(run(press(calModel(cmds), "w")), "n")
+	if m.draft == nil {
+		t.Fatal("no form")
+	}
+	typed := ""
+	d := *m.draft
+	d.buf = &typed // as after enter on a name or value
+	m.draft = &d
+	if m2 := pressAll(m, "h"); m2.help {
+		t.Error("h opened the help while typing")
+	}
+	if m2 := pressAll(m, "f1"); !m2.help {
+		t.Error("F1 didn't open the help while typing")
 	}
 }

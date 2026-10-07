@@ -63,6 +63,7 @@ type Model struct {
 	posAt     time.Time             // when the ride distance last changed
 	posErr    float64               // shown minus reported then, blended out
 	animating bool                  // a frame tick is pending
+	help      bool                  // the key help is open
 }
 
 // frameMsg asks for the next frame of the road view.
@@ -217,7 +218,19 @@ func (m Model) View() tea.View {
 // handleKey routes a key press, real or from the tour.
 func (m Model) handleKey(key string) (tea.Model, tea.Cmd) {
 	// In the workout editor q is just a letter; ctrl+c still quits.
-	if key == "ctrl+c" || (key == "q" && m.draft == nil) {
+	if key == "ctrl+c" {
+		return m, tea.Quit
+	}
+	// Any key closes the help; it does nothing else.
+	if m.help {
+		m.help = false
+		return m, nil
+	}
+	if m.helpKey(key) {
+		m.help = true
+		return m, nil
+	}
+	if key == "q" && m.draft == nil {
 		return m, tea.Quit
 	}
 	if m.cmds != nil {
@@ -264,7 +277,7 @@ func (m Model) renderScreen() string {
 	// very bottom.
 	var strip string
 	switch {
-	case m.draft != nil || m.picking || m.input != nil || m.ending != nil || m.onboarding != nil:
+	case m.help || m.draft != nil || m.picking || m.input != nil || m.ending != nil || m.onboarding != nil:
 	case m.showWorkout() && m.workoutActive():
 		if w := m.workoutDefs[m.wk().GetId()]; w != nil && m.height >= 20 {
 			strip = workoutProfile(w, m.wk().GetElapsedS(), m.width, 4)
@@ -282,6 +295,8 @@ func (m Model) renderScreen() string {
 	tileW := m.width / 2
 	var body string
 	switch {
+	case m.help:
+		body = m.helpPanel(m.width, bodyH)
 	case m.onboarding != nil:
 		body = m.onboardPanel(m.width, bodyH)
 	case m.ending != nil:
@@ -465,12 +480,12 @@ func (m Model) keyHints() string {
 	var h []string
 	switch {
 	case m.draft != nil:
-		return dimStyle.Render("ctrl+c quit")
+		return dimStyle.Render("F1 help · ctrl+c quit")
 	case m.workoutActive():
-		return dimStyle.Render(fmt.Sprintf("+/- intensity %.0f%% · n skip · x x abort · q quit", m.wk().GetIntensityPct()))
+		return dimStyle.Render(fmt.Sprintf("+/- intensity %.0f%% · n skip · x x abort · %s · q quit", m.wk().GetIntensityPct(), helpHint))
 	case m.controlActive():
 		step := controlStep[m.control().GetMode()]
-		return dimStyle.Render(fmt.Sprintf("+/- %s · w watts · g grade · l level · x free ride · q quit", num(step)))
+		return dimStyle.Render(fmt.Sprintf("+/- %s · w ERG or workout · g grade · l level · x free ride · %s · q quit", num(step), helpHint))
 	case m.showWorkout():
 		h = append(h, "x close")
 	case m.rideActive():
@@ -481,7 +496,7 @@ func (m Model) keyHints() string {
 	case m.showRide():
 		h = append(h, "x close")
 	default:
-		h = append(h, "r ride", "w/g/l trainer")
+		h = append(h, "r ride", "w workout", "g/l trainer")
 		if need := missingText(m.profile()); need != "" {
 			h = append(h, "p add "+need)
 		} else if m.profile() != nil {
@@ -498,5 +513,5 @@ func (m Model) keyHints() string {
 		h = append(h, "C recalibrate")
 	}
 	h = append(h, fmt.Sprintf("+/- difficulty %.0f%%", m.difficulty()))
-	return dimStyle.Render(strings.Join(append(h, "q quit"), " · "))
+	return dimStyle.Render(strings.Join(append(h, helpHint, "q quit"), " · "))
 }

@@ -76,12 +76,16 @@ func (m Model) showRide() bool {
 // used the key.
 func (m Model) rideKey(key string) (Model, tea.Cmd, bool) {
 	if m.picking {
-		n := [numTabs]int{len(m.courseList), len(m.workoutList), len(m.results), len(m.activities)}[m.tab]
+		n := [numTabs]int{len(m.courseList), len(m.results), len(m.activities), len(m.workoutList) + 1}[m.tab]
 		switch key {
-		case "tab", "right", "l":
-			m.tab = (m.tab + 1) % numTabs
-		case "shift+tab", "left", "h":
-			m.tab = (m.tab + numTabs - 1) % numTabs
+		case "tab", "right":
+			if m.tab < rideTabs {
+				m.tab = (m.tab + 1) % rideTabs
+			}
+		case "shift+tab", "left":
+			if m.tab < rideTabs {
+				m.tab = (m.tab + rideTabs - 1) % rideTabs
+			}
 		case "up", "k":
 			m.pickIdx[m.tab] = max(0, m.pickIdx[m.tab]-1)
 		case "down", "j":
@@ -91,15 +95,22 @@ func (m Model) rideKey(key string) (Model, tea.Cmd, bool) {
 				return m, m.exportSelected(), true
 			}
 		case "enter":
-			if m.tab == tabActivities {
+			switch {
+			case m.tab == tabActivities:
+				// A course ride in it is raced; anything else is saved.
+				if r := m.activityResult(); r != nil {
+					return m.race(r)
+				}
 				return m, m.exportSelected(), true
+			case m.tab == tabHistory && n > 0:
+				return m.race(m.results[m.pickIdx[tabHistory]])
 			}
 			if m.tab == tabCourses && n > 0 {
 				id := m.courseList[m.pickIdx[tabCourses]].GetId()
 				m.picking = false
 				return m, m.command("start ride", func(ctx context.Context) error { return m.cmds.StartRide(ctx, id) }), true
 			}
-		case "esc", "r":
+		case "esc", "r", "w":
 			m.picking = false
 		}
 		return m, nil, true
@@ -119,9 +130,15 @@ func (m Model) rideKey(key string) (Model, tea.Cmd, bool) {
 			_, err := cmds.SetDifficulty(ctx, want)
 			return err
 		}), true
-	case key == "r" && !m.rideActive() && !m.workoutActive() && !m.calibrationActive() && m.countdown == 0:
+	case (key == "r" || key == "w") && !m.rideActive() && !m.workoutActive() && !m.calibrationActive() && m.countdown == 0:
 		m.notice = ""
 		m.picking = true
+		switch {
+		case key == "w":
+			m.tab = tabWorkouts
+		case m.tab == tabWorkouts:
+			m.tab = tabCourses
+		}
 		return m, tea.Batch(m.fetchCourses(false), m.fetchWorkouts(false), m.fetchResults(), m.fetchActivities()), true
 	case key == "x" && m.rideActive():
 		if m.now().Before(m.abortUntil) {
@@ -208,15 +225,18 @@ func (m Model) pickerPanel(width, height int) string {
 		}
 		return dimStyle.Render(name)
 	}
-	lines := []string{tabName(tabCourses, "COURSES") + "    " + tabName(tabWorkouts, "WORKOUTS") + "    " + tabName(tabHistory, "HISTORY") + "    " + tabName(tabActivities, "ACTIVITIES"), ""}
+	lines := []string{tabName(tabCourses, "COURSES") + "    " + tabName(tabHistory, "HISTORY") + "    " + tabName(tabActivities, "ACTIVITIES"), ""}
+	if m.tab == tabWorkouts {
+		lines[0] = tabName(tabWorkouts, "WORKOUTS")
+	}
 	var hint string
 	switch m.tab {
 	case tabHistory:
 		lines = append(lines, m.historyRows(height-6)...)
-		hint = "↑/↓ scroll · ★ fastest on that course from that start · tab activities · esc back"
+		hint = "↑/↓ choose · enter race that ride again · ★ fastest on that course from that start · tab activities · esc back"
 	case tabActivities:
 		lines = append(lines, m.activityRows(height-6)...)
-		hint = "↑/↓ choose · s save the FIT file to " + m.exportDir + " · tab courses · esc back"
+		hint = "↑/↓ choose · enter race that ride (course rides) · s save the FIT file to " + m.exportDir + " · tab courses · esc back"
 	case tabCourses:
 		for i, c := range m.courseList {
 			cursor := "  "
@@ -235,13 +255,13 @@ func (m Model) pickerPanel(width, height int) string {
 		if len(m.courseList) == 0 {
 			lines = append(lines, dimStyle.Render("  no courses: start the core with -courses DIR"))
 		}
-		hint = "↑/↓ choose · enter ride · tab workouts · esc back"
+		hint = "↑/↓ choose · enter ride · tab history · esc back"
 	default:
 		lines = append(lines, m.workoutRows(width)...)
 		if w := m.selectedWorkout(); w != nil && w.GetError() == "" {
 			lines = append(lines, "", workoutProfile(w, -1, min(width-4, 80), 4))
 		}
-		hint = fmt.Sprintf("↑/↓ choose · enter ride · n new · e edit · E edit as text · f FTP %.0f W · tab history · esc back", m.wk().GetFtpW())
+		hint = fmt.Sprintf("↑/↓ choose · enter start · n new · e edit · E edit as text · f FTP %.0f W · esc back", m.wk().GetFtpW())
 	}
 	lines = append(lines, "", dimStyle.Render(hint))
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center,

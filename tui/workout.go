@@ -21,13 +21,14 @@ const (
 	workoutShownFor = 10 * time.Second
 )
 
-// Picker tabs.
+// Picker tabs: r cycles through the ride tabs, w opens the workouts.
 const (
 	tabCourses = iota
-	tabWorkouts
 	tabHistory
 	tabActivities
+	tabWorkouts
 	numTabs
+	rideTabs = tabWorkouts
 )
 
 type workoutsMsg struct {
@@ -88,7 +89,7 @@ func (m Model) onWorkouts(msg workoutsMsg) (Model, tea.Cmd) {
 	for _, w := range msg.workouts {
 		m.workoutDefs[w.GetId()] = w
 	}
-	m.pickIdx[tabWorkouts] = min(m.pickIdx[tabWorkouts], max(0, len(msg.workouts)-1))
+	m.pickIdx[tabWorkouts] = min(m.pickIdx[tabWorkouts], len(msg.workouts)) // row 0 is fixed power
 	return m, nil
 }
 
@@ -130,6 +131,10 @@ func (m Model) workoutKey(key string) (Model, tea.Cmd, bool) {
 			}
 			return m, nil, true
 		case "enter":
+			if m.pickIdx[tabWorkouts] == 0 {
+				m.picking, m.input = false, m.ergPrompt()
+				return m, nil, true
+			}
 			w := m.selectedWorkout()
 			if w == nil {
 				return m, nil, true
@@ -177,8 +182,10 @@ func (m Model) workoutKey(key string) (Model, tea.Cmd, bool) {
 	return m, nil, false
 }
 
+// selectedWorkout is the workout under the cursor; nil on the fixed power
+// row above them.
 func (m Model) selectedWorkout() *pb.WorkoutDef {
-	if i := m.pickIdx[tabWorkouts]; i < len(m.workoutList) {
+	if i := m.pickIdx[tabWorkouts] - 1; i >= 0 && i < len(m.workoutList) {
 		return m.workoutList[i]
 	}
 	return nil
@@ -239,10 +246,18 @@ func avgTarget(w *pb.WorkoutDef) float64 {
 }
 
 func (m Model) workoutRows(width int) []string {
-	var rows []string
+	fixed := "Fixed power (ERG)"
+	if c := m.control(); c.GetMode() == pb.ControlMode_CONTROL_MODE_POWER {
+		fixed += fmt.Sprintf(": now %.0f W", c.GetTarget())
+	}
+	cursor, style := "  ", lipgloss.NewStyle()
+	if m.pickIdx[tabWorkouts] == 0 {
+		cursor, style = "▸ ", style.Bold(true).Foreground(lipgloss.Color("220"))
+	}
+	rows := []string{style.Render(fmt.Sprintf("%s%-34s %s", cursor, fixed, dimStyle.Render("hold one power, no workout")))}
 	for i, w := range m.workoutList {
 		cursor, style := "  ", lipgloss.NewStyle()
-		if i == m.pickIdx[tabWorkouts] {
+		if i+1 == m.pickIdx[tabWorkouts] {
 			cursor, style = "▸ ", style.Bold(true).Foreground(lipgloss.Color("220"))
 		}
 		if w.GetError() != "" {
@@ -252,7 +267,7 @@ func (m Model) workoutRows(width int) []string {
 		rows = append(rows, style.Render(fmt.Sprintf("%s%-34s %8s  ~%3.0f%% FTP",
 			cursor, truncate(w.GetName(), 34), clock(w.GetDurationS()), avgTarget(w)*100)))
 	}
-	if len(rows) == 0 {
+	if len(m.workoutList) == 0 {
 		rows = append(rows, dimStyle.Render("  no workouts yet: press n to write one, or drop .zwo files in the library folder"))
 	}
 	return rows

@@ -18,6 +18,8 @@ type Commands interface {
 	CancelCalibration(ctx context.Context) error
 	ListCourses(ctx context.Context) ([]*pb.Course, error)
 	StartRide(ctx context.Context, courseID string) error
+	// StartRideAgainst races an earlier ride, by when it finished.
+	StartRideAgainst(ctx context.Context, courseID string, finishedUnixMs int64) error
 	StopRide(ctx context.Context) error
 	SetDifficulty(ctx context.Context, pct float64) (float64, error)
 	ListWorkouts(ctx context.Context) ([]*pb.WorkoutDef, error)

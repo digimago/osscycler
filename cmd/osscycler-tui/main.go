@@ -153,6 +153,11 @@ func (c commands) StartRide(ctx context.Context, id string) error {
 	return err
 }
 
+func (c commands) StartRideAgainst(ctx context.Context, id string, finishedUnixMs int64) error {
+	_, err := c.c.StartRide(ctx, &pb.StartRideRequest{CourseId: id, AgainstFinishedUnixMs: &finishedUnixMs})
+	return err
+}
+
 func (c commands) StopRide(ctx context.Context) error {
 	_, err := c.c.StopRide(ctx, &pb.StopRideRequest{})
 	return err

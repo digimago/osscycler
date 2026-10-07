@@ -63,6 +63,35 @@ export OTEL_EXPORTER_OTLP_METRICS_ENDPOINT = http://prometheus:9090/api/v1/otlp/
 The rider's real settings live in the profile, set through onboarding;
 the demo uses its own in `_demo/`.
 
+## Branches
+
+- `develop` is where work goes, and GitHub's default branch: open pull
+  requests against it. It takes a change once the `check` workflow has
+  passed on it.
+- `main` holds releases only. It takes a pull request from a
+  `release/X.Y` or `hotfix/X.Y.Z` branch of this repository, merged with
+  a merge commit (not squashed or rebased), once `check` and
+  `release-branch` have passed.
+- Neither can be deleted or force-pushed, and release tags (`v*`) can't
+  be moved or deleted.
+
+A release, step by step:
+
+```sh
+git switch -c release/0.3 origin/develop     # notes/v0.3.0.md, last fixes
+git push -u origin release/0.3               # then a pull request into main
+# merge it with a merge commit, then tag that merge on main:
+git switch main && git pull
+git tag -a v0.3.0 -m "osscycler 0.3.0" && git push origin v0.3.0
+# check the draft release on GitHub, then publish it
+git switch develop && git pull && git merge --ff-only main && git push
+```
+
+Bringing `develop` up to `main` afterwards puts the tag in its history,
+so `git describe` (and the version of builds from `develop`) moves on. A
+hotfix goes the same way from `main` on a `hotfix/0.3.1` branch, into
+`main` and then into `develop`.
+
 ## Checks
 
 `make check` runs gofmt, vet, staticcheck and the race-enabled tests;

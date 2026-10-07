@@ -112,12 +112,14 @@ On the dashboard you see power, heart rate, cadence and speed.
 
 | Key | Does |
 | --- | --- |
-| `r` | Open the picker: COURSES, WORKOUTS, HISTORY, ACTIVITIES (`tab` switches) |
+| `r` | Rides: COURSES, HISTORY, ACTIVITIES (`tab` switches) |
+| `w` | Workouts, with a fixed power (ERG) at the top |
 | `+` / `-` | Trainer difficulty on courses, in 10 % steps (50 % is Zwift's default) |
-| `w` / `g` / `l` | Free riding at a fixed power (watts), grade (%) or resistance level (%) |
+| `g` / `l` | Free riding at a fixed grade (%) or resistance level (%) |
 | `p` | Your profile: weight and FTP |
 | `c` / `C` | Spin-down calibration: when the trainer asks / any time |
 | `e` | End the ride, outside a course ride or workout: save it (`enter`) or discard it (`d d`) |
+| `?` / `h` / F1 | Every key for the screen you're on |
 | `q` | Quit the screen (the core keeps running) |
 
 **Course rides.** Pick a course and press `enter`; the clock starts when
@@ -129,14 +131,18 @@ under the time, and your ghost rides ahead of you on the road. `x`
 twice aborts; an aborted ride is still recorded, but only a ride that
 crosses the line counts for your best time.
 
-**Workouts.** Pick one in WORKOUTS and press `enter`; the trainer holds
-each target. `+` / `-` adjust the intensity in 1 % steps, `n` skips to
+**Workouts.** Press `w`, pick a workout and press `enter`; the trainer
+holds each target. The first entry, Fixed power, just holds the watts
+you type. `+` / `-` adjust the intensity in 1 % steps, `n` skips to
 the next part, `x` twice aborts. To write a workout press `n` (new) or
 `e` (edit) for the editor, or `E` to edit it as text in your own editor.
 To use Zwift workouts, copy your `.zwo` files into the workouts folder.
 
 **History.** HISTORY lists your course rides with your personal bests
 (★). A personal best counts for the same course from the same start.
+Press `enter` on any ride to ride that course again with that ride as
+your ghost, from where it started. In ACTIVITIES, `enter` does the same
+for a recorded course ride.
 
 ## Your rides and settings
 

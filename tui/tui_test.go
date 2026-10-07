@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -1373,5 +1374,62 @@ func TestHelp(t *testing.T) {
 	}
 	if m2 := pressAll(m, "f1"); !m2.help {
 		t.Error("F1 didn't open the help while typing")
+	}
+}
+
+func TestCadenceAverage(t *testing.T) {
+	clock := time.Unix(1000, 0)
+	m := calModel(&stubCommands{})
+	m.now = func() time.Time { return clock }
+	m.cadence = nil
+	feed := func(rpm int, valid bool, after time.Duration) {
+		clock = clock.Add(after)
+		st := sample()
+		st.Trainer.CadenceRpm = nil
+		if valid {
+			c := uint32(rpm)
+			st.Trainer.CadenceRpm = &c
+		}
+		next, _ := m.Update(StateMsg{State: st})
+		m = next.(Model)
+	}
+	if _, ok := m.cadenceAvg(); ok {
+		t.Error("an average without readings")
+	}
+	// 80 rpm for 4 s, then 100 rpm for the last second: 84.
+	feed(80, true, 0)
+	feed(80, true, 2*time.Second)
+	feed(100, true, 2*time.Second)
+	clock = clock.Add(time.Second)
+	if got, ok := m.cadenceAvg(); !ok || math.Abs(got-84) > 0.01 {
+		t.Errorf("average %.2f, %v; want 84", got, ok)
+	}
+	// Older readings fall out of the window; invalid ones don't count.
+	feed(0, false, 10*time.Second)
+	clock = clock.Add(time.Second)
+	if got, ok := m.cadenceAvg(); !ok || got != 100 {
+		t.Errorf("after a gap: %.2f, %v; want the 100 that held into the window", got, ok)
+	}
+	if len(m.cadence) > 3 {
+		t.Errorf("%d readings kept", len(m.cadence))
+	}
+}
+
+func TestCadenceTiles(t *testing.T) {
+	cmds := &stubCommands{courses: []*pb.Course{hillCourse()}}
+	m := run(press(calModel(cmds), "r"))
+	m.picking = false
+	next, _ := m.Update(StateMsg{State: rideState(pb.RidePhase_RIDE_PHASE_RIDING, 100)})
+	m = next.(Model)
+	for _, tiles := range []bool{false, true} { // road view and big numbers
+		m.tiles = tiles
+		if out := plain(m.render()); !strings.Contains(out, "CADENCE 5s") {
+			t.Errorf("ride (tiles %v) lacks the cadence:\n%s", tiles, out)
+		}
+	}
+	st := workoutState(pb.WorkoutPhase_WORKOUT_PHASE_RUNNING, 300)
+	next, _ = calModel(&stubCommands{workouts: []*pb.WorkoutDef{testWorkoutDef(t)}}).Update(StateMsg{State: st})
+	if out := plain(next.(Model).render()); !strings.Contains(out, "CADENCE 5s") || !strings.Contains(out, "aim 90") {
+		t.Errorf("workout lacks the cadence and its aim:\n%s", out)
 	}
 }

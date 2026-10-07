@@ -289,31 +289,15 @@ func (m Model) rideBody(width, height int) string {
 		tilesH++ // JoinVertical of an empty string still takes a line
 	}
 
-	grade := r.GetGradePct()
-	ms := []metric{
-		m.metrics()[0], // power
-		{"GRADE", fmt.Sprintf("%.1f", grade), "%", lipgloss.NewStyle().Foreground(gradeColor(grade)), nil},
-		m.timeTile(),
-		{"TO GO", fmt.Sprintf("%.2f", math.Max(0, r.GetCourseDistanceM()-r.GetDistanceM())/1000), "km", speedStyle, nil},
-	}
+	ms := m.screenTiles(screenRide)
 	if sc := m.roadScene(); sc != nil && !m.tiles {
 		if body := m.roadBody(sc, ms, width, tilesH, info, profile); body != "" {
 			return body
 		}
 	}
-	var tiles string
-	tileH, tileW := tilesH/2, width/2
-	if tileH >= BigHeight+3 && tileW >= 30 {
-		tiles = lipgloss.JoinVertical(lipgloss.Left,
-			lipgloss.JoinHorizontal(lipgloss.Top, bigTile(ms[0], tileW, tileH), bigTile(ms[1], width-tileW, tileH)),
-			lipgloss.JoinHorizontal(lipgloss.Top, bigTile(ms[2], tileW, tilesH-tileH), bigTile(ms[3], width-tileW, tilesH-tileH)))
-	} else {
-		var b strings.Builder
-		for _, mt := range ms {
-			fmt.Fprintf(&b, "%s %s %s\n", labelStyle.Render(fmt.Sprintf("%-6s", mt.label)),
-				mt.style.Bold(true).Render(fmt.Sprintf("%8s", mt.value)), unitStyle.Render(mt.unit))
-		}
-		tiles = lipgloss.Place(width, max(tilesH, 4), lipgloss.Center, lipgloss.Center, b.String())
+	tiles := m.grid(ms, width, tilesH)
+	if tiles == "" {
+		tiles = tileList(ms, 10, width, max(tilesH, 4))
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, tiles, info, profile)
 }
@@ -323,23 +307,33 @@ func (m Model) rideBody(width, height int) string {
 // height is what the tiles would get.
 func (m Model) roadBody(sc *roadScene, ms []metric, width, height int, info, profile string) string {
 	const minRoad = 8
-	// Big digits when they fit across a quarter of the width and leave the
-	// road at least half the space; one line of numbers otherwise.
-	tileW := width / 4
-	big := height-(BigHeight+2) >= max(minRoad, height/2)
-	for _, mt := range ms {
-		if lipgloss.Width(Big(mt.value))+2 > tileW {
-			big = false
+	// The largest digits that fit side by side and leave the road at
+	// least half the space; one line of numbers otherwise.
+	tileW := width / len(ms)
+	fits := func(size digitSize) bool {
+		if height-(size.height()+2) < max(minRoad, height/2) {
+			return false
 		}
+		for _, mt := range ms {
+			if lipgloss.Width(size.render(mt.value))+2 > tileW || lipgloss.Width(mt.label)+2 > tileW || lipgloss.Width(mt.unit)+2 > tileW {
+				return false
+			}
+		}
+		return true
 	}
 	var row string
-	if big {
+	for _, size := range m.sizes() {
+		if !fits(size) {
+			continue
+		}
 		tiles := make([]string, len(ms))
 		for i, mt := range ms {
-			tiles[i] = bigTile(mt, tileW+boolInt(i < width%4), BigHeight+2)
+			tiles[i] = bigTile(mt, tileW+boolInt(i < width%len(ms)), size.height()+2, size)
 		}
 		row = lipgloss.JoinHorizontal(lipgloss.Top, tiles...)
-	} else {
+		break
+	}
+	if row == "" {
 		parts := make([]string, len(ms))
 		for i, mt := range ms {
 			parts[i] = labelStyle.Render(mt.label) + " " + mt.style.Bold(true).Render(mt.value) + " " + unitStyle.Render(mt.unit)

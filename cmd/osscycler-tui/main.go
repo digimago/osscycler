@@ -39,6 +39,7 @@ func run() error {
 	caFile := flag.String("tls-ca", "", "CA certificate to verify the core; enables TLS")
 	rate := flag.Uint("rate", 10, "maximum updates per second")
 	exportDir := flag.String("export-dir", defaultExportDir(), "where s in the ACTIVITIES tab saves a ride's FIT file")
+	layoutFile := flag.String("layout", filepath.Join(home.Dir(), "tui.json"), "where the tile arrangement (o) and digit size (z) are kept")
 	tour := flag.Bool("tour", false, "demo: walk through the features automatically (any key takes over); made for a core started with -fake")
 	flag.Parse()
 
@@ -79,6 +80,12 @@ func run() error {
 	defer cancel()
 	client := pb.NewTelemetryServiceClient(conn)
 	model := tui.New(*addr, commands{client}).WithExportDir(*exportDir)
+	if l, err := tui.LoadLayout(*layoutFile); err != nil {
+		// Never overwrite a file we can't read: arrange for this session only.
+		model = model.WithLayout(tui.Layout{}, "").WithNotice("tile layout not loaded, changes won't be saved: " + err.Error())
+	} else {
+		model = model.WithLayout(l, *layoutFile)
+	}
 	var t *tui.Tour
 	if *tour {
 		t = tui.NewTour()

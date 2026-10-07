@@ -53,3 +53,69 @@ func Big(s string) string {
 	}
 	return strings.Join(lines, "\n")
 }
+
+// MediumHeight is the number of lines Medium returns.
+const MediumHeight = 3
+
+// Medium renders s in the same font at about half the size: a pixel per
+// cell, two pixel rows per line in half blocks.
+func Medium(s string) string {
+	var rows [MediumHeight]strings.Builder
+	first := true
+	for _, r := range s {
+		g, ok := glyphs[r]
+		if !ok {
+			continue
+		}
+		for i := range rows {
+			if !first {
+				rows[i].WriteString(" ")
+			}
+			top := g[2*i]
+			bottom := strings.Repeat(" ", len(top))
+			if 2*i+1 < len(g) {
+				bottom = g[2*i+1]
+			}
+			for x := range len(top) {
+				switch t, b := top[x] == '#', bottom[x] == '#'; {
+				case t && b:
+					rows[i].WriteString("█")
+				case t:
+					rows[i].WriteString("▀")
+				case b:
+					rows[i].WriteString("▄")
+				default:
+					rows[i].WriteString(" ")
+				}
+			}
+		}
+		first = false
+	}
+	lines := make([]string, MediumHeight)
+	for i := range rows {
+		lines[i] = rows[i].String()
+	}
+	return strings.Join(lines, "\n")
+}
+
+// digitSize is how big tiles draw their numbers.
+type digitSize int
+
+const (
+	sizeLarge  digitSize = iota // Big
+	sizeMedium                  // Medium
+)
+
+func (s digitSize) render(v string) string {
+	if s == sizeMedium {
+		return Medium(v)
+	}
+	return Big(v)
+}
+
+func (s digitSize) height() int {
+	if s == sizeMedium {
+		return MediumHeight
+	}
+	return BigHeight
+}

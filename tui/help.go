@@ -26,7 +26,18 @@ func (m Model) helpKey(key string) bool {
 // helpContext names the screen and lists its keys.
 func (m Model) helpContext() (string, []helpEntry) {
 	always := []helpEntry{{"? h F1", "this help (any key closes it)"}, {"ctrl+c", "quit"}}
+	layout := []helpEntry{{"o", "arrange the tiles on this screen"}, {"z", "digit size: large or medium (medium fits more tiles)"}}
 	switch {
+	case m.arranging != nil:
+		return "TILES", append([]helpEntry{
+			{"↑ ↓  k j", "choose"},
+			{"J / K", "move the tile down / up (the order on screen)"},
+			{"space  x", "show or hide it"},
+			{"r", "back to the defaults"},
+			{"z", "digit size: large or medium"},
+			{"enter", "save"},
+			{"esc  o", "cancel"},
+		}, always...)
 	case m.onboarding != nil:
 		return "YOUR PROFILE", append([]helpEntry{
 			{"0-9 .", "type the value"}, {"backspace", "delete a digit"},
@@ -93,12 +104,14 @@ func (m Model) helpContext() (string, []helpEntry) {
 			{"+ / -", fmt.Sprintf("intensity in 1 %% steps (now %.0f %%)", m.wk().GetIntensityPct())},
 			{"n", "skip to the next part"},
 			{"x x", "abort the workout"},
+			layout[0], layout[1],
 			{"q", "quit the screen (the workout goes on in the core)"},
 		}, always...)
 	case m.showRide() && m.rideActive():
 		return "COURSE RIDE", append([]helpEntry{
 			{"+ / -", fmt.Sprintf("trainer difficulty in 10 %% steps (now %.0f %%)", m.difficulty())},
 			{"v", "road view or big numbers"},
+			layout[0], layout[1],
 			{"x x", "abort the ride (still recorded; only a finished ride counts as a ghost)"},
 			{"q", "quit the screen (the ride goes on in the core)"},
 		}, always...)
@@ -122,6 +135,7 @@ func (m Model) helpContext() (string, []helpEntry) {
 		{"+ / -", "trainer difficulty on courses, in 10 % steps"},
 		{"c / C", "spin-down calibration: when the trainer asks / any time"},
 		{"e", "end the ride: save or discard the recording"},
+		layout[0], layout[1],
 		{"q", "quit the screen (the core keeps running)"},
 	}, always...)
 }

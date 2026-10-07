@@ -64,6 +64,12 @@ type Model struct {
 	posErr    float64               // shown minus reported then, blended out
 	animating bool                  // a frame tick is pending
 	help      bool                  // the key help is open
+	cadence   []cadenceSample       // recent readings, for the averaged tile
+	// z: medium digits even where large ones would fit.
+	mediumDigits bool
+	layout       Layout     // the rider's tile arrangement
+	layoutPath   string     // where it is saved; "" for this session only
+	arranging    *arranging // the tile editor (o)
 }
 
 // frameMsg asks for the next frame of the road view.
@@ -120,6 +126,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onProfileSaved(msg)
 	case countdownMsg:
 		return m.onCountdown(msg)
+	case layoutSavedMsg:
+		if msg.err != nil {
+			m.notice = "saving the tile layout failed: " + msg.err.Error()
+		}
 	case commandMsg:
 		if msg.err != nil {
 			m.notice = msg.what + " failed: " + friendlyErr(msg.err)
@@ -134,6 +144,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case StateMsg:
 		shown, old := m.ridePos(), m.ride()
 		m.st, m.connected, m.connErr = msg.State, true, nil
+		m = m.withCadence(m.now())
 		if r := m.ride(); r.GetDistanceM() != old.GetDistanceM() || r.GetPhase() != old.GetPhase() {
 			// Carry the position forward from here; blend out the difference
 			// from what was shown rather than jumping.
@@ -230,6 +241,9 @@ func (m Model) handleKey(key string) (tea.Model, tea.Cmd) {
 		m.help = true
 		return m, nil
 	}
+	if next, cmd, ok := m.layoutKey(key); ok {
+		return next, cmd
+	}
 	if key == "q" && m.draft == nil {
 		return m, tea.Quit
 	}
@@ -271,13 +285,13 @@ func (m Model) renderScreen() string {
 		return ""
 	}
 	footer := m.footer()
-	ms := m.metrics()
+	ms := m.screenTiles(screenDashboard)
 
 	// The grade strip (rides) or workout profile (workouts) sits at the
 	// very bottom.
 	var strip string
 	switch {
-	case m.help || m.draft != nil || m.picking || m.input != nil || m.ending != nil || m.onboarding != nil:
+	case m.help || m.arranging != nil || m.draft != nil || m.picking || m.input != nil || m.ending != nil || m.onboarding != nil:
 	case m.showWorkout() && m.workoutActive():
 		if w := m.workoutDefs[m.wk().GetId()]; w != nil && m.height >= 20 {
 			strip = workoutProfile(w, m.wk().GetElapsedS(), m.width, 4)
@@ -291,12 +305,12 @@ func (m Model) renderScreen() string {
 	if strip != "" {
 		bodyH -= lipgloss.Height(strip)
 	}
-	tileH := bodyH / 2
-	tileW := m.width / 2
 	var body string
 	switch {
 	case m.help:
 		body = m.helpPanel(m.width, bodyH)
+	case m.arranging != nil:
+		body = m.arrangePanel(m.width, bodyH)
 	case m.onboarding != nil:
 		body = m.onboardPanel(m.width, bodyH)
 	case m.ending != nil:
@@ -314,13 +328,8 @@ func (m Model) renderScreen() string {
 		body = m.rideBody(m.width, bodyH)
 	case m.countdown > 0 || m.calibrationActive() || m.showResult():
 		body = m.calibrationPanel(m.width, bodyH)
-	case tileH >= BigHeight+3 && tileW >= 30:
-		var rows []string
-		for i := 0; i < len(ms); i += 2 {
-			rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
-				bigTile(ms[i], tileW, tileH), bigTile(ms[i+1], m.width-tileW, tileH)))
-		}
-		body = lipgloss.JoinVertical(lipgloss.Left, rows...)
+	case m.grid(ms, m.width, bodyH) != "":
+		body = m.grid(ms, m.width, bodyH)
 	default:
 		body = m.compact(ms)
 	}
@@ -330,14 +339,34 @@ func (m Model) renderScreen() string {
 	return lipgloss.JoinVertical(lipgloss.Left, body, footer)
 }
 
-func bigTile(mt metric, w, h int) string {
+// sizes are the digit sizes tiles may use, largest first: z keeps them
+// medium.
+func (m Model) sizes() []digitSize {
+	if m.mediumDigits {
+		return []digitSize{sizeMedium}
+	}
+	return []digitSize{sizeLarge, sizeMedium}
+}
+
+// grid lays metrics out as tiles with the largest digits that fit; empty
+// when none do.
+func (m Model) grid(ms []metric, width, height int) string {
+	for _, size := range m.sizes() {
+		if g := tileGrid(ms, width, height, size); g != "" {
+			return g
+		}
+	}
+	return ""
+}
+
+func bigTile(mt metric, w, h int, size digitSize) string {
 	us := unitStyle
 	if mt.unitStyle != nil {
 		us = *mt.unitStyle
 	}
 	content := lipgloss.JoinVertical(lipgloss.Center,
 		labelStyle.Render(mt.label),
-		mt.style.Render(Big(mt.value)),
+		mt.style.Render(size.render(mt.value)),
 		us.Render(mt.unit))
 	return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, content)
 }

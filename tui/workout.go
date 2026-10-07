@@ -283,36 +283,10 @@ func (m Model) workoutBody(width, height int) string {
 	info := m.workoutInfo(width)
 	tilesH := height - lipgloss.Height(info)
 
-	target, targetStyle := fmt.Sprintf("%.0f", p.GetTargetW()), lipgloss.NewStyle().Foreground(zoneColor(p.GetTargetW()/p.GetFtpW()))
-	if p.GetFree() {
-		target, targetStyle = "FREE", dimStyle
-		if strings.HasPrefix(p.GetSegmentLabel(), "Max") {
-			target = "MAX"
-		}
-	}
-	ms := m.metrics()
-	tiles := []metric{
-		{"TARGET", target, "W", targetStyle, nil},
-		ms[0], // power
-		{strings.ToUpper(p.GetSegmentLabel()), clock(p.GetSegmentRemainingS()), "left", lipgloss.NewStyle(), nil},
-		ms[1], // heart rate
-	}
-	if target == "FREE" || target == "MAX" {
-		tiles[0].value, tiles[0].unit = "--", target // the block font has no letters
-	}
-	tileH, tileW := tilesH/2, width/2
-	var body string
-	if tileH >= BigHeight+3 && tileW >= 30 {
-		body = lipgloss.JoinVertical(lipgloss.Left,
-			lipgloss.JoinHorizontal(lipgloss.Top, bigTile(tiles[0], tileW, tileH), bigTile(tiles[1], width-tileW, tileH)),
-			lipgloss.JoinHorizontal(lipgloss.Top, bigTile(tiles[2], tileW, tilesH-tileH), bigTile(tiles[3], width-tileW, tilesH-tileH)))
-	} else {
-		var b strings.Builder
-		for _, mt := range tiles {
-			fmt.Fprintf(&b, "%s %s %s\n", labelStyle.Render(fmt.Sprintf("%-18s", truncate(mt.label, 18))),
-				mt.style.Bold(true).Render(fmt.Sprintf("%7s", mt.value)), unitStyle.Render(mt.unit))
-		}
-		body = lipgloss.Place(width, max(tilesH, 4), lipgloss.Center, lipgloss.Center, b.String())
+	tiles := m.screenTiles(screenWorkout)
+	body := m.grid(tiles, width, tilesH)
+	if body == "" {
+		body = tileList(tiles, 18, width, max(tilesH, 4))
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, body, info)
 }

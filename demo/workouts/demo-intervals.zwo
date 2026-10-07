@@ -1,0 +1,20 @@
+<workout_file>
+    <author>osscycler demo</author>
+    <name>Demo intervals</name>
+    <description></description>
+    <sportType>bike</sportType>
+    <tags/>
+    <workout>
+        <Warmup Duration="60" PowerLow="0.5" PowerHigh="0.7">
+            <textevent timeoffset="5" message="Welcome to the demo workout"/>
+        </Warmup>
+        <IntervalsT Repeat="3" OnDuration="20" OffDuration="20" OnPower="1.15" OffPower="0.6" Cadence="95">
+            <textevent timeoffset="2" message="Surge!"/>
+        </IntervalsT>
+        <Ramp Duration="40" PowerLow="0.6" PowerHigh="1"/>
+        <FreeRide Duration="30" FlatRoad="1">
+            <textevent timeoffset="3" message="Free ride: your effort, no ERG"/>
+        </FreeRide>
+        <Cooldown Duration="60" PowerLow="0.7" PowerHigh="0.45"/>
+    </workout>
+</workout_file>

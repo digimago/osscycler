@@ -1,0 +1,56 @@
+# Release builds: the ANT+ network key comes from the repository secret
+# ANT_PLUS_NETWORK_KEY and is compiled into the binaries (make release);
+# it never appears in the source, which a test checks with the same secret.
+#
+#   push a tag v*        → make check, make release, GitHub release with the
+#                          Linux tar.gz/.deb/.rpm, macOS universal tar.gz
+#                          and SHA256SUMS
+#   run manually         → the same build, archives kept as workflow artifacts only
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write # creating the release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      ANT_PLUS_NETWORK_KEY: ${{ secrets.ANT_PLUS_NETWORK_KEY }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # git describe needs the tags
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Check (including that the key isn't in the source)
+        run: make check
+
+      - name: Build release archives
+        run: |
+          if [[ $GITHUB_REF == refs/tags/v* ]]; then
+            make release VERSION="$GITHUB_REF_NAME"
+          else
+            make release # named by git describe
+          fi
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" _dist/* --generate-notes
+
+      - name: Keep the archives (manual runs)
+        if: "!startsWith(github.ref, 'refs/tags/v')"
+        uses: actions/upload-artifact@v5
+        with:
+          name: osscycler-${{ github.sha }}
+          path: _dist/
+          retention-days: 7

@@ -1,0 +1,634 @@
+syntax = "proto3";
+
+package osscycler.v1;
+
+option go_package = "github.com/digimago/osscycler/gen/osscycler/v1;osscyclerv1";
+
+// TelemetryService streams the core's view of the ride to renderers.
+//
+// Every call must carry "authorization: Bearer <token>" metadata.
+service TelemetryService {
+  // StreamState sends the current state immediately, then every change.
+  // Updates are conflated: a slow client always gets the newest state and
+  // never a backlog, and never slows the core down.
+  rpc StreamState(StreamStateRequest) returns (stream StreamStateResponse);
+
+  // StartCalibration asks the trainer to calibrate. It returns once the
+  // trainer has acknowledged the request; progress and the result appear in
+  // Trainer.calibration. FAILED_PRECONDITION if the trainer is not
+  // connected or a calibration is already running.
+  rpc StartCalibration(StartCalibrationRequest) returns (StartCalibrationResponse);
+
+  // CancelCalibration abandons a calibration in progress.
+  rpc CancelCalibration(CancelCalibrationRequest) returns (CancelCalibrationResponse);
+
+  // ListCourses returns the courses the core can ride, with their profiles.
+  rpc ListCourses(ListCoursesRequest) returns (ListCoursesResponse);
+
+  // StartRide arms a ride on a course; the clock starts at the first pedal
+  // stroke. FAILED_PRECONDITION if a ride is under way, NOT_FOUND for an
+  // unknown course.
+  rpc StartRide(StartRideRequest) returns (StartRideResponse);
+
+  // StopRide aborts a ride under way, or dismisses a finished one.
+  rpc StopRide(StopRideRequest) returns (StopRideResponse);
+
+  // SetDifficulty sets the share of climbs the trainer applies, 0-100 %,
+  // clamped. It applies to the ride under way and the ones after it.
+  rpc SetDifficulty(SetDifficultyRequest) returns (SetDifficultyResponse);
+
+  // ListWorkouts returns the workout library, rescanned on every call.
+  rpc ListWorkouts(ListWorkoutsRequest) returns (ListWorkoutsResponse);
+
+  // SaveWorkout writes a workout to the library: over an existing ID, or
+  // under a new ID derived from its name when id is empty.
+  // INVALID_ARGUMENT for an invalid workout or ID.
+  rpc SaveWorkout(SaveWorkoutRequest) returns (SaveWorkoutResponse);
+
+  // StartWorkout arms an ERG workout; the clock starts at the first pedal
+  // stroke. FAILED_PRECONDITION if a workout or course ride is under way.
+  rpc StartWorkout(StartWorkoutRequest) returns (StartWorkoutResponse);
+
+  // StopWorkout aborts a workout under way, or dismisses a finished one.
+  rpc StopWorkout(StopWorkoutRequest) returns (StopWorkoutResponse);
+
+  // SkipSegment jumps to the next segment of the workout.
+  rpc SkipSegment(SkipSegmentRequest) returns (SkipSegmentResponse);
+
+  // SetIntensity scales all workout targets (100 = as written), clamped
+  // to 50-150 %.
+  rpc SetIntensity(SetIntensityRequest) returns (SetIntensityResponse);
+
+  // SetFtp sets the FTP workout targets are relative to, clamped to
+  // 50-600 W.
+  rpc SetFtp(SetFtpRequest) returns (SetFtpResponse);
+
+  // EndActivity ends the ride being recorded, like Zwift's "End ride":
+  // saved by default, or discarded (the file is deleted). Refused during
+  // a course ride or workout. Until the rider stops, no new recording
+  // starts.
+  rpc EndActivity(EndActivityRequest) returns (EndActivityResponse);
+
+  // ListResults lists finished course rides, newest first, with each
+  // stretch's personal best marked (the fastest on a course from a given
+  // start point).
+  rpc ListResults(ListResultsRequest) returns (ListResultsResponse);
+
+  // SetProfile changes the rider's weight and/or FTP and saves them
+  // (onboarding, or editing later). A weight change reaches the trainer
+  // at once and the simulation from the next ride. Out-of-range values
+  // are INVALID_ARGUMENT.
+  rpc SetProfile(SetProfileRequest) returns (SetProfileResponse);
+
+  // ListActivities lists the finished recordings (FIT files) on the
+  // core, newest first.
+  rpc ListActivities(ListActivitiesRequest) returns (ListActivitiesResponse);
+
+  // ExportActivity streams a recording's FIT file, so a renderer on
+  // another machine can save it: the first message carries the size,
+  // then chunks follow in order. Unknown names are NOT_FOUND.
+  rpc ExportActivity(ExportActivityRequest) returns (stream ExportActivityResponse);
+
+  // SetTrainerControl takes manual control of the trainer outside course
+  // rides and workouts, or changes its target: ERG watts (25-1000), a
+  // grade (-10 % to the trainer's maximum) or a brake level (0-100 %).
+  // Values are clamped; the response has the one in effect. Refused
+  // (FAILED_PRECONDITION) while a course ride or workout runs, and they are
+  // refused while manual control is on.
+  rpc SetTrainerControl(SetTrainerControlRequest) returns (SetTrainerControlResponse);
+
+  // ReleaseTrainerControl ends manual control; the trainer is set flat.
+  rpc ReleaseTrainerControl(ReleaseTrainerControlRequest) returns (ReleaseTrainerControlResponse);
+}
+
+message SetTrainerControlRequest {
+  oneof target {
+    double power_w = 1;
+    double grade_pct = 2;
+    double level_pct = 3;
+  }
+}
+
+message SetTrainerControlResponse {
+  ControlMode mode = 1;
+  double target = 2;
+}
+
+message ReleaseTrainerControlRequest {}
+
+message ReleaseTrainerControlResponse {}
+
+message ListActivitiesRequest {}
+
+message ListActivitiesResponse {
+  repeated Activity activities = 1;
+}
+
+message Activity {
+  // File name; pass it to ExportActivity.
+  string name = 1;
+  int64 size_bytes = 2;
+  int64 start_unix_ms = 3;
+  double elapsed_s = 4;
+  // Riding time, pauses left out.
+  double timer_s = 5;
+  double distance_m = 6;
+  double avg_power_w = 7;
+  // Includes course rides (FIT sub-sport virtual_activity).
+  bool virtual = 8;
+  uint32 laps = 9;
+  // Why the file can't be read; the summary is empty then.
+  string error = 10;
+}
+
+message ExportActivityRequest {
+  string name = 1;
+}
+
+message ExportActivityResponse {
+  // In the first message only.
+  int64 size_bytes = 1;
+  bytes chunk = 2;
+}
+
+message SetProfileRequest {
+  optional double weight_kg = 1;
+  optional double ftp_w = 2;
+}
+
+message SetProfileResponse {
+  RiderProfile profile = 1;
+}
+
+message ListResultsRequest {}
+
+message ListResultsResponse {
+  repeated RideResult results = 1;
+}
+
+message RideResult {
+  int64 finished_unix_ms = 1;
+  string course_id = 2;
+  string course_name = 3;
+  // Where on the course the ride began; 0 is the start.
+  double start_m = 4;
+  // Distance ridden: from start_m to the finish.
+  double distance_m = 5;
+  double elapsed_s = 6;
+  double avg_power_w = 7;
+  double climbed_m = 8;
+  double difficulty_pct = 9;
+  // The fastest ride on this stretch.
+  bool personal_best = 10;
+}
+
+message EndActivityRequest {
+  // Delete the recording instead of saving it.
+  bool discard = 1;
+}
+
+message EndActivityResponse {
+  // Name of the saved file; empty when discarded.
+  string file = 1;
+}
+
+message WorkoutText {
+  double offset_s = 1;
+  string message = 2;
+}
+
+// WorkoutBlock is a block as authored. type is the .zwo element name:
+// Warmup, SteadyState, Ramp, Cooldown, IntervalsT, FreeRide or MaxEffort.
+// Powers are fractions of FTP.
+message WorkoutBlock {
+  string type = 1;
+  double duration_s = 2;
+  double power = 3;
+  double power_low = 4;
+  double power_high = 5;
+  uint32 repeat = 6;
+  double on_duration_s = 7;
+  double off_duration_s = 8;
+  double on_power = 9;
+  double off_power = 10;
+  uint32 cadence = 11;
+  repeated WorkoutText texts = 12;
+}
+
+// WorkoutSegment is a stretch of the flattened timeline, for drawing.
+message WorkoutSegment {
+  bool free = 1;
+  double start_s = 2;
+  double duration_s = 3;
+  double from_ftp = 4;
+  double to_ftp = 5;
+  string label = 6;
+  uint32 cadence = 7;
+}
+
+message WorkoutDef {
+  string id = 1;
+  string name = 2;
+  string author = 3;
+  string description = 4;
+  repeated WorkoutBlock blocks = 5;
+  // Derived; ignored by SaveWorkout.
+  double duration_s = 6;
+  repeated WorkoutSegment timeline = 7;
+  // Set when the file is in the library but doesn't load.
+  string error = 8;
+}
+
+message ListWorkoutsRequest {}
+
+message ListWorkoutsResponse {
+  repeated WorkoutDef workouts = 1;
+}
+
+message SaveWorkoutRequest {
+  string id = 1;
+  WorkoutDef workout = 2;
+}
+
+message SaveWorkoutResponse {
+  string id = 1;
+}
+
+message StartWorkoutRequest {
+  string id = 1;
+}
+
+message StartWorkoutResponse {}
+
+message StopWorkoutRequest {}
+
+message StopWorkoutResponse {}
+
+message SkipSegmentRequest {}
+
+message SkipSegmentResponse {}
+
+message SetIntensityRequest {
+  double intensity_pct = 1;
+}
+
+message SetIntensityResponse {
+  double intensity_pct = 1;
+}
+
+message SetFtpRequest {
+  double ftp_w = 1;
+}
+
+message SetFtpResponse {
+  double ftp_w = 1;
+}
+
+message SetDifficultyRequest {
+  double difficulty_pct = 1;
+}
+
+message SetDifficultyResponse {
+  // The value in effect after clamping.
+  double difficulty_pct = 1;
+}
+
+message ListCoursesRequest {}
+
+message ListCoursesResponse {
+  repeated Course courses = 1;
+}
+
+message Course {
+  string id = 1;
+  string name = 2;
+  double distance_m = 3;
+  double gain_m = 4;
+  double loss_m = 5;
+  double max_grade_pct = 6;
+  double min_grade_pct = 7;
+  // Elevation and grade every profile_step_m metres from the start to the
+  // finish. Grade i holds from sample i to sample i+1.
+  double profile_step_m = 8;
+  repeated float profile_elevation_m = 9;
+  repeated float profile_grade_pct = 10;
+}
+
+message StartRideRequest {
+  string course_id = 1;
+}
+
+message StartRideResponse {}
+
+message StopRideRequest {}
+
+message StopRideResponse {}
+
+enum CalibrationType {
+  CALIBRATION_TYPE_UNSPECIFIED = 0;
+  // Pedal up to the target speed, then coast; the trainer times the spin-down.
+  CALIBRATION_TYPE_SPIN_DOWN = 1;
+}
+
+message StartCalibrationRequest {
+  CalibrationType type = 1;
+}
+
+message StartCalibrationResponse {}
+
+message CancelCalibrationRequest {}
+
+message CancelCalibrationResponse {}
+
+message StreamStateRequest {
+  // Upper bound on the update rate. 0 means the server default (60 Hz).
+  uint32 max_rate_hz = 1;
+}
+
+message StreamStateResponse {
+  State state = 1;
+}
+
+message State {
+  // Increments with every change in the core.
+  uint64 sequence = 1;
+  // Monotonic time since the core started, when this state was produced.
+  // Renderers interpolate on this, not on their own clock.
+  int64 core_time_ns = 2;
+
+  Trainer trainer = 3;
+  HeartRate heart_rate = 4;
+  Ride ride = 5;
+  WorkoutProgress workout = 6;
+  Recording recording = 7;
+  RiderProfile profile = 8;
+  TrainerControl control = 9;
+  // The ANT+ stick; absent for a core without one (-fake).
+  Radio radio = 10;
+}
+
+message Radio {
+  // The stick is open and running.
+  bool present = 1;
+  // Why it isn't, while the core looks for it.
+  string error = 2;
+}
+
+enum ControlMode {
+  CONTROL_MODE_UNSPECIFIED = 0;
+  // Free riding, or a course ride or workout drives the trainer.
+  CONTROL_MODE_OFF = 1;
+  // ERG: the trainer holds target watts.
+  CONTROL_MODE_POWER = 2;
+  // Simulation at a fixed grade, target percent.
+  CONTROL_MODE_GRADE = 3;
+  // Fixed brake level, target percent of maximum (FE basic resistance).
+  CONTROL_MODE_LEVEL = 4;
+}
+
+// Manual trainer control outside course rides and workouts.
+message TrainerControl {
+  ControlMode mode = 1;
+  double target = 2;
+  int64 changed_ns = 3;
+}
+
+// The rider's settings as the core uses them, kept in a profile file on
+// the core's machine. Absent from a core without profiles.
+message RiderProfile {
+  // Weight and FTP are set; otherwise renderers should onboard the rider.
+  bool complete = 1;
+  double weight_kg = 2;
+  double ftp_w = 3;
+  double difficulty_pct = 4;
+  // Set by a command-line flag for this run: shown, never saved.
+  bool weight_forced = 5;
+  bool ftp_forced = 6;
+  bool difficulty_forced = 7;
+  // Where the profile is saved on the core's machine.
+  string path = 8;
+  // What the core still needs, by SetProfileRequest field name
+  // ("weight_kg": course rides wait for it; "ftp_w": workouts do).
+  repeated string missing = 9;
+  // A starting FTP for onboarding (2.5 W/kg from the weight).
+  double suggested_ftp_w = 10;
+}
+
+// The core records every ride to a FIT file on its own disk, whether or
+// not a renderer is connected.
+message Recording {
+  // An activity file is open: the rider has been riding.
+  bool active = 1;
+  // The timer is stopped because the rider isn't moving.
+  bool paused = 2;
+  // Name of the file being written (in the core's recording directory).
+  string file = 3;
+  double timer_s = 4;
+  double distance_m = 5;
+  // Name of the last file saved.
+  string last_saved = 6;
+  // Why recording failed; empty when all is well.
+  string error = 7;
+}
+
+enum WorkoutPhase {
+  WORKOUT_PHASE_UNSPECIFIED = 0;
+  WORKOUT_PHASE_NONE = 1;
+  // Chosen; the clock starts at the first pedal stroke.
+  WORKOUT_PHASE_ARMED = 2;
+  WORKOUT_PHASE_RUNNING = 3;
+  // The rider stopped pedalling for 15 s; the clock waits.
+  WORKOUT_PHASE_PAUSED = 4;
+  WORKOUT_PHASE_FINISHED = 5;
+  WORKOUT_PHASE_ABORTED = 6;
+}
+
+// WorkoutProgress is the ERG workout under way. ftp_w and intensity_pct
+// are settings: present with or without a workout.
+message WorkoutProgress {
+  WorkoutPhase phase = 1;
+  string id = 2;
+  string name = 3;
+  double duration_s = 4;
+  double elapsed_s = 5;
+  uint32 segment = 6;
+  string segment_label = 7;
+  double segment_remaining_s = 8;
+  // No ERG target in this segment: the rider sets the effort.
+  bool free = 9;
+  double target_w = 10;
+  uint32 target_cadence = 11;
+  string next_label = 12;
+  double next_target_w = 13;
+  bool next_free = 14;
+  // A message from the workout to show now.
+  string message = 15;
+  double ftp_w = 16;
+  double intensity_pct = 17;
+  double avg_power_w = 18;
+  int64 phase_changed_ns = 19;
+}
+
+enum RidePhase {
+  RIDE_PHASE_UNSPECIFIED = 0;
+  RIDE_PHASE_NONE = 1;
+  // Course chosen; the clock starts at the first pedal stroke.
+  RIDE_PHASE_ARMED = 2;
+  RIDE_PHASE_RIDING = 3;
+  RIDE_PHASE_FINISHED = 4;
+  RIDE_PHASE_ABORTED = 5;
+}
+
+// Ride is a course ride: simulated position and the clock.
+message Ride {
+  RidePhase phase = 1;
+  string course_id = 2;
+  string course_name = 3;
+  double course_distance_m = 4;
+  double course_gain_m = 5;
+  double distance_m = 6;
+  double elevation_m = 7;
+  // Course grade at the current position.
+  double grade_pct = 8;
+  // Grade the trainer is asked to apply: looked ahead, descents halved,
+  // scaled by difficulty, capped at the trainer's maximum.
+  double trainer_grade_pct = 9;
+  // Simulated speed from power, grade, mass and drag.
+  double speed_mps = 10;
+  double climbed_m = 11;
+  double avg_power_w = 12;
+  double elapsed_s = 13;
+  // core_time_ns of the last phase change.
+  int64 phase_changed_ns = 14;
+  // Share of climbs the trainer applies, 0-100 %. A setting: present with
+  // or without a ride.
+  double difficulty_pct = 15;
+  // Where on the course the ride began; 0 is the start. Time and climbing
+  // count from here.
+  double start_distance_m = 16;
+  // Where the rider is on the map, from the course's GPX track (WGS84
+  // degrees). Only meaningful while a course is loaded.
+  double latitude_deg = 17;
+  double longitude_deg = 18;
+  // The earlier ride raced against (the PB on this stretch); absent
+  // without one.
+  RideGhost ghost = 19;
+}
+
+message RideGhost {
+  // e.g. "PB 7 Oct".
+  string label = 1;
+  // Where the ghost is now on the course.
+  double distance_m = 2;
+  // The rider's time behind the ghost at the rider's position; negative
+  // is ahead. At the finish: the difference in times.
+  double gap_s = 3;
+  // The ghost's time to the line.
+  double time_s = 4;
+}
+
+enum SensorStatus {
+  SENSOR_STATUS_UNSPECIFIED = 0;
+  // Not configured to be used.
+  SENSOR_STATUS_DISABLED = 1;
+  // Looking for a device; none paired yet.
+  SENSOR_STATUS_SEARCHING = 2;
+  SENSOR_STATUS_CONNECTED = 3;
+  // Was connected, lost contact, searching for the same device again.
+  SENSOR_STATUS_LOST = 4;
+}
+
+message Sensor {
+  SensorStatus status = 1;
+  // ANT device number; 0 until paired.
+  uint32 device_number = 2;
+  // From the device's manufacturer/product pages; 0 or empty until known.
+  uint32 manufacturer_id = 3;
+  uint32 model_number = 4;
+  string sw_version = 5;
+  // core_time_ns of the last message from the device.
+  int64 last_seen_ns = 6;
+}
+
+// Mirrors the FE state of the ANT+ FE profile.
+enum TrainerState {
+  TRAINER_STATE_UNSPECIFIED = 0;
+  TRAINER_STATE_ASLEEP = 1;
+  TRAINER_STATE_READY = 2;
+  TRAINER_STATE_IN_USE = 3;
+  TRAINER_STATE_FINISHED = 4;
+}
+
+enum TargetPowerLimit {
+  TARGET_POWER_LIMIT_UNSPECIFIED = 0;
+  // Holding the ERG target, or no target set.
+  TARGET_POWER_LIMIT_AT_TARGET = 1;
+  TARGET_POWER_LIMIT_SPEED_TOO_LOW = 2;
+  TARGET_POWER_LIMIT_SPEED_TOO_HIGH = 3;
+  TARGET_POWER_LIMIT_UNDETERMINED = 4;
+}
+
+message Trainer {
+  Sensor sensor = 1;
+  TrainerState state = 2;
+
+  // Unset when the trainer reports the value as invalid.
+  optional uint32 power_w = 3;
+  optional uint32 cadence_rpm = 4;
+  optional double speed_mps = 5;
+  // Heart rate the trainer forwards, if it has a source.
+  optional uint32 heart_rate_bpm = 6;
+
+  // Accumulated since the core started, with the trainer's rollovers removed.
+  double distance_m = 7;
+  // Time the trainer has been in use since the core started.
+  double elapsed_s = 8;
+
+  bool power_calibration_required = 9;
+  bool resistance_calibration_required = 10;
+  bool user_config_required = 11;
+  TargetPowerLimit target_power_limit = 12;
+  Calibration calibration = 13;
+}
+
+enum CalibrationPhase {
+  CALIBRATION_PHASE_UNSPECIFIED = 0;
+  CALIBRATION_PHASE_IDLE = 1;
+  // Requested; the trainer has not started yet.
+  CALIBRATION_PHASE_REQUESTED = 2;
+  CALIBRATION_PHASE_IN_PROGRESS = 3;
+  CALIBRATION_PHASE_SUCCEEDED = 4;
+  CALIBRATION_PHASE_FAILED = 5;
+  CALIBRATION_PHASE_CANCELLED = 6;
+}
+
+// A condition the trainer needs before it can calibrate.
+enum CalibrationCondition {
+  // Not applicable, or not reported.
+  CALIBRATION_CONDITION_UNSPECIFIED = 0;
+  CALIBRATION_CONDITION_TOO_LOW = 1;
+  CALIBRATION_CONDITION_OK = 2;
+  CALIBRATION_CONDITION_TOO_HIGH = 3;
+}
+
+message Calibration {
+  CalibrationPhase phase = 1;
+  // During a spin-down: too low means keep pedalling, ok means stop and coast.
+  CalibrationCondition speed_condition = 2;
+  CalibrationCondition temperature_condition = 3;
+  optional double target_speed_mps = 4;
+  optional double temperature_c = 5;
+  optional uint32 target_spin_down_ms = 6;
+  // The result of a successful spin-down.
+  optional uint32 spin_down_ms = 7;
+  // Why it failed, for display.
+  string message = 8;
+  // core_time_ns of the last phase change.
+  int64 phase_changed_ns = 9;
+}
+
+message HeartRate {
+  Sensor sensor = 1;
+  // Unset when the strap reports no valid heart rate.
+  optional uint32 bpm = 2;
+}

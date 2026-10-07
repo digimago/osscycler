@@ -1,0 +1,11 @@
+# ANT USB sticks (Dynastream/Garmin/Tacx): ANTUSB2 0fcf:1008, ANTUSB-m 0fcf:1009.
+# Install: sudo cp deploy/udev/99-ant-usb.rules /etc/udev/rules.d/ &&
+#          sudo udevadm control --reload && sudo udevadm trigger
+#          sudo groupadd -f ant && sudo usermod -aG ant $USER   (log in again)
+# then replug the stick.
+
+# Raw USB node, for a future libusb transport.
+SUBSYSTEM=="usb", ATTR{idVendor}=="0fcf", ATTR{idProduct}=="1008|1009", MODE="0660", GROUP="ant", TAG+="uaccess"
+
+# tty created by usb_serial_simple, with a stable name.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0fcf", ATTRS{idProduct}=="1008|1009", MODE="0660", GROUP="ant", TAG+="uaccess", SYMLINK+="ttyANT"

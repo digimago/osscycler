@@ -1,0 +1,30 @@
+# The osscycler core as a service, for a machine by the trainer (a
+# Raspberry Pi, say): runs as the user named after the @, from boot,
+# without a login. Enable it for a user with
+#
+#   sudo systemctl enable --now osscycler@$USER
+#
+# It uses that user's ~/osscycler (courses, workouts, rides, profile, API
+# token), so the TUI run by the same user finds everything. Logs:
+# journalctl -u osscycler@$USER -f
+[Unit]
+Description=osscycler core for %i (ANT+ trainer, rides, recording)
+After=network.target
+
+[Service]
+Type=simple
+User=%i
+# The ANT+ stick belongs to the ant group; the user needn't join it.
+SupplementaryGroups=ant
+ExecStart=/usr/bin/osscycler-core
+# The core waits for the ANT+ stick and picks it up whenever it's plugged
+# in, so it only stops on a real failure; then start it again.
+Restart=on-failure
+RestartSec=10
+# On stop the core saves the ride under way first.
+TimeoutStopSec=20
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

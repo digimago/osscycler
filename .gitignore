@@ -1,0 +1,11 @@
+*.rawlog
+.env
+# Local-only directories (convention: leading underscore).
+# _antdocs/ holds the ANT+ documents; the adopter agreement forbids redistribution.
+/_*/
+*.zip
+*.log
+# Local make settings (rider weight etc.)
+local.mk
+# Editor settings
+.vscode/

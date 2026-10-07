@@ -1,0 +1,29 @@
+# nfpm config for the .deb and .rpm packages; scripts/release.sh fills in
+# ${ARCH}, ${PKG_VERSION} and ${BUILD_DIR} for each architecture.
+name: osscycler
+arch: ${ARCH}
+platform: linux
+version: ${PKG_VERSION}
+version_schema: none
+section: misc
+priority: optional
+maintainer: digimago
+description: |
+  Self-hosted indoor cycling: a core that drives an ANT+ FE-C smart trainer
+  (course rides, ERG workouts, FIT recording) and a terminal renderer.
+homepage: https://github.com/digimago/osscycler
+contents:
+  - src: ${BUILD_DIR}/osscycler-core
+    dst: /usr/bin/osscycler-core
+  - src: ${BUILD_DIR}/osscycler-tui
+    dst: /usr/bin/osscycler-tui
+  - src: deploy/udev/99-ant-usb.rules
+    dst: /usr/lib/udev/rules.d/99-ant-usb.rules
+  - src: deploy/systemd/osscycler@.service
+    dst: /usr/lib/systemd/system/osscycler@.service
+  - src: README.md
+    dst: /usr/share/doc/osscycler/README.md
+scripts:
+  postinstall: deploy/packaging/postinstall.sh
+  preremove: deploy/packaging/preremove.sh
+  postremove: deploy/packaging/postremove.sh

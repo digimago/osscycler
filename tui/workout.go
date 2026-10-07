@@ -172,11 +172,11 @@ func (m Model) workoutKey(key string) (Model, tea.Cmd, bool) {
 		return m, m.command("skip segment", m.cmds.SkipSegment), true
 	case key == "x":
 		if m.now().Before(m.abortUntil) {
-			m.abortUntil, m.notice = time.Time{}, ""
+			m.abortUntil, m.asking = time.Time{}, ""
 			return m, m.command("abort workout", m.cmds.StopWorkout), true
 		}
 		m.abortUntil = m.now().Add(abortConfirm)
-		m.notice = "press x again to abort the workout"
+		m = m.ask("press x again to abort the workout", m.abortUntil)
 		return m, nil, true
 	}
 	return m, nil, false

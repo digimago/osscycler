@@ -142,12 +142,11 @@ func (m Model) rideKey(key string) (Model, tea.Cmd, bool) {
 		return m, tea.Batch(m.fetchCourses(false), m.fetchWorkouts(false), m.fetchResults(), m.fetchActivities()), true
 	case key == "x" && m.rideActive():
 		if m.now().Before(m.abortUntil) {
-			m.abortUntil = time.Time{}
-			m.notice = ""
+			m.abortUntil, m.asking = time.Time{}, ""
 			return m, m.command("abort ride", m.cmds.StopRide), true
 		}
 		m.abortUntil = m.now().Add(abortConfirm)
-		m.notice = "press x again to abort the ride"
+		m = m.ask("press x again to abort the ride", m.abortUntil)
 		return m, nil, true
 	case key == "v" && m.rideActive() && m.roadScene() != nil:
 		m.tiles = !m.tiles

@@ -517,8 +517,22 @@ func TestRideScreen(t *testing.T) {
 
 	// x once warns, twice aborts.
 	m, cmd = press(m, "x")
-	if cmd != nil || !strings.Contains(plain(m.render()), "press x again") {
+	out = plain(m.render())
+	if cmd != nil || !strings.Contains(out, "press x again to abort the ride") {
 		t.Fatal("first x did not ask for confirmation")
+	}
+	// Over the ride, not among the footer's notices; the ride stays visible.
+	if ask, footer := strings.Index(out, "press x again"), strings.Index(out, "● core"); ask > footer || !strings.Contains(out, "POWER") {
+		t.Errorf("confirmation not laid over the ride screen:\n%s", out)
+	}
+	if m.notice != "" {
+		t.Errorf("footer notice %q", m.notice)
+	}
+	// It goes away when the second x no longer counts.
+	later := m
+	later.now = func() time.Time { return time.Now().Add(abortConfirm + time.Second) }
+	if strings.Contains(plain(later.render()), "press x again") {
+		t.Error("confirmation still shown after it expired")
 	}
 	m, cmd = press(m, "x")
 	run(m, cmd)
@@ -824,8 +838,8 @@ func TestFormEditor(t *testing.T) {
 	}
 
 	// esc with changes asks first; s saves the tidied workout.
-	if m2 := pressAll(m, "esc"); m2.draft == nil || !strings.Contains(m2.notice, "esc again") {
-		t.Errorf("first esc: draft %v notice %q", m2.draft, m2.notice)
+	if m2 := pressAll(m, "esc"); m2.draft == nil || !strings.Contains(plain(m2.render()), "press esc again to discard your changes") {
+		t.Errorf("first esc: draft %v, screen:\n%s", m2.draft, plain(m2.render()))
 	} else if m3 := pressAll(m2, "esc"); m3.draft != nil {
 		t.Error("second esc kept the draft")
 	}

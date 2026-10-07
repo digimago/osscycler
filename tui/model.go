@@ -70,6 +70,29 @@ type Model struct {
 	layout       Layout     // the rider's tile arrangement
 	layoutPath   string     // where it is saved; "" for this session only
 	arranging    *arranging // the tile editor (o)
+	// asking is a second key press being asked for, shown over the
+	// screen until askUntil.
+	asking   string
+	askUntil time.Time
+}
+
+// ask shows a request for a confirming key press over the screen.
+func (m Model) ask(text string, until time.Time) Model {
+	m.asking, m.askUntil = text, until
+	return m
+}
+
+var askStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#ffffff")).Background(lipgloss.Color("#b3261e")).Bold(true).Padding(1, 4)
+
+// withAsk lays the pending question over the middle of body.
+func (m Model) withAsk(body string) string {
+	if m.asking == "" || !m.now().Before(m.askUntil) {
+		return body
+	}
+	bar := askStyle.Render(m.asking)
+	x := max(0, (lipgloss.Width(body)-lipgloss.Width(bar))/2)
+	y := max(0, (lipgloss.Height(body)-lipgloss.Height(bar))/2)
+	return lipgloss.NewCompositor(lipgloss.NewLayer(body), lipgloss.NewLayer(bar).X(x).Y(y).Z(1)).Render()
 }
 
 // frameMsg asks for the next frame of the road view.
@@ -333,6 +356,7 @@ func (m Model) renderScreen() string {
 	default:
 		body = m.compact(ms)
 	}
+	body = m.withAsk(body)
 	if strip != "" {
 		return lipgloss.JoinVertical(lipgloss.Left, body, footer, strip)
 	}

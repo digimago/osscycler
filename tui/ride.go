@@ -132,6 +132,10 @@ func (m Model) rideKey(key string) (Model, tea.Cmd, bool) {
 		m.abortUntil = m.now().Add(abortConfirm)
 		m.notice = "press x again to abort the ride"
 		return m, nil, true
+	case key == "v" && m.rideActive() && m.roadScene() != nil:
+		m.tiles = !m.tiles
+		m, cmd := m.animate()
+		return m, cmd, true
 	case (key == "x" || key == "enter") && m.showRide() && !m.rideActive():
 		return m, m.command("close ride", m.cmds.StopRide), true
 	}
@@ -150,7 +154,33 @@ func (m Model) onCourses(msg coursesMsg) (Model, tea.Cmd) {
 		m.courses[c.GetId()] = c
 	}
 	m.pickIdx[tabCourses] = min(m.pickIdx[tabCourses], max(0, len(msg.courses)-1))
-	return m, nil
+	m.scenes = make(map[string]*roadScene, len(msg.courses))
+	for _, c := range msg.courses {
+		if sc := newRoadScene(c); sc != nil {
+			m.scenes[c.GetId()] = sc
+		}
+	}
+	return m.animate()
+}
+
+// roadScene is the road view of the course being ridden; nil without one.
+func (m Model) roadScene() *roadScene { return m.scenes[m.ride().GetCourseId()] }
+
+// roadMoving reports whether the road view is on screen and scrolling.
+func (m Model) roadMoving() bool {
+	return !m.tiles && m.ridePhase() == pb.RidePhase_RIDE_PHASE_RIDING && m.roadScene() != nil
+}
+
+// ridePos is the rider's distance on the course, carried forward at the
+// current speed since the last state so the road scrolls smoothly.
+func (m Model) ridePos() float64 {
+	r := m.ride()
+	d := r.GetDistanceM()
+	if r.GetPhase() == pb.RidePhase_RIDE_PHASE_RIDING && !m.stateAt.IsZero() {
+		dt := math.Max(0, math.Min(m.now().Sub(m.stateAt).Seconds(), 0.5))
+		d = math.Min(d+r.GetSpeedMps()*dt, r.GetCourseDistanceM())
+	}
+	return d
 }
 
 // needCourse fetches the course list if a ride references a course we
@@ -242,6 +272,11 @@ func (m Model) rideBody(width, height int) string {
 		m.timeTile(),
 		{"TO GO", fmt.Sprintf("%.2f", math.Max(0, r.GetCourseDistanceM()-r.GetDistanceM())/1000), "km", speedStyle, nil},
 	}
+	if sc := m.roadScene(); sc != nil && !m.tiles {
+		if body := m.roadBody(sc, ms, width, tilesH, info, profile); body != "" {
+			return body
+		}
+	}
 	var tiles string
 	tileH, tileW := tilesH/2, width/2
 	if tileH >= BigHeight+3 && tileW >= 30 {
@@ -257,6 +292,52 @@ func (m Model) rideBody(width, height int) string {
 		tiles = lipgloss.Place(width, max(tilesH, 4), lipgloss.Center, lipgloss.Center, b.String())
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, tiles, info, profile)
+}
+
+// roadBody puts the road view between a row of the ride's numbers and the
+// info line and profile; empty when the road would be too small to read.
+// height is what the tiles would get.
+func (m Model) roadBody(sc *roadScene, ms []metric, width, height int, info, profile string) string {
+	const minRoad = 8
+	// Big digits when they fit across a quarter of the width and leave the
+	// road at least half the space; one line of numbers otherwise.
+	tileW := width / 4
+	big := height-(BigHeight+2) >= max(minRoad, height/2)
+	for _, mt := range ms {
+		if lipgloss.Width(Big(mt.value))+2 > tileW {
+			big = false
+		}
+	}
+	var row string
+	if big {
+		tiles := make([]string, len(ms))
+		for i, mt := range ms {
+			tiles[i] = bigTile(mt, tileW+boolInt(i < width%4), BigHeight+2)
+		}
+		row = lipgloss.JoinHorizontal(lipgloss.Top, tiles...)
+	} else {
+		parts := make([]string, len(ms))
+		for i, mt := range ms {
+			parts[i] = labelStyle.Render(mt.label) + " " + mt.style.Bold(true).Render(mt.value) + " " + unitStyle.Render(mt.unit)
+		}
+		row = lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(strings.Join(parts, "    "))
+	}
+	roadH := height - lipgloss.Height(row)
+	if roadH < minRoad {
+		return ""
+	}
+	road := sc.render(m.ridePos(), m.ghostAt(), width, roadH)
+	if profile == "" {
+		return lipgloss.JoinVertical(lipgloss.Left, row, road, info)
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, row, road, info, profile)
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // rideInfo is one line of secondary numbers, or the start instruction.

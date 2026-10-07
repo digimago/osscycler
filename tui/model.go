@@ -56,6 +56,27 @@ type Model struct {
 
 	tour        *Tour // demo autopilot; nil without -tour
 	tourCaption string
+
+	scenes    map[string]*roadScene // road views by course ID
+	tiles     bool                  // v: big tiles instead of the road view
+	stateAt   time.Time             // when the last state arrived
+	animating bool                  // a frame tick is pending
+}
+
+// frameMsg asks for the next frame of the road view.
+type frameMsg struct{}
+
+func frameTick() tea.Cmd {
+	return tea.Tick(roadFrame, func(time.Time) tea.Msg { return frameMsg{} })
+}
+
+// animate starts the road view's frames when they should run and aren't.
+func (m Model) animate() (Model, tea.Cmd) {
+	if m.animating || !m.roadMoving() {
+		return m, nil
+	}
+	m.animating = true
+	return m, frameTick()
 }
 
 // New returns a model for the core at addr. cmds may be nil for a
@@ -102,14 +123,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+	case frameMsg:
+		if m.roadMoving() {
+			return m, frameTick()
+		}
+		m.animating = false
 	case StateMsg:
 		m.st, m.connected, m.connErr = msg.State, true, nil
+		m.stateAt = m.now()
 		if m.needsOnboarding() {
 			m = m.startOnboarding(false)
 		}
 		m, c1 := m.needCourse()
 		m, c2 := m.needWorkout()
-		return m, tea.Batch(c1, c2)
+		m, c3 := m.animate()
+		return m, tea.Batch(c1, c2, c3)
 	case ConnMsg:
 		m.connected, m.connErr = msg.Err == nil, msg.Err
 		if msg.Err != nil {
@@ -434,6 +462,9 @@ func (m Model) keyHints() string {
 	case m.showWorkout():
 		h = append(h, "x close")
 	case m.rideActive():
+		if m.roadScene() != nil {
+			h = append(h, map[bool]string{false: "v tiles", true: "v road"}[m.tiles])
+		}
 		h = append(h, "x x abort ride")
 	case m.showRide():
 		h = append(h, "x close")

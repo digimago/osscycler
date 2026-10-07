@@ -416,6 +416,9 @@ func (a *activity) endLap(t time.Time, trigger int64) int {
 		trigger, sportCycling, l.subSport(), int64(math.Round(l.work)))
 	a.laps++
 	a.lap = newSummary(t, a.session.dist)
+	// A finished lap is an effort worth keeping through a crash or a power
+	// cut: the next flush puts it on the disk.
+	a.synced = time.Time{}
 	return a.laps - 1
 }
 

@@ -414,3 +414,16 @@ func TestPositions(t *testing.T) {
 		t.Error("recovered course record lost its position")
 	}
 }
+
+// A finished lap is on the disk at once, not up to 30 s later: here the
+// lap of free riding that ends when a course ride starts.
+func TestLapSynced(t *testing.T) {
+	r := newRecorder(t)
+	end := play(r, []step{
+		{5, func(int) telemetry.State { return state(200, 90, 8) }},
+		{1, onCourse(telemetry.RideRiding)},
+	})
+	if r.a == nil || !r.a.synced.Equal(end.Add(-time.Second)) {
+		t.Errorf("synced at %v, the lap ended at %v", r.a.synced, end.Add(-time.Second))
+	}
+}

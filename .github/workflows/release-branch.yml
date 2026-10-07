@@ -1,0 +1,33 @@
+# main holds releases only: a pull request into it must come from a
+# release/X.Y or hotfix/X.Y.Z branch of this repository (not a fork). The
+# job is named release-branch, for the main ruleset to require.
+#
+# The branch name is set by whoever opened the pull request, so it reaches
+# the script through the environment, never pasted into it.
+name: release-branch
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  release-branch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Only a release or hotfix branch of this repository
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          THIS_REPO: ${{ github.repository }}
+        run: |
+          if [[ $HEAD_REPO != "$THIS_REPO" ]]; then
+            echo "::error::pull requests into main come from this repository's release/ or hotfix/ branches, not from $HEAD_REPO; open yours against develop"
+            exit 1
+          fi
+          if [[ ! $HEAD_REF =~ ^(release/[0-9]+\.[0-9]+|hotfix/[0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "::error::main takes releases only: merge this branch into develop, then release from a release/X.Y branch"
+            exit 1
+          fi
+          echo "$HEAD_REF may go into main"

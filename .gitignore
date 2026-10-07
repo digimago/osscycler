@@ -9,3 +9,6 @@
 local.mk
 # Editor settings
 .vscode/
+
+# OpenStreetMap data cached next to the courses
+.osm/

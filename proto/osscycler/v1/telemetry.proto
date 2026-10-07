@@ -317,6 +317,57 @@ message Course {
   // smooth it to taste). For drawing the road's bends.
   repeated float profile_east_m = 11;
   repeated float profile_north_m = 12;
+  // What lies beside the road, from OpenStreetMap: four LandUse values per
+  // profile sample, in this order: left far (about 60 m out), left near
+  // (about 15 m), right near, right far. Empty until the core has the map
+  // data (it fetches it in the background and caches it).
+  bytes land_use = 13;
+  // Buildings near the road, by distance along the course.
+  repeated Building buildings = 14;
+  // Credit to show with land_use and buildings, required by their licence.
+  string attribution = 15;
+}
+
+enum LandUse {
+  // No map data here: renderers draw grass.
+  LAND_USE_UNSPECIFIED = 0;
+  // Grassland, pasture, parks.
+  LAND_USE_MEADOW = 1;
+  // Arable land: crops in rows.
+  LAND_USE_FARMLAND = 2;
+  LAND_USE_FOREST = 3;
+  // Residential, commercial and industrial areas.
+  LAND_USE_BUILT = 4;
+  LAND_USE_WATER = 5;
+  // Orchards, vineyards and plant nurseries: trees in rows.
+  LAND_USE_ORCHARD = 6;
+  // Heath, scrub, moor, dunes.
+  LAND_USE_HEATH = 7;
+}
+
+enum BuildingKind {
+  BUILDING_KIND_UNSPECIFIED = 0;
+  // Pitched roof.
+  BUILDING_KIND_HOUSE = 1;
+  // Flat roof: apartments, offices, shops, industry.
+  BUILDING_KIND_FLAT = 2;
+  // Farm buildings and sheds: big pitched roof, few windows.
+  BUILDING_KIND_BARN = 3;
+}
+
+// Building is a building's footprint relative to the road, as a box
+// aligned with it.
+message Building {
+  // Distance along the course of its centre.
+  double distance_m = 1;
+  // Sideways from the road's centre line to its centre; right is positive.
+  double offset_m = 2;
+  // Its extent along the road and across it.
+  double length_m = 3;
+  double depth_m = 4;
+  // To the top of the roof.
+  double height_m = 5;
+  BuildingKind kind = 6;
 }
 
 message StartRideRequest {

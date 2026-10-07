@@ -4,6 +4,7 @@ import (
 	"github.com/digimago/osscycler/course"
 	"github.com/digimago/osscycler/fec"
 	pb "github.com/digimago/osscycler/gen/osscycler/v1"
+	"github.com/digimago/osscycler/scenery"
 	"github.com/digimago/osscycler/telemetry"
 )
 
@@ -105,8 +106,9 @@ func ghostToProto(g telemetry.RideGhost) *pb.RideGhost {
 	return &pb.RideGhost{Label: g.Label, DistanceM: g.DistanceM, GapS: g.Gap.Seconds(), TimeS: g.Elapsed.Seconds()}
 }
 
-// CourseToProto converts a course with its full profile and track.
-func CourseToProto(c *course.Course) *pb.Course {
+// CourseToProto converts a course with its full profile and track, and
+// its scenery when known (sc may be nil).
+func CourseToProto(c *course.Course, sc *scenery.Scenery) *pb.Course {
 	ele, grade := c.Profile()
 	east, north := c.Track()
 	pc := &pb.Course{
@@ -126,6 +128,19 @@ func CourseToProto(c *course.Course) *pb.Course {
 	for i := range ele {
 		pc.ProfileElevationM[i], pc.ProfileGradePct[i] = float32(ele[i]), float32(grade[i])
 		pc.ProfileEastM[i], pc.ProfileNorthM[i] = float32(east[i]), float32(north[i])
+	}
+	if sc != nil {
+		pc.Attribution = scenery.Attribution
+		pc.LandUse = make([]byte, len(sc.Land))
+		for i, l := range sc.Land {
+			pc.LandUse[i] = byte(l)
+		}
+		for _, b := range sc.Buildings {
+			pc.Buildings = append(pc.Buildings, &pb.Building{
+				DistanceM: b.DistanceM, OffsetM: b.OffsetM, LengthM: b.LengthM, DepthM: b.DepthM,
+				HeightM: b.HeightM, Kind: pb.BuildingKind(b.Kind),
+			})
+		}
 	}
 	return pc
 }

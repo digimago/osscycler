@@ -31,6 +31,7 @@ import (
 	"github.com/digimago/osscycler/profile"
 	"github.com/digimago/osscycler/record"
 	"github.com/digimago/osscycler/ride"
+	"github.com/digimago/osscycler/scenery"
 	"github.com/digimago/osscycler/telemetry"
 )
 
@@ -124,6 +125,13 @@ type Services struct {
 	Profile    Profile
 	Activities Activities
 	Control    Control
+	Scenery    Scenery
+}
+
+// Scenery is what lies along each course, from map data; nil while
+// unknown.
+type Scenery interface {
+	Get(courseID string) *scenery.Scenery
 }
 
 // NewServer returns a gRPC server exposing hub and svc. Calls without the
@@ -148,7 +156,7 @@ func NewServer(hub *telemetry.Hub, svc Services, token string, opts ...grpc.Serv
 		}),
 	)
 	s := grpc.NewServer(opts...)
-	pb.RegisterTelemetryServiceServer(s, &telemetryServer{hub: hub, cal: svc.Calibrator, rides: svc.Rides, workouts: svc.Workouts, recorder: svc.Recorder, history: svc.History, profile: svc.Profile, activities: svc.Activities, control: svc.Control, maxHz: DefaultRateHz})
+	pb.RegisterTelemetryServiceServer(s, &telemetryServer{hub: hub, cal: svc.Calibrator, rides: svc.Rides, workouts: svc.Workouts, recorder: svc.Recorder, history: svc.History, profile: svc.Profile, activities: svc.Activities, control: svc.Control, scenery: svc.Scenery, maxHz: DefaultRateHz})
 	return s, nil
 }
 
@@ -173,6 +181,7 @@ type telemetryServer struct {
 	profile    Profile              // nil: no rider profile
 	activities Activities           // nil: nothing recorded
 	control    Control              // nil: no manual control
+	scenery    Scenery              // nil: no map data
 	maxHz      uint32
 }
 
@@ -318,7 +327,11 @@ func (s *telemetryServer) ListCourses(context.Context, *pb.ListCoursesRequest) (
 	}
 	resp := &pb.ListCoursesResponse{}
 	for _, c := range s.rides.Courses() {
-		resp.Courses = append(resp.Courses, CourseToProto(c))
+		var sc *scenery.Scenery
+		if s.scenery != nil {
+			sc = s.scenery.Get(c.ID)
+		}
+		resp.Courses = append(resp.Courses, CourseToProto(c, sc))
 	}
 	return resp, nil
 }

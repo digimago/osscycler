@@ -17,6 +17,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime/debug"
 	"syscall"
 
@@ -36,6 +37,7 @@ import (
 	"github.com/digimago/osscycler/record"
 	"github.com/digimago/osscycler/ride"
 	"github.com/digimago/osscycler/rider"
+	"github.com/digimago/osscycler/scenery"
 	"github.com/digimago/osscycler/sim"
 	"github.com/digimago/osscycler/telemetry"
 	"github.com/digimago/osscycler/workout"
@@ -86,6 +88,8 @@ func run() error {
 		recordDir     = flag.String("record", home.Rides(), "record every ride as a FIT file in this directory (created if needed), with course results in "+record.ResultsFile)
 		noRecord      = flag.Bool("no-record", false, "don't record rides")
 		profilePath   = flag.String("profile", home.Profile(), "rider profile (weight, FTP, difficulty); created by onboarding. -rider-kg, -ftp and -difficulty override it for one run without saving")
+		osmFetch      = flag.Bool("osm", true, "fetch OpenStreetMap land use and buildings along each course for renderers (sends the area around each route to the Overpass server; cached in the courses folder's .osm directory)")
+		osmURL        = flag.String("osm-url", scenery.DefaultOverpassURL, "Overpass API server for -osm")
 		recordGPS     = flag.Bool("record-gps", true, "put the course's map position (from its GPX) in recorded course rides; uploads then show the route on a map")
 		user          fec.UserConfig
 	)
@@ -255,6 +259,14 @@ func run() error {
 	riders := rider.New(prof, hub, source, rides, workouts, user, log)
 	manual := control.New(hub, source, *maxGrade, log)
 	svc := api.Services{Calibrator: source, Rides: riders.Rides(), Profile: riders, Control: manual}
+	var scenes *scenery.Store
+	if *courseDir != "" {
+		scenes = scenery.NewStore(scenery.Config{
+			CacheDir: filepath.Join(*courseDir, ".osm"), Fetch: *osmFetch, Endpoint: *osmURL,
+			UserAgent: "osscycler/" + version() + " (+https://github.com/digimago/osscycler)", Log: log,
+		})
+		svc.Scenery = scenes
+	}
 	if workouts != nil {
 		svc.Workouts = riders.Workouts()
 	}
@@ -292,6 +304,9 @@ func run() error {
 	go func() { done <- source.Run(ctx) }()
 	go telemetry.LogEvents(ctx, hub, log)
 	go rides.Run(ctx)
+	if scenes != nil {
+		go scenes.Run(ctx, rides.Courses())
+	}
 	go manual.Run(ctx)
 	if workouts != nil {
 		go workouts.Run(ctx)

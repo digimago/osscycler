@@ -161,13 +161,18 @@ const metresPerDegree = 6371000.0 * math.Pi / 180
 // a flat projection around the start: within about 1 % over any course
 // that fits in a day's ride.
 func (c *Course) Track() (east, north []float64) {
-	kx := metresPerDegree * math.Cos(c.lat[0]*math.Pi/180)
 	east, north = make([]float64, len(c.dist)), make([]float64, len(c.dist))
 	for i, d := range c.dist {
-		lat, lon := c.Position(d)
-		east[i], north[i] = (lon-c.lon[0])*kx, (lat-c.lat[0])*metresPerDegree
+		east[i], north[i] = c.Project(c.Position(d))
 	}
 	return east, north
+}
+
+// Project maps a point to metres east and north of the start, as Track
+// does.
+func (c *Course) Project(lat, lon float64) (east, north float64) {
+	kx := metresPerDegree * math.Cos(c.lat[0]*math.Pi/180)
+	return (lon - c.lon[0]) * kx, (lat - c.lat[0]) * metresPerDegree
 }
 
 // despike applies a repeated running median: five points wide in the

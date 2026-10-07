@@ -11,6 +11,8 @@ What it does today:
 - **Course rides** on any GPX route you've ridden or planned: the trainer
   follows the grade, your speed comes from a physics simulation, and the
   clock stops at the line.
+- **A view of the road ahead**: its bends and hills come from your GPX,
+  and fields, forests, water and buildings from OpenStreetMap.
 - **Ghosts**: every course ride races your personal best on it, with the
   gap shown live.
 - **ERG workouts**: the trainer holds each target power. Write workouts
@@ -20,7 +22,8 @@ What it does today:
   hand to intervals.icu, Garmin Connect or anywhere else.
 
 The screen is a terminal app (the TUI), with big numbers you can read
-from the bike. A 3D view is planned.
+from the bike and, on a course, an animated view of the road. A full 3D
+view is planned.
 
 ## What you need
 
@@ -114,15 +117,17 @@ On the dashboard you see power, heart rate, cadence and speed.
 | `w` / `g` / `l` | Free riding at a fixed power (watts), grade (%) or resistance level (%) |
 | `p` | Your profile: weight and FTP |
 | `c` / `C` | Spin-down calibration: when the trainer asks / any time |
-| `e` | End the ride: save it (`enter`) or discard it (`d d`) |
+| `e` | End the ride, outside a course ride or workout: save it (`enter`) or discard it (`d d`) |
 | `q` | Quit the screen (the core keeps running) |
 
 **Course rides.** Pick a course and press `enter`; the clock starts when
-you start pedalling. The tiles show power, grade, time and distance to
-go, and the strip at the bottom shows the next 250 m, coloured by
-steepness. If you've ridden the course before, you race your best time:
-the gap shows under the time, and a marker shows your ghost on the
-course. `x` twice aborts.
+you start pedalling. Above the road you see power, grade, time and
+distance to go; the strip at the bottom shows the next 250 m, coloured
+by steepness. `v` swaps the road for big numbers and back. If you've
+finished the course before, you race your best time: the gap shows
+under the time, and your ghost rides ahead of you on the road. `x`
+twice aborts; an aborted ride is still recorded, but only a ride that
+crosses the line counts for your best time.
 
 **Workouts.** Pick one in WORKOUTS and press `enter`; the trainer holds
 each target. `+` / `-` adjust the intensity in 1 % steps, `n` skips to
@@ -143,6 +148,7 @@ Everything lives in one folder, `~/osscycler`, easy to back up:
 | Workouts | `~/osscycler/workouts/` |
 | Recorded rides (FIT) and course results | `~/osscycler/rides/` |
 | Your profile (weight, FTP, difficulty) | `~/osscycler/profile.json` |
+| Map data around your routes | `~/osscycler/courses/.osm/` |
 | The key the screen uses to talk to the core | `~/osscycler/api-token` (keep it private) |
 
 To keep it somewhere else, set `OSSCYCLER_HOME` to another folder.
@@ -154,6 +160,29 @@ it in ACTIVITIES and press `s`: it's saved to `~/Downloads`. Upload it
 wherever you like. Rides on a course include the route's map position,
 so mind your privacy settings if you share them, or start the core with
 `-record-gps=false`.
+
+## Map data
+
+The road view shows fields, forests, water and buildings along your
+routes. To do that, the core downloads the map data around each course
+from OpenStreetMap, through the public Overpass server
+(overpass-api.de): once per course, in the background, while you can
+already ride. It keeps the data in `~/osscycler/courses/.osm/` and
+downloads it again only if you change the GPX file. That server is
+sometimes busy; the core then tries again a few times (after 1, 5, 15
+and 60 minutes). Until the data is there, the road runs through grass
+and trees.
+
+To get the data, the core sends the server the area around each route,
+and nothing else: no account, no name. Routes you recorded yourself
+often start at home, so that area includes your home. If you'd rather
+not share it, start the core with `-osm=false`: it then only uses data
+already in the folder, and the road view still works, without the
+scenery.
+
+Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright)
+contributors, available under the Open Database License. The road view
+shows this credit.
 
 ## A Raspberry Pi by the trainer
 

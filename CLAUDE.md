@@ -78,7 +78,7 @@ Trainer, HRM <-> ANT+ stick <-> telemetry service <-> sim core -> renderer (swap
 
 ## Decisions so far
 
-- Public on GitHub under GPL-3.0 (owner's decision 2026-10-07). Security reports go through GitHub's private vulnerability reporting (SECURITY.md). The release workflow's actions are pinned to commits; update them by looking up the new tag's commit.
+- Public on GitHub under GPL-3.0 (owner's decision 2026-10-07). Security reports go through GitHub's private vulnerability reporting (SECURITY.md). The release workflow's actions are pinned to commits; update them by looking up the new tag's commit. Releases are immutable once published (owner's decision 2026-10-07), so the workflow only drafts them (every file attached, notes from notes/<tag>.md); the owner checks the draft and publishes it. A fix after publishing is a new version, never a moved tag.
 - ANT+ FE-C first, BLE FTMS as a second transport behind the same interface.
 - State stream at about 60 Hz over gRPC server streaming (chosen 2026-10-06); control via reliable unary requests. Timestamp samples in the core with a monotonic clock; the renderer interpolates.
 - Schema-first: state messages are in protobuf (control messages still to come). `api` tests run a real gRPC server over bufconn as the fake renderer.

@@ -89,6 +89,8 @@ key from `ANT_PLUS_NETWORK_KEY` or the key file built in:
 - `SHA256SUMS`
 
 Pushing a `v*` tag runs `make check` and `make release` in GitHub Actions
-with the repository secret `ANT_PLUS_NETWORK_KEY` and publishes a
-release. Running the workflow by hand builds the same files as workflow
-artifacts, without a release.
+with the repository secret `ANT_PLUS_NETWORK_KEY` and makes a draft
+release with every file attached. Check it (files, notes), then publish
+it on GitHub: published releases are immutable, so a fix after that is a
+new version. Running the workflow by hand builds the same files as
+workflow artifacts, without a release.

@@ -30,8 +30,8 @@ func (m Model) helpContext() (string, []helpEntry) {
 	switch {
 	case m.arranging != nil:
 		return "TILES", append([]helpEntry{
-			{"↑ ↓  k j", "choose"},
-			{"J / K", "move the tile down / up (the order on screen)"},
+			{"↑ ↓", "choose a tile"},
+			{"shift + ↑ ↓", "move it up or down: the order on screen"},
 			{"space  x", "show or hide it"},
 			{"r", "back to the defaults"},
 			{"z", "digit size: large or medium"},

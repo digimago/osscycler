@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
 
@@ -111,5 +112,23 @@ func TestLoadLayoutDropsUnknownTiles(t *testing.T) {
 	os.WriteFile(path, []byte(`{"tiles":`), 0o600)
 	if _, err := LoadLayout(path); err == nil {
 		t.Error("a broken file loaded")
+	}
+}
+
+// The help and the editor tell the rider to move tiles with shift and
+// the arrows, and that works.
+func TestArrangeWithShiftArrows(t *testing.T) {
+	m := calModel(&stubCommands{})
+	m.st.Trainer.ResistanceCalibrationRequired = false
+	m = pressAll(m, "o", "down")
+	if out := plain(m.render()); !strings.Contains(out, "hold shift and press ↑/↓ to move it") {
+		t.Errorf("editor hint:\n%s", out)
+	}
+	if out := plain(pressAll(m, "?").render()); !strings.Contains(out, "shift + ↑ ↓") {
+		t.Errorf("help:\n%s", out)
+	}
+	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyUp, Mod: tea.ModShift})
+	if got := next.(Model).arranging.order[0]; got != "heart_rate" {
+		t.Errorf("shift+↑ moved %q to the top, want heart_rate", got)
 	}
 }

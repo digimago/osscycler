@@ -349,7 +349,7 @@ func (m Model) arrangePanel(width, height int) string {
 		size = "medium"
 	}
 	lines = append(lines, "",
-		dimStyle.Render("↑/↓ choose · J/K move · space show or hide · r defaults · enter save · esc cancel"),
+		dimStyle.Render("↑/↓ choose · hold shift and press ↑/↓ to move it · space show or hide · r defaults · enter save · esc cancel"),
 		dimStyle.Render("z digit size: "+size+" (smaller digits fit more tiles)"))
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, lipgloss.JoinVertical(lipgloss.Left, lines...))
 }

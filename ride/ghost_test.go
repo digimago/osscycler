@@ -26,7 +26,7 @@ func (o oneGhost) Race(*course.Course, time.Time) (*Ghost, float64, error) {
 // ghostOf replays power on the test course into a ghost.
 func ghostOf(t *testing.T, power []PowerSample) *Ghost {
 	t.Helper()
-	res := Replay(testCourse(t), sim.DefaultParams(87, 9), 0, power)
+	res := Replay(testCourse(t), sim.DefaultParams(87, 9), 0, 0, power)
 	if !res.Finished {
 		t.Fatal("ghost ride didn't finish")
 	}

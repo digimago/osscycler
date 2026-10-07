@@ -365,23 +365,33 @@ func version() string {
 	return v
 }
 
-// newRides loads the courses and sets up the ride simulation.
+// newRides loads the courses, after the built-in test tracks, and sets up
+// the ride simulation.
 func newRides(hub *telemetry.Hub, trainer ride.Trainer, dir string, user fec.UserConfig,
 	difficulty, maxGrade, cda, crr, startM float64, ghosts ride.GhostSource, log *slog.Logger) *ride.Session {
-	var courses []*course.Course
+	courses := course.Tracks()
 	if dir != "" {
-		var err error
-		courses, err = course.LoadDir(dir)
+		own, err := course.LoadDir(dir)
 		if err != nil {
 			log.Warn("some courses failed to load", "err", err)
 		}
-		if len(courses) == 0 && err == nil {
+		if len(own) == 0 && err == nil {
 			log.Warn("no courses yet: put .gpx files in the courses folder and restart", "dir", dir)
 		}
-		for _, c := range courses {
-			log.Info("course", "id", c.ID, "name", c.Name, "distance_km", fmt.Sprintf("%.2f", c.Distance/1000),
-				"gain_m", fmt.Sprintf("%.0f", c.Gain), "max_grade", fmt.Sprintf("%.1f", c.MaxGrade))
+	own:
+		for _, c := range own {
+			for _, t := range courses {
+				if t.ID == c.ID {
+					log.Warn("a course has the name of a built-in track: rename its file to ride it", "id", c.ID, "dir", dir)
+					continue own
+				}
+			}
+			courses = append(courses, c)
 		}
+	}
+	for _, c := range courses {
+		log.Info("course", "id", c.ID, "name", c.Name, "distance_km", fmt.Sprintf("%.2f", c.Distance/1000),
+			"gain_m", fmt.Sprintf("%.0f", c.Gain), "max_grade", fmt.Sprintf("%.1f", c.MaxGrade), "loop", c.Loop)
 	}
 	riderKg := user.UserWeightKg
 	if riderKg == 0 {

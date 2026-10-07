@@ -331,6 +331,9 @@ message Course {
   repeated Building buildings = 14;
   // Credit to show with land_use and buildings, required by their licence.
   string attribution = 15;
+  // The finish is the start: rides go round until the rider stops, lap
+  // after lap (osscycler's built-in test tracks).
+  bool loop = 16;
 }
 
 enum LandUse {
@@ -584,8 +587,30 @@ message Ride {
   double latitude_deg = 17;
   double longitude_deg = 18;
   // The earlier ride raced against (the PB on this stretch); absent
-  // without one.
+  // without one. On a loop: the best lap so far, raced lap by lap.
   RideGhost ghost = 19;
+
+  // A loop ride: no finish; distance_m is along the current lap.
+  bool loop = 20;
+  // The lap under way, from 1, and its time so far.
+  uint32 lap = 21;
+  double lap_elapsed_s = 22;
+  // This ride's last and fastest completed laps; absent before the first.
+  RideLap last_lap = 23;
+  RideLap best_lap = 24;
+  // A workout or manual control drives the trainer; the loop only moves
+  // the rider round (and leads in a workout's free segments).
+  bool trainer_yielded = 25;
+}
+
+message RideLap {
+  // Counting from 1 in the ride.
+  uint32 number = 1;
+  double time_s = 2;
+  double avg_power_w = 3;
+  double climbed_m = 4;
+  // When the lap was completed.
+  int64 finished_unix_ms = 5;
 }
 
 message RideGhost {

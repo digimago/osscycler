@@ -49,6 +49,8 @@ type Result struct {
 	DifficultyPct float64   `json:"difficulty_pct"`
 	File          string    `json:"file"`
 	Lap           int       `json:"lap"`
+	// StartSpeedMPS is how fast a lap of a loop began (0 from a standstill).
+	StartSpeedMPS float64 `json:"start_speed_mps,omitempty"`
 	// Sim is what the ride was simulated with, for replays.
 	Sim SimParams `json:"sim"`
 }
@@ -254,6 +256,9 @@ func (r *Recorder) step(st telemetry.State, now time.Time) {
 		if r.riding && !riding && st.Ride.Phase == telemetry.RideFinished {
 			r.result(st.Ride, now, lap)
 		}
+	} else if l := st.Ride.LastLap; riding && st.Ride.Loop && l.N > 0 && l.N != r.ride.LastLap.N {
+		// Round a loop: a lap of the activity, and a result, for each.
+		r.lapResult(st.Ride, a.endLap(now, lapPosition))
 	}
 	r.riding, r.working, r.ride = riding, working, st.Ride
 
@@ -385,6 +390,12 @@ func (r *Recorder) result(rd telemetry.Ride, now time.Time, lap int) {
 		ElapsedS: rd.Elapsed.Seconds(), AvgPowerW: rd.AvgPowerW, ClimbedM: rd.ClimbedM,
 		DifficultyPct: rd.DifficultyPct, Lap: lap, Sim: SimParams(rd.Sim),
 	}
+	r.appendResult(res)
+}
+
+// appendResult adds a result to the results file, naming the recording
+// it is in.
+func (r *Recorder) appendResult(res Result) {
 	if r.a != nil {
 		res.File = filepath.Base(r.a.path[:len(r.a.path)-len(".part")])
 	}
@@ -397,6 +408,17 @@ func (r *Recorder) result(rd telemetry.Ride, now time.Time, lap int) {
 	if err != nil {
 		r.log.Error("saving the course result failed", "err", err)
 	}
+}
+
+// lapResult appends a completed lap of a loop to the results file, as a
+// ride of the whole loop: the history then knows the best lap on it.
+func (r *Recorder) lapResult(rd telemetry.Ride, lap int) {
+	l := rd.LastLap
+	r.appendResult(Result{
+		Finished: l.Finished.UTC().Truncate(time.Second), CourseID: rd.CourseID, CourseName: rd.CourseName,
+		DistanceM: rd.CourseDistanceM, ElapsedS: l.Elapsed.Seconds(), AvgPowerW: l.AvgPowerW, ClimbedM: l.ClimbedM,
+		DifficultyPct: rd.DifficultyPct, Lap: lap, Sim: SimParams(rd.Sim), StartSpeedMPS: l.StartSpeedMPS,
+	})
 }
 
 // publish puts the recorder's status in the state for renderers.

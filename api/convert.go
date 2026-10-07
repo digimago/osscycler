@@ -70,7 +70,21 @@ func rideToProto(r telemetry.Ride) *pb.Ride {
 		LatitudeDeg:     r.Lat,
 		LongitudeDeg:    r.Lon,
 		Ghost:           ghostToProto(r.Ghost),
+		Loop:            r.Loop,
+		Lap:             uint32(r.Lap),
+		LapElapsedS:     r.LapElapsed.Seconds(),
+		LastLap:         lapToProto(r.LastLap),
+		BestLap:         lapToProto(r.BestLap),
+		TrainerYielded:  r.Yielded,
 	}
+}
+
+func lapToProto(l telemetry.Lap) *pb.RideLap {
+	if l.N == 0 {
+		return nil
+	}
+	return &pb.RideLap{Number: uint32(l.N), TimeS: l.Elapsed.Seconds(), AvgPowerW: l.AvgPowerW,
+		ClimbedM: l.ClimbedM, FinishedUnixMs: l.Finished.UnixMilli()}
 }
 
 // profileToProto converts the rider profile; nil for a core without one.
@@ -120,6 +134,7 @@ func CourseToProto(c *course.Course, sc *scenery.Scenery) *pb.Course {
 		LossM:             c.Loss,
 		MaxGradePct:       c.MaxGrade,
 		MinGradePct:       c.MinGrade,
+		Loop:              c.Loop,
 		ProfileStepM:      c.Spacing,
 		ProfileElevationM: make([]float32, len(ele)),
 		ProfileGradePct:   make([]float32, len(grade)),

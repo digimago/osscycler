@@ -37,13 +37,14 @@ const maxSampleGap = 2 * time.Second
 
 // Replay re-rides course c with recorded power, through the same session
 // and ticks as a live ride: armed at the start (or a rolling start at
-// startM), the clock from the first pedal stroke, stopped at the line.
-// Without the trainer, nothing feels the grade; riding time never depends
-// on it anyway.
-func Replay(c *course.Course, params sim.Params, startM float64, power []PowerSample) ReplayResult {
+// startM; at startSpeed when that is above 0), the clock from the first
+// pedal stroke, stopped at the line. On a loop that is one lap. Without
+// the trainer, nothing feels the grade; riding time never depends on it
+// anyway.
+func Replay(c *course.Course, params sim.Params, startM, startSpeed float64, power []PowerSample) ReplayResult {
 	hub := telemetry.NewHub()
 	cfg := DefaultConfig(params)
-	cfg.StartDistanceM = startM
+	cfg.StartDistanceM, cfg.StartSpeedMPS = startM, startSpeed
 	s := NewSession(hub, nopTrainer{}, []*course.Course{c}, cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err := s.Start(c.ID); err != nil {
 		return ReplayResult{} // only fails for an unknown course, and c is the one
@@ -70,6 +71,10 @@ func Replay(c *course.Course, params sim.Params, startM float64, power []PowerSa
 		})
 		s.tick(t0.Add(at))
 		st, _ := hub.Latest()
+		if l := st.Ride.LastLap; c.Loop && l.N > 0 {
+			trace = append(trace, TracePoint{l.Elapsed, c.Distance})
+			return ReplayResult{Finished: true, Elapsed: l.Elapsed, DistanceM: c.Distance, AvgPowerW: l.AvgPowerW, ClimbedM: l.ClimbedM, Trace: trace}
+		}
 		if st.Ride.Phase == telemetry.RideRiding || st.Ride.Phase == telemetry.RideFinished {
 			if last := trace[len(trace)-1]; st.Ride.Elapsed > last.At {
 				trace = append(trace, TracePoint{st.Ride.Elapsed, st.Ride.DistanceM})

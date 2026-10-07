@@ -106,5 +106,5 @@ func (r Ride) Params() sim.Params {
 
 // Replay re-rides r on its course c with params p.
 func (r Ride) Replay(c *course.Course, p sim.Params) ride.ReplayResult {
-	return ride.Replay(c, p, r.StartM, r.Power)
+	return ride.Replay(c, p, r.StartM, r.StartSpeedMPS, r.Power)
 }

@@ -35,6 +35,7 @@ const (
 	typeStop        = 1
 	typeStopAll     = 4
 	lapManual       = 0
+	lapPosition     = 4 // position_lap: round a loop
 	lapSessionEnd   = 7
 	sessionActEnd   = 0
 	activityManual  = 0

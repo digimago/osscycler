@@ -57,7 +57,7 @@ func sample() *pb.State {
 			SpeedMps:   f64(8.333),
 			DistanceM:  12345,
 			ElapsedS:   3725,
-			// Shown as a warning in the footer.
+			// Shown as a quiet hint in the footer.
 			ResistanceCalibrationRequired: true,
 		},
 		HeartRate: &pb.HeartRate{
@@ -75,7 +75,7 @@ func TestRenderBig(t *testing.T) {
 	m, _ := sized(100, 30).Update(StateMsg{State: sample()})
 	out := plain(m.(Model).render())
 	for _, want := range []string{"POWER", "HEART RATE", "CADENCE", "SPEED", "1:02:05", "12.35 km", "riding",
-		"trainer #47508", "hrm searching", "spin-down calibration recommended"} {
+		"trainer #47508", "hrm searching", "trainer asks for a spin-down calibration"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("view lacks %q", want)
 		}
@@ -1481,5 +1481,34 @@ func TestCadenceTiles(t *testing.T) {
 	next, _ = calModel(&stubCommands{workouts: []*pb.WorkoutDef{testWorkoutDef(t)}}).Update(StateMsg{State: st})
 	if out := plain(next.(Model).render()); !strings.Contains(out, "CADENCE 5s") || !strings.Contains(out, "aim 90") {
 		t.Errorf("workout lacks the cadence and its aim:\n%s", out)
+	}
+}
+
+// dashboard is the TUI on its dashboard, the profile complete.
+func dashboard(t *testing.T, st *pb.State, width int) Model {
+	t.Helper()
+	if st.Profile == nil {
+		st.Profile = &pb.RiderProfile{WeightKg: 80, FtpW: 200}
+	}
+	m, _ := New("x:1", &stubCommands{}).Update(tea.WindowSizeMsg{Width: width, Height: 30})
+	m, _ = m.Update(StateMsg{State: st})
+	return m.(Model)
+}
+
+func TestCalibrationIsAHintNotAWarning(t *testing.T) {
+	out := plain(dashboard(t, sample(), 100).footer())
+	if strings.Contains(out, "⚠") {
+		t.Errorf("calibration still a warning:\n%s", out)
+	}
+	if !strings.Contains(out, "c calibrate") || !strings.Contains(out, "r ride") {
+		t.Errorf("hints missing:\n%s", out)
+	}
+}
+
+func TestHintsFitTheWidth(t *testing.T) {
+	for _, w := range []int{60, 80, 100, 160} {
+		if f := dashboard(t, sample(), w).footer(); strings.Count(f, "\n")+1 != 3 {
+			t.Errorf("width %d: footer is %d lines, want 3:\n%s", w, strings.Count(f, "\n")+1, plain(f))
+		}
 	}
 }

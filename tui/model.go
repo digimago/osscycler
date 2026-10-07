@@ -5,6 +5,7 @@ package tui
 import (
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 	"time"
 
@@ -440,14 +441,9 @@ func (m Model) footer() string {
 		sensors += "   " + rec
 	}
 
+	// The trainer's wish for a spin-down is a key hint, not a warning: the
+	// Flux asks after every power-up, and a warning hid the other hints.
 	var warnings []string
-	if tr.GetResistanceCalibrationRequired() && !m.calibrationActive() && m.countdown == 0 && !m.rideActive() && !m.workoutActive() {
-		hint := "spin-down calibration recommended"
-		if m.canCalibrate() {
-			hint += ": press c"
-		}
-		warnings = append(warnings, hint)
-	}
 	if tr.GetUserConfigRequired() {
 		warnings = append(warnings, "trainer wants your weight: press p")
 	}
@@ -528,10 +524,16 @@ func friendlyErr(err error) string {
 // keyHints lists the keys that do something right now.
 func (m Model) keyHints() string {
 	if m.cmds == nil {
+		if m.st.GetTrainer().GetResistanceCalibrationRequired() && !m.calibrationActive() {
+			return dimStyle.Render("trainer asks for a spin-down calibration · q quit")
+		}
 		return dimStyle.Render("q quit")
 	}
 	var h []string
 	switch {
+	case m.picking:
+		// The picker lists its own keys; the dashboard's don't apply here.
+		return dimStyle.Render("esc back · " + helpHint + " · q quit")
 	case m.draft != nil:
 		return dimStyle.Render("F1 help · ctrl+c quit")
 	case m.workoutActive():
@@ -566,5 +568,14 @@ func (m Model) keyHints() string {
 		h = append(h, "C recalibrate")
 	}
 	h = append(h, fmt.Sprintf("+/- difficulty %.0f%%", m.difficulty()))
-	return dimStyle.Render(strings.Join(append(h, helpHint, "q quit"), " · "))
+	h = append(h, helpHint, "q quit")
+	// On a narrow screen leave out the hints least needed (the help lists
+	// every key), rather than wrapping onto a second line.
+	for _, drop := range []string{"+/- difficulty", "g/l trainer", "w workout", "r ride"} {
+		if m.width == 0 || lipgloss.Width(strings.Join(h, " · ")) <= m.width {
+			break
+		}
+		h = slices.DeleteFunc(h, func(s string) bool { return strings.HasPrefix(s, drop) })
+	}
+	return dimStyle.Render(strings.Join(h, " · "))
 }

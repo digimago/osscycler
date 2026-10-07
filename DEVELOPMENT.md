@@ -88,6 +88,10 @@ key from `ANT_PLUS_NETWORK_KEY` or the key file built in:
 - macOS: a universal `.tar.gz` (Intel and Apple Silicon)
 - `SHA256SUMS`
 
+Every push and pull request runs `make check` and actionlint in GitHub
+Actions (the `check` workflow), without secrets: the network key test
+skips there.
+
 Pushing a `v*` tag runs `make check` and `make release` in GitHub Actions
 with the repository secret `ANT_PLUS_NETWORK_KEY` and makes a draft
 release with every file attached. Check it (files, notes), then publish

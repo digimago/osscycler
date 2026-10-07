@@ -1,0 +1,39 @@
+# Checks every push and pull request: make check (gofmt, vet, staticcheck,
+# race tests) and actionlint on the workflows. No secrets: the test that
+# looks for the ANT+ network key in the source skips here (the release
+# workflow runs it with the key), so pull requests from forks are safe to
+# check. The job name "check" is what a branch ruleset can require.
+#
+# The actions are pinned to commits, as in release.yml.
+name: check
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+
+      - name: make check
+        run: make check
+
+      - name: actionlint
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7

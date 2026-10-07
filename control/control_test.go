@@ -150,3 +150,37 @@ func TestOneDriverAtATime(t *testing.T) {
 		t.Errorf("during a workout: %v", err)
 	}
 }
+
+func TestOnALoop(t *testing.T) {
+	s, hub, tr := newSession()
+	hub.Update(func(st *telemetry.State) bool {
+		st.Ride.Phase, st.Ride.Loop = telemetry.RideRiding, true
+		return true
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { s.Run(ctx); close(done) }()
+	defer func() { cancel(); <-done }()
+
+	// A loop ride goes on under manual control...
+	if _, err := s.Set(Power, 180); err != nil {
+		t.Fatalf("set on a loop: %v", err)
+	}
+	for range 100 {
+		if len(tr.all()) > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	// ...and takes the trainer straight back on release: no flat.
+	s.Release()
+	time.Sleep(4 * tickInterval)
+	if sent := tr.all(); len(sent) != 1 || sent[0] != "erg 180" {
+		t.Errorf("sent %v", sent)
+	}
+	// A course ride still keeps manual control off.
+	hub.Update(func(st *telemetry.State) bool { st.Ride.Loop = false; return true })
+	if _, err := s.Set(Power, 180); err != ErrBusy {
+		t.Errorf("set during a course ride: %v", err)
+	}
+}

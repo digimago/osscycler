@@ -96,7 +96,8 @@ func (s *Session) Start(id string) error {
 	if err != nil {
 		return err
 	}
-	if st, _ := s.hub.Latest(); st.Ride.Phase.Active() || st.Control.Mode != telemetry.ControlOff {
+	// A loop ride goes on during the workout, as the road to ride on.
+	if st, _ := s.hub.Latest(); (st.Ride.Phase.Active() && !st.Ride.OnLoop()) || st.Control.Mode != telemetry.ControlOff {
 		return ErrActive
 	}
 	s.mu.Lock()
@@ -375,6 +376,19 @@ func (s *Session) send(ctx context.Context) {
 		same := sent != nil && sent.erg == want.erg &&
 			math.Abs(sent.watts-want.watts) < 1 && math.Abs(sent.grade-want.grade) < 0.1
 		if same && !(active && time.Since(sentAt) > resend) {
+			continue
+		}
+		if st, _ := s.hub.Latest(); !want.erg && st.Ride.OnLoop() {
+			// On a loop its grade applies in free segments, and after the
+			// workout the loop takes the trainer straight back.
+			sent = nil
+			if !active {
+				s.mu.Lock()
+				if s.run == nil || !s.run.phase.Active() {
+					s.target = nil
+				}
+				s.mu.Unlock()
+			}
 			continue
 		}
 		var err error

@@ -233,3 +233,36 @@ func TestRefusedDuringManualControl(t *testing.T) {
 		t.Errorf("start during manual control: %v", err)
 	}
 }
+
+func TestOnALoop(t *testing.T) {
+	s, hub, rec := setup(t)
+	hub.Update(func(st *telemetry.State) bool {
+		st.Ride.Phase, st.Ride.Loop = telemetry.RideRiding, true
+		return true
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go s.send(ctx)
+	// A loop ride is the road to ride the workout on.
+	if err := s.Start("test"); err != nil {
+		t.Fatalf("start on a loop: %v", err)
+	}
+	wait(t, rec, "erg 100")
+
+	// The free segment and the end leave the grade to the loop: no flat.
+	power(hub, 120)
+	s.tick(time.Now())
+	for range 5 {
+		s.Skip()
+	}
+	if w := state(hub); !w.Free {
+		t.Fatalf("not in the free segment: %+v", w)
+	}
+	s.Stop()
+	time.Sleep(4 * tickInterval)
+	for _, c := range rec.all() {
+		if strings.HasPrefix(c, "grade") {
+			t.Errorf("sent %q on a loop: %v", c, rec.all())
+		}
+	}
+}

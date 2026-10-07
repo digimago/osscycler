@@ -6,6 +6,10 @@
 #                          Linux tar.gz/.deb/.rpm, macOS universal tar.gz
 #                          and SHA256SUMS
 #   run manually         → the same build, archives kept as workflow artifacts only
+#
+# The actions are pinned to commits (the tag they had in the comment): this
+# job holds the key and may create releases, so a moved tag mustn't change
+# what runs. Update them by looking up the new tag's commit.
 name: release
 
 on:
@@ -22,11 +26,23 @@ jobs:
     env:
       ANT_PLUS_NETWORK_KEY: ${{ secrets.ANT_PLUS_NETWORK_KEY }}
     steps:
-      - uses: actions/checkout@v5
+      # The secret is masked in logs as stored; the build strips 0x and
+      # separators, so mask the forms it uses too, in case one is printed.
+      - name: Mask the network key in every form
+        run: |
+          k=$(printf '%s' "$ANT_PLUS_NETWORK_KEY" | sed 's/0[xX]//g' | tr -cd '0-9a-fA-F')
+          if [[ -n $k ]]; then
+            echo "::add-mask::$k"
+            echo "::add-mask::${k,,}"
+            echo "::add-mask::${k^^}"
+          fi
+
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0 # git describe needs the tags
+          persist-credentials: false # the release uses its own token below
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
 
@@ -55,7 +71,7 @@ jobs:
 
       - name: Keep the archives (manual runs)
         if: "!startsWith(github.ref, 'refs/tags/v')"
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: osscycler-${{ github.sha }}
           path: _dist/

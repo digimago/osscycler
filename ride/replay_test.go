@@ -30,7 +30,7 @@ func TestReplayMatchesLive(t *testing.T) {
 	}
 	live := ride(hub)
 
-	got := Replay(testCourse(t), sim.DefaultParams(87, 9), 0, steady(250, 20*time.Minute))
+	got := Replay(testCourse(t), sim.DefaultParams(87, 9), 0, 0, steady(250, 20*time.Minute))
 	if !got.Finished || got.Elapsed != live.Elapsed || got.DistanceM != live.DistanceM {
 		t.Errorf("replay %+v, live elapsed %v at %.1f m", got, live.Elapsed, live.DistanceM)
 	}
@@ -46,9 +46,9 @@ func TestReplayPauseAndRunOut(t *testing.T) {
 	for i := 120; i < len(power); i++ {
 		power[i].At += 3 * time.Minute
 	}
-	paused := Replay(c, p, 0, power)
-	straight := Replay(c, p, 0, steady(250, 4*time.Minute))
-	pedalled := Replay(c, p, 0, steady(250, 5*time.Minute))
+	paused := Replay(c, p, 0, 0, power)
+	straight := Replay(c, p, 0, 0, steady(250, 4*time.Minute))
+	pedalled := Replay(c, p, 0, 0, steady(250, 5*time.Minute))
 	if paused.Finished || straight.Finished || pedalled.Finished {
 		t.Fatal("five minutes at 250 W finished 3 km with an 8 % km")
 	}
@@ -64,12 +64,12 @@ func TestReplayPauseAndRunOut(t *testing.T) {
 
 func TestReplayRollingStart(t *testing.T) {
 	c, p := testCourse(t), sim.DefaultParams(87, 9)
-	full := Replay(c, p, 0, steady(250, 20*time.Minute))
-	last := Replay(c, p, 2000, steady(250, 20*time.Minute)) // the descent only
+	full := Replay(c, p, 0, 0, steady(250, 20*time.Minute))
+	last := Replay(c, p, 2000, 0, steady(250, 20*time.Minute)) // the descent only
 	if !last.Finished || last.Elapsed >= full.Elapsed/2 {
 		t.Errorf("from 2 km: %+v (full ride %v)", last, full.Elapsed)
 	}
-	if none := Replay(c, p, 0, nil); none.Finished || none.Elapsed != 0 {
+	if none := Replay(c, p, 0, 0, nil); none.Finished || none.Elapsed != 0 {
 		t.Errorf("no power: %+v", none)
 	}
 }

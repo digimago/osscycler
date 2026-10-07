@@ -51,22 +51,28 @@ type Model struct {
 	draft            *draft  // workout being edited
 	ending           *ending // end-ride question
 	onboarding       *onboarding
-	onboardLater     bool       // the rider put onboarding off this session
-	menu             *menuState // the start menu (m)
-	input            *input     // numeric prompt
-	abortUntil       time.Time  // a second x before this aborts the ride
+	onboardLater     bool          // the rider put onboarding off this session
+	menu             *menuState    // the start menu (m)
+	laps             []*pb.RideLap // this loop ride's completed laps
+	lapsUntil        time.Time     // the lap times show until then
+	input            *input        // numeric prompt
+	abortUntil       time.Time     // a second x before this aborts the ride
 	now              func() time.Time
 
 	tour        *Tour // demo autopilot; nil without -tour
 	tourCaption string
 
-	scenes    map[string]*roadScene // road views by course ID
-	tiles     bool                  // v: big tiles instead of the road view
-	posAt     time.Time             // when the ride distance last changed
-	posErr    float64               // shown minus reported then, blended out
-	animating bool                  // a frame tick is pending
-	help      bool                  // the key help is open
-	cadence   []cadenceSample       // recent readings, for the averaged tile
+	scenes map[string]*roadScene // road views by course ID
+	tiles  bool                  // v: big tiles instead of the road view
+	posAt  time.Time             // when the ride distance last changed
+	posErr float64               // shown minus reported then, blended out
+	// The ghost, carried forward the same way: where it was reported, when
+	// that changed, and its speed from the reports before.
+	ghostD, ghostV float64
+	ghostSeen      time.Time
+	animating      bool            // a frame tick is pending
+	help           bool            // the key help is open
+	cadence        []cadenceSample // recent readings, for the averaged tile
 	// z: medium digits even where large ones would fit.
 	mediumDigits bool
 	layout       Layout     // the rider's tile arrangement
@@ -117,7 +123,13 @@ func (m Model) animate() (Model, tea.Cmd) {
 // read-only display.
 func New(addr string, cmds Commands) Model { return Model{addr: addr, cmds: cmds, now: time.Now} }
 
-func (m Model) Init() tea.Cmd { return nil }
+// Init fetches the courses for the start menu's tracks.
+func (m Model) Init() tea.Cmd {
+	if m.menu != nil && m.cmds != nil {
+		return m.fetchCourses(false)
+	}
+	return nil
+}
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -180,6 +192,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
+		m = m.followGhost(old)
 		if m.needsOnboarding() {
 			m = m.startOnboarding(false)
 		}
@@ -189,7 +202,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m, c1 := m.needCourse()
 		m, c2 := m.needWorkout()
 		m, c3 := m.animate()
-		return m, tea.Batch(c1, c2, c3)
+		m, c4 := m.trackLaps(old)
+		return m, tea.Batch(c1, c2, c3, c4)
 	case ConnMsg:
 		m.connected, m.connErr = msg.Err == nil, msg.Err
 		if msg.Err != nil {
@@ -328,7 +342,8 @@ func (m Model) renderScreen() string {
 			strip = workoutProfile(w, m.wk().GetElapsedS(), m.width, 4)
 		}
 	case m.showRide() && m.rideActive():
-		strip = gradeStrip(m.courses[m.ride().GetCourseId()], m.ride().GetDistanceM(), m.ghostAt(), m.width)
+		pos := m.ride().GetDistanceM()
+		strip = gradeStrip(m.courses[m.ride().GetCourseId()], pos, m.loopGhost(pos), m.width)
 	}
 
 	// Big tiles need two rows of label + digits + unit, plus the footer.
@@ -366,7 +381,7 @@ func (m Model) renderScreen() string {
 	default:
 		body = m.compact(ms)
 	}
-	body = m.withAsk(body)
+	body = m.withAsk(m.withLaps(body))
 	if strip != "" {
 		return lipgloss.JoinVertical(lipgloss.Left, body, footer, strip)
 	}
@@ -420,13 +435,19 @@ func (m Model) footer() string {
 	ride := dimStyle.Render("--:--:--   --.-- km")
 	if p := m.wk(); m.workoutActive() {
 		ride = fmt.Sprintf("FTP %.0f W · intensity %.0f%% · average %.0f W", p.GetFtpW(), p.GetIntensityPct(), p.GetAvgPowerW())
+	} else if m.controlActive() {
+		ride = warnStyle.Render(controlText(m.control())) + fmt.Sprintf("   %.2f km   %s", tr.GetDistanceM()/1000, trainerState(tr.GetState()))
+		if r := m.ride(); m.onLoop() {
+			ride = warnStyle.Render(controlText(m.control())) + fmt.Sprintf("   lap %d   %.2f / %.2f km", r.GetLap(), r.GetDistanceM()/1000, r.GetCourseDistanceM()/1000)
+		}
 	} else if r := m.ride(); m.rideActive() {
 		// On a course the ride clock is in the tiles; show position and
 		// what the trainer is asked to do.
 		ride = fmt.Sprintf("%.2f / %.2f km   %.0f m   trainer %.1f%% at %.0f%% difficulty",
 			r.GetDistanceM()/1000, r.GetCourseDistanceM()/1000, r.GetElevationM(), r.GetTrainerGradePct(), m.difficulty())
-	} else if m.controlActive() {
-		ride = warnStyle.Render(controlText(m.control())) + fmt.Sprintf("   %.2f km   %s", tr.GetDistanceM()/1000, trainerState(tr.GetState()))
+		if r.GetLoop() {
+			ride = fmt.Sprintf("lap %d   ", r.GetLap()) + ride
+		}
 	} else if m.st != nil {
 		el := time.Duration(tr.GetElapsedS() * float64(time.Second))
 		ride = fmt.Sprintf("%d:%02d:%02d   %.2f km   %s",
@@ -540,6 +561,8 @@ func (m Model) keyHints() string {
 	}
 	var h []string
 	switch {
+	case m.menu != nil && m.menu.tracks:
+		return dimStyle.Render("↑↓ choose · enter ride · esc back · " + helpHint + " · q quit")
 	case m.menu != nil:
 		return dimStyle.Render("↑↓ choose · enter do it · esc free ride · " + helpHint + " · q quit")
 	case m.picking:
@@ -558,7 +581,11 @@ func (m Model) keyHints() string {
 		if m.roadScene() != nil {
 			h = append(h, map[bool]string{false: "v tiles", true: "v road"}[m.tiles])
 		}
-		h = append(h, "x x abort ride")
+		if m.onLoop() {
+			h = append(h, "w workout", "g/l trainer", "x x end ride")
+		} else {
+			h = append(h, "x x abort ride")
+		}
 	case m.showRide():
 		h = append(h, "x close")
 	default:

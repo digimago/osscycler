@@ -76,6 +76,9 @@ func (s *Store) Run(ctx context.Context, courses []*course.Course) {
 	}
 	var pending []job
 	for _, c := range courses {
+		if c.Builtin {
+			continue // osscycler's own test tracks lie where there is no map
+		}
 		q := Query(c)
 		j := job{c, q, s.cachePath(c.ID, q)}
 		if raw, err := os.ReadFile(j.path); err == nil {

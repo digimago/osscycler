@@ -414,3 +414,68 @@ func TestPositions(t *testing.T) {
 		t.Error("recovered course record lost its position")
 	}
 }
+
+func TestLoopLaps(t *testing.T) {
+	r := newRecorder(t)
+	loop := func(phase telemetry.RidePhase) func(int) telemetry.State {
+		return func(i int) telemetry.State {
+			st := state(250, 85, 10)
+			st.Ride = telemetry.Ride{Phase: phase, Loop: true, CourseID: "oval-400", CourseName: "Oval 400 m", CourseDistanceM: 400,
+				SpeedMPS: 10, Lat: -25.5, Lon: -20, Lap: i/30 + 1}
+			// A lap every 30 s; the first from a standstill.
+			if n := i / 30; n > 0 {
+				st.Ride.LastLap = telemetry.Lap{N: n, Elapsed: 30 * time.Second, AvgPowerW: 250,
+					StartSpeedMPS: map[bool]float64{true: 0, false: 10}[n == 1], Finished: t0.Add(time.Duration(n*30) * time.Second)}
+			}
+			return st
+		}
+	}
+	end := play(r, []step{{31, loop(telemetry.RideRiding)}})
+	// The first lap is on the disk at once, not up to 30 s later.
+	if r.a == nil || !r.a.synced.Equal(end.Add(-time.Second)) {
+		t.Errorf("lap not synced: synced %v, lap at %v", r.a.synced, end.Add(-time.Second))
+	}
+	for i := 31; i < 100; i++ {
+		r.step(loop(telemetry.RideRiding)(i), t0.Add(time.Duration(i)*time.Second))
+	}
+	for i := 100; i < 105; i++ { // the rider stops the loop ride
+		r.step(loop(telemetry.RideAborted)(i), t0.Add(time.Duration(i)*time.Second))
+	}
+	r.end()
+
+	_, msgs := decodeOnly(t, r.cfg.Dir)
+	var loopLaps []int64
+	for _, m := range byNum(msgs, 19) { // lap
+		if field(t, m, 24) == lapPosition { // lap_trigger
+			loopLaps = append(loopLaps, field(t, m, 254))
+		}
+	}
+	if len(loopLaps) != 3 {
+		t.Fatalf("laps of the loop %v, want 3", loopLaps)
+	}
+	res, err := ReadResults(r.cfg.Dir)
+	if err != nil || len(res) != 3 {
+		t.Fatalf("results %+v, %v", res, err)
+	}
+	for i, x := range res {
+		if x.CourseID != "oval-400" || x.StartM != 0 || x.DistanceM != 400 || x.ElapsedS != 30 || int64(x.Lap) != loopLaps[i] || x.File == "" {
+			t.Errorf("result %d: %+v", i, x)
+		}
+	}
+	if res[0].StartSpeedMPS != 0 || res[1].StartSpeedMPS != 10 {
+		t.Errorf("start speeds %v, %v", res[0].StartSpeedMPS, res[1].StartSpeedMPS)
+	}
+}
+
+// A finished lap is on the disk at once, not up to 30 s later: here the
+// lap of free riding that ends when a course ride starts.
+func TestLapSynced(t *testing.T) {
+	r := newRecorder(t)
+	end := play(r, []step{
+		{5, func(int) telemetry.State { return state(200, 90, 8) }},
+		{1, onCourse(telemetry.RideRiding)},
+	})
+	if r.a == nil || !r.a.synced.Equal(end.Add(-time.Second)) {
+		t.Errorf("synced at %v, the lap ended at %v", r.a.synced, end.Add(-time.Second))
+	}
+}

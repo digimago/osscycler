@@ -56,7 +56,8 @@ func (m Model) setControl(mode pb.ControlMode, v float64) tea.Cmd {
 // controlKey handles w, g and l on the dashboard, and + - x while manual
 // control is on. It reports whether it used the key.
 func (m Model) controlKey(key string) (Model, tea.Cmd, bool) {
-	if m.picking || m.rideActive() || m.workoutActive() || m.calibrationActive() || m.countdown > 0 {
+	// On a loop the trainer is free for these; a course ride keeps it.
+	if m.picking || m.courseRide() || m.workoutActive() || m.calibrationActive() || m.countdown > 0 {
 		return m, nil, false
 	}
 	c := m.control()

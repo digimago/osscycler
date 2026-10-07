@@ -276,7 +276,36 @@ type Ride struct {
 	// replayed the same way.
 	Sim sim.Params
 	// Ghost is the earlier ride raced against; Label is "" without one.
+	// On a loop it races the current lap.
 	Ghost RideGhost
+
+	// Loop: the course goes round, and the ride with it until the rider
+	// stops; DistanceM is then along the current lap.
+	Loop bool
+	// Lap is the lap under way, from 1; LapElapsed its time so far.
+	Lap        int
+	LapElapsed time.Duration
+	// LastLap and BestLap are this ride's completed laps (N 0: none yet).
+	LastLap, BestLap Lap
+	// Yielded: a workout or manual control drives the trainer, and the
+	// ride only moves the rider along the loop.
+	Yielded bool
+}
+
+// OnLoop reports whether a loop ride is under way: it moves the rider
+// round, and follows the grade whenever nothing else drives the trainer.
+func (r Ride) OnLoop() bool { return r.Loop && r.Phase.Active() }
+
+// Lap is a completed lap of a loop.
+type Lap struct {
+	N         int
+	Elapsed   time.Duration
+	AvgPowerW float64
+	ClimbedM  float64
+	// StartSpeedMPS is how fast the rider crossed the line into it (0 for
+	// the first lap, from a standstill), so the lap can be replayed.
+	StartSpeedMPS float64
+	Finished      time.Time
 }
 
 // RideGhost is an earlier ride on the same stretch, raced alongside.

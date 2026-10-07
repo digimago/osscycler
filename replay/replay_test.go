@@ -1,6 +1,9 @@
 package replay
 
 import (
+	"encoding/binary"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -88,5 +91,41 @@ func TestLoadReportsBrokenRides(t *testing.T) {
 	}
 	if p := rides[2].Params(); p.MassKg != 84 {
 		t.Errorf("default params for an old result: %+v", p)
+	}
+}
+
+// A lap of a recording still under way (a loop raced while the rider is
+// out riding) is read from its .part file.
+func TestLapPowerWhileRecording(t *testing.T) {
+	rides, err := Load("testdata")
+	if err != nil || len(rides) == 0 {
+		t.Fatal(rides, err)
+	}
+	r := rides[0]
+	want, err := LapPower(filepath.Join("testdata", r.File), r.Lap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The same file as the recorder leaves it while writing: no data size
+	// or CRCs yet, and half a message at the end.
+	b, err := os.ReadFile(filepath.Join("testdata", r.File))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b = append([]byte(nil), b[:len(b)-2]...)
+	binary.LittleEndian.PutUint32(b[4:], 0)
+	binary.LittleEndian.PutUint16(b[12:], 0)
+	b = append(b, 0x41, 0x00) // a torn message
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, r.File+".part"), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LapPower(filepath.Join(dir, r.File), r.Lap)
+	if err != nil || len(got) != len(want) || got[len(got)-1] != want[len(want)-1] {
+		t.Errorf("while recording: %d samples, %v; finished: %d", len(got), err, len(want))
+	}
+	// Neither file: the error says so.
+	if _, err := LapPower(filepath.Join(dir, "gone.fit"), 0); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("missing file: %v", err)
 	}
 }

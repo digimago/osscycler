@@ -96,7 +96,8 @@ func (s *Session) Set(m Mode, v float64) (float64, error) {
 	if err != nil {
 		return 0, err
 	}
-	if st, _ := s.hub.Latest(); st.Ride.Phase.Active() || st.Workout.Phase.Active() {
+	// A loop ride goes on meanwhile, as the road to ride on.
+	if st, _ := s.hub.Latest(); (st.Ride.Phase.Active() && !st.Ride.OnLoop()) || st.Workout.Phase.Active() {
 		return 0, ErrBusy
 	}
 	s.mu.Lock()
@@ -165,6 +166,15 @@ func (s *Session) Run(ctx context.Context) {
 		case Level:
 			err = s.trainer.SetResistance(ctx, v)
 		case Off: // released: hand the trainer back flat, once
+			if st, _ := s.hub.Latest(); st.Ride.OnLoop() {
+				// A loop takes it straight back, at its own grade.
+				s.mu.Lock()
+				if s.mode == Off {
+					s.flat = false
+				}
+				s.mu.Unlock()
+				continue
+			}
 			err = s.trainer.SetGrade(ctx, 0)
 		}
 		if err != nil {

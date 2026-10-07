@@ -116,13 +116,24 @@ activities, your profile, calibrate, or quit. Pick one with the arrows
 and `enter`, or press its letter; `esc` is a free ride. `m` brings the
 menu back.
 
+**Free ride on a test track.** Free ride asks where to: the numbers
+alone, or round one of two built-in tracks: an oval of 400 m, flat, and
+a figure of eight of 5 km that climbs 40 m and crosses itself on a
+bridge. The trainer follows the track's grade, and you go round until
+you stop (`x` twice). Every lap is timed and raced against your best
+lap ever, which rides along as your ghost; after each lap the lap times
+pop in on the left for 15 seconds, your fastest in bold. Press `w` on a
+track for a workout or a fixed power: the trainer then follows the
+workout, and the road goes on (its free parts follow the track's grade).
+The tracks lie in open sea, so they need no map data.
+
 On the dashboard you see power, heart rate, cadence and speed.
 
 | Key | Does |
 | --- | --- |
 | `m` | The menu |
 | `r` | Rides: COURSES, HISTORY, ACTIVITIES (`tab` switches) |
-| `w` | Workouts, with a fixed power (ERG) at the top |
+| `w` | Workouts, with a fixed power (ERG) at the top (also on a track) |
 | `+` / `-` | Trainer difficulty on courses, in 10 % steps (50 % is Zwift's default) |
 | `g` / `l` | Free riding at a fixed grade (%) or resistance level (%) |
 | `p` | Your profile: weight, height and FTP |

@@ -35,6 +35,7 @@ const (
 	typeStop        = 1
 	typeStopAll     = 4
 	lapManual       = 0
+	lapPosition     = 4 // position_lap: round a loop
 	lapSessionEnd   = 7
 	sessionActEnd   = 0
 	activityManual  = 0
@@ -416,6 +417,9 @@ func (a *activity) endLap(t time.Time, trigger int64) int {
 		trigger, sportCycling, l.subSport(), int64(math.Round(l.work)))
 	a.laps++
 	a.lap = newSummary(t, a.session.dist)
+	// A finished lap is an effort worth keeping through a crash or a power
+	// cut: the next flush puts it on the disk.
+	a.synced = time.Time{}
 	return a.laps - 1
 }
 

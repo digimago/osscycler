@@ -8,6 +8,7 @@ package replay
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"time"
@@ -49,15 +50,13 @@ func Load(dir string) ([]Ride, error) {
 }
 
 // LapPower reads the power records of one lap of a FIT activity, timed
-// from the lap's first record. Records without power count as 0 W.
+// from the lap's first record. Records without power count as 0 W. A
+// recording still under way is read from its .part file, as far as it
+// goes: a lap of a loop is raced while the rider is still out riding.
 func LapPower(path string, lap int) ([]ride.PowerSample, error) {
-	b, err := os.ReadFile(path)
+	msgs, err := readActivity(path)
 	if err != nil {
 		return nil, err
-	}
-	msgs, err := fit.Decode(b)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", filepath.Base(path), err)
 	}
 	const lapNum, recordNum = 19, 20 // FIT global message numbers
 	var start, end int64 = -1, -1
@@ -95,6 +94,29 @@ func LapPower(path string, lap int) ([]ride.PowerSample, error) {
 	return ps, nil
 }
 
+// readActivity decodes a finished FIT file, or the .part file of one
+// still being recorded.
+func readActivity(path string) ([]fit.Msg, error) {
+	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		if b, perr := os.ReadFile(path + ".part"); perr == nil {
+			msgs, _, err := fit.DecodePartial(b)
+			if err != nil {
+				return nil, fmt.Errorf("%s (being recorded): %w", filepath.Base(path), err)
+			}
+			return msgs, nil
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	msgs, err := fit.Decode(b)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", filepath.Base(path), err)
+	}
+	return msgs, nil
+}
+
 // Params are what the ride was simulated with, or the defaults for a
 // result recorded before parameters were kept.
 func (r Ride) Params() sim.Params {
@@ -106,5 +128,5 @@ func (r Ride) Params() sim.Params {
 
 // Replay re-rides r on its course c with params p.
 func (r Ride) Replay(c *course.Course, p sim.Params) ride.ReplayResult {
-	return ride.Replay(c, p, r.StartM, r.Power)
+	return ride.Replay(c, p, r.StartM, r.StartSpeedMPS, r.Power)
 }

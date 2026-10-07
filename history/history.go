@@ -122,7 +122,7 @@ func (s *Store) ghost(c *course.Course, e Entry) (*ride.Ghost, error) {
 	if !e.PB {
 		label = day + " " + e.Finished.Local().Format("15:04")
 	}
-	res := ride.Replay(c, params, e.StartM, power)
+	res := ride.Replay(c, params, e.StartM, e.StartSpeedMPS, power)
 	if !res.Finished || res.Elapsed <= 0 {
 		return nil, fmt.Errorf("the ride of %s doesn't replay to the finish", label)
 	}

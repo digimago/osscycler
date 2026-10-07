@@ -248,11 +248,11 @@ to do that unencrypted): start it with
 
 - Zwift is a trademark of Zwift, Inc. osscycler reads and writes Zwift's
   `.zwo` workout files; it is not affiliated with Zwift.
-- osscycler is young. On a Tacx Flux 2, calibration and the trainer
-  following a grade or an ERG target have been checked; a full course
-  ride and a full workout on a real trainer are next, as is pairing a
-  real heart rate strap. Other FE-C trainers should work, but haven't
-  been tried.
+- osscycler is young. On a Tacx Flux 2, calibration, the trainer
+  following a grade or an ERG target, laps of a test track and a heart
+  rate strap alongside have been checked; a full course ride and a full
+  workout on a real trainer are next. Other FE-C trainers should work,
+  but haven't been tried.
 
 ## How osscycler is made
 
@@ -266,3 +266,15 @@ claimed where this README says it has been tried.
 
 Want to build osscycler yourself or work on it? See
 [DEVELOPMENT.md](DEVELOPMENT.md).
+
+## License
+
+osscycler is free software under the GNU General Public License,
+version 3 ([LICENSE](LICENSE)): you may use, study, change and share it;
+if you share a changed version, share its source under the same terms.
+
+The ANT+ network key is not part of the source. Release builds carry it
+under the ANT+ adopter agreement; to build from source, get the key from
+Garmin's ANT+ downloads page as DEVELOPMENT.md describes.
+
+Found a security problem? See [SECURITY.md](SECURITY.md).

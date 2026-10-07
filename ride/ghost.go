@@ -1,6 +1,7 @@
 package ride
 
 import (
+	"errors"
 	"sort"
 	"time"
 
@@ -21,11 +22,21 @@ type Ghost struct {
 	Trace   []TracePoint  // distance never decreases
 }
 
-// GhostSource finds a ghost for a ride on c from startM; nil, nil when
-// there is none (a first ride on that stretch).
+// GhostSource finds ghosts in the rider's history.
 type GhostSource interface {
+	// Ghost is the personal best on c from startM; nil, nil when there is
+	// none (a first ride on that stretch).
 	Ghost(c *course.Course, startM float64) (*Ghost, error)
+	// Race is the ride on c that finished at finished, with where it
+	// started. ErrUnknownRide if there is none, ErrCourseChanged if the
+	// course no longer matches it.
+	Race(c *course.Course, finished time.Time) (g *Ghost, startM float64, err error)
 }
+
+var (
+	ErrUnknownRide   = errors.New("ride: no such ride in the history")
+	ErrCourseChanged = errors.New("ride: the course has changed since that ride")
+)
 
 // DistanceAt is where the ghost was t into its ride; at the line once it
 // has finished.

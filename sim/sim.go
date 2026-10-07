@@ -15,12 +15,33 @@ type Params struct {
 	DrivetrainEff float64 // share of pedal power reaching the wheel
 }
 
+// DefaultCdA is the drag area of the reference rider (RefHeightM,
+// RefRiderKg) on the hoods.
+const (
+	DefaultCdA = 0.32
+	RefHeightM = 1.80
+	RefRiderKg = 75.0
+)
+
+// FrontalArea estimates a rider's frontal area on a bike, m², from height
+// and weight (Bassett et al., 1999, "Comparing cycling world hour
+// records, 1967-1996", Med Sci Sports Exerc 31(11)).
+func FrontalArea(heightM, riderKg float64) float64 {
+	return 0.0293*math.Pow(heightM, 0.725)*math.Pow(riderKg, 0.425) + 0.0604
+}
+
+// CdAFor scales DefaultCdA to a rider's size: a taller or heavier rider
+// pushes more air. The reference rider gets DefaultCdA exactly.
+func CdAFor(heightM, riderKg float64) float64 {
+	return DefaultCdA * FrontalArea(heightM, riderKg) / FrontalArea(RefHeightM, RefRiderKg)
+}
+
 // DefaultParams are road-bike values: on the hoods, good tyres on smooth
-// tarmac, sea level at 15 °C.
+// tarmac, sea level at 15 °C, the reference rider's drag area.
 func DefaultParams(riderKg, bikeKg float64) Params {
 	return Params{
 		MassKg:        riderKg + bikeKg,
-		CdA:           0.32,
+		CdA:           DefaultCdA,
 		Crr:           0.004,
 		AirDensity:    1.225,
 		DrivetrainEff: 0.976,

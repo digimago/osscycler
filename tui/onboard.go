@@ -14,18 +14,24 @@ import (
 
 // Onboarding is the stack's: the core says what the rider profile lacks
 // (RiderProfile.missing) and holds rides and workouts back until it has
-// it. This is the TUI's form for it: weight, then FTP, each saved through
-// SetProfile as it is entered. p opens it later to change either.
+// it. This is the TUI's form for it: weight, height (optional: it sizes
+// the rider's drag), then FTP, each saved through SetProfile as it is
+// entered. p opens it later to change any of them.
 
 const (
 	stepWeight = iota
+	stepHeight
 	stepFTP
+	numSteps
 )
 
 type onboarding struct {
 	step  int
 	value string // being typed
 	edit  bool   // opened with p, rather than because the core asked
+	// saved is the profile the core returned for the last step saved:
+	// newer than the state stream right after a save.
+	saved *pb.RiderProfile
 }
 
 type profileSavedMsg struct {
@@ -68,8 +74,9 @@ func (m Model) onboardKey(key string) (Model, tea.Cmd, bool) {
 	m.onboarding = &o
 	switch {
 	case key == "esc":
-		if o.step == stepFTP && o.edit {
-			o.step, o.value = stepWeight, fmt.Sprintf("%.0f", m.profile().GetWeightKg())
+		if o.step > stepWeight && o.edit {
+			o.step--
+			o.value = m.stepValue(o.step)
 			return m, nil, true
 		}
 		m.onboarding = nil
@@ -82,9 +89,16 @@ func (m Model) onboardKey(key string) (Model, tea.Cmd, bool) {
 			o.value = o.value[:len(o.value)-1]
 		}
 	case key == "enter":
+		if o.step == stepHeight && o.value == "" { // optional: skip it
+			o.step, o.value = stepFTP, m.stepValue(stepFTP)
+			return m, nil, true
+		}
 		v, err := strconv.ParseFloat(o.value, 64)
 		lo, hi, what := 30.0, 200.0, "weight in kg"
-		if o.step == stepFTP {
+		switch o.step {
+		case stepHeight:
+			lo, hi, what = 120, 220, "height in cm"
+		case stepFTP:
 			lo, hi, what = 50, 600, "FTP in watts"
 		}
 		if err != nil || v < lo || v > hi {
@@ -103,13 +117,16 @@ func (m Model) saveProfile(step int, v float64) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
 		defer cancel()
-		var weight, ftp *float64
-		if step == stepWeight {
+		var weight, ftp, height *float64
+		switch step {
+		case stepWeight:
 			weight = &v
-		} else {
+		case stepHeight:
+			height = &v
+		default:
 			ftp = &v
 		}
-		p, err := cmds.SetProfile(ctx, weight, ftp)
+		p, err := cmds.SetProfile(ctx, weight, ftp, height)
 		return profileSavedMsg{profile: p, step: step, err: err}
 	}
 }
@@ -123,15 +140,10 @@ func (m Model) onProfileSaved(msg profileSavedMsg) (Model, tea.Cmd) {
 	if o == nil {
 		return m, nil
 	}
-	if msg.step == stepWeight {
-		// On to FTP: the one already set, or the core's suggestion.
+	if msg.step < stepFTP {
 		next := *o
-		next.step = stepFTP
-		ftp := msg.profile.GetFtpW()
-		if ftp <= 0 {
-			ftp = msg.profile.GetSuggestedFtpW()
-		}
-		next.value = fmt.Sprintf("%.0f", ftp)
+		next.step, next.saved = msg.step+1, msg.profile
+		next.value = stepValueFrom(msg.profile, next.step)
 		m.onboarding = &next
 		return m, nil
 	}
@@ -152,15 +164,25 @@ func (m Model) onboardPanel(width, height int) string {
 	}
 	var prompt, why, unit string
 	forced := false
-	if o.step == stepWeight {
+	switch o.step {
+	case stepWeight:
 		prompt, unit, forced = "Your weight", "kg", p.GetWeightForced()
 		why = "It sets how climbs feel on the trainer and your speed on a course."
-	} else {
+	case stepHeight:
+		prompt, unit, forced = "Your height", "cm", p.GetHeightForced()
+		why = "Optional: with your weight it sizes how much air you push on a course.\nLeave it empty to skip; riders are then sized as 1.80 m, 75 kg."
+		if cda := p.GetCda(); cda > 0 {
+			why += fmt.Sprintf("\nDrag area now: %.3f m².", cda)
+		}
+		if p.GetCdaForced() {
+			why += "\nThe core runs with -cda: a fixed drag area this run."
+		}
+	default:
 		prompt, unit, forced = "Your FTP", "W", p.GetFtpForced()
 		why = fmt.Sprintf("It sets the targets of ERG workouts. Not sure? %.0f W is 2.5 W/kg,\na fair start; change it any time (f, or p here).", p.GetSuggestedFtpW())
 	}
 	lines := []string{titleStyle.Render(title), "",
-		fmt.Sprintf("%d/2  %s: ", o.step+1, prompt) + typingStyle.Render(o.value+"▏") + " " + unit, "",
+		fmt.Sprintf("%d/%d  %s: ", o.step+1, numSteps, prompt) + typingStyle.Render(o.value+"▏") + " " + unit, "",
 		dimStyle.Render(why)}
 	if forced {
 		lines = append(lines, "", warnStyle.Render("a flag on the core sets this for the current run: a change here lasts until the core restarts"))
@@ -179,6 +201,34 @@ func (m Model) onboardPanel(width, height int) string {
 	}
 	lines = append(lines, "", dimStyle.Render(hint))
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, lipgloss.JoinVertical(lipgloss.Left, lines...))
+}
+
+// stepValue is what a step starts with: the value in the profile (the
+// one just saved, when there is one), or for the FTP the core's
+// suggestion; empty for an unknown height.
+func (m Model) stepValue(step int) string {
+	if o := m.onboarding; o != nil && o.saved != nil {
+		return stepValueFrom(o.saved, step)
+	}
+	return stepValueFrom(m.profile(), step)
+}
+
+func stepValueFrom(p *pb.RiderProfile, step int) string {
+	var v float64
+	switch step {
+	case stepWeight:
+		v = p.GetWeightKg()
+	case stepHeight:
+		v = p.GetHeightCm()
+	case stepFTP:
+		if v = p.GetFtpW(); v <= 0 {
+			v = p.GetSuggestedFtpW()
+		}
+	}
+	if v <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("%.0f", v)
 }
 
 // missingText names what the core still needs, for hints.

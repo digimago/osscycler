@@ -443,10 +443,10 @@ func (m Model) draftKey(key string) (Model, tea.Cmd, bool) {
 	case "esc":
 		if d.dirty && !m.now().Before(d.discardUntil) {
 			d.discardUntil = m.now().Add(abortConfirm)
-			m.notice = "press esc again to discard your changes"
+			m = m.ask("press esc again to discard your changes", d.discardUntil)
 			break
 		}
-		m.draft = nil
+		m.draft, m.asking = nil, ""
 		m.notice = "edit discarded"
 	default:
 		// Typing a number on a number field starts replacing it.

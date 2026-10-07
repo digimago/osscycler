@@ -4,6 +4,7 @@ import (
 	"github.com/digimago/osscycler/course"
 	"github.com/digimago/osscycler/fec"
 	pb "github.com/digimago/osscycler/gen/osscycler/v1"
+	"github.com/digimago/osscycler/scenery"
 	"github.com/digimago/osscycler/telemetry"
 )
 
@@ -72,8 +73,7 @@ func rideToProto(r telemetry.Ride) *pb.Ride {
 	}
 }
 
-// CourseToProto converts a course with its full profile.
-// ProfileToProto converts the rider profile; nil for a core without one.
+// profileToProto converts the rider profile; nil for a core without one.
 func profileToProto(p telemetry.Profile) *pb.RiderProfile {
 	if !p.Known {
 		return nil
@@ -82,6 +82,7 @@ func profileToProto(p telemetry.Profile) *pb.RiderProfile {
 		Complete: p.Complete, WeightKg: p.WeightKg, FtpW: p.FTPW, DifficultyPct: p.DifficultyPct,
 		WeightForced: p.WeightForced, FtpForced: p.FTPForced, DifficultyForced: p.DifficultyForced,
 		Path: p.Path, SuggestedFtpW: p.SuggestedFTPW,
+		HeightCm: p.HeightCm, Cda: p.CdA, HeightForced: p.HeightForced, CdaForced: p.CdAForced,
 	}
 	if p.NeedWeight {
 		out.Missing = append(out.Missing, "weight_kg")
@@ -106,8 +107,11 @@ func ghostToProto(g telemetry.RideGhost) *pb.RideGhost {
 	return &pb.RideGhost{Label: g.Label, DistanceM: g.DistanceM, GapS: g.Gap.Seconds(), TimeS: g.Elapsed.Seconds()}
 }
 
-func CourseToProto(c *course.Course) *pb.Course {
+// CourseToProto converts a course with its full profile and track, and
+// its scenery when known (sc may be nil).
+func CourseToProto(c *course.Course, sc *scenery.Scenery) *pb.Course {
 	ele, grade := c.Profile()
+	east, north := c.Track()
 	pc := &pb.Course{
 		Id:                c.ID,
 		Name:              c.Name,
@@ -119,9 +123,25 @@ func CourseToProto(c *course.Course) *pb.Course {
 		ProfileStepM:      c.Spacing,
 		ProfileElevationM: make([]float32, len(ele)),
 		ProfileGradePct:   make([]float32, len(grade)),
+		ProfileEastM:      make([]float32, len(east)),
+		ProfileNorthM:     make([]float32, len(north)),
 	}
 	for i := range ele {
 		pc.ProfileElevationM[i], pc.ProfileGradePct[i] = float32(ele[i]), float32(grade[i])
+		pc.ProfileEastM[i], pc.ProfileNorthM[i] = float32(east[i]), float32(north[i])
+	}
+	if sc != nil {
+		pc.Attribution = scenery.Attribution
+		pc.LandUse = make([]byte, len(sc.Land))
+		for i, l := range sc.Land {
+			pc.LandUse[i] = byte(l)
+		}
+		for _, b := range sc.Buildings {
+			pc.Buildings = append(pc.Buildings, &pb.Building{
+				DistanceM: b.DistanceM, OffsetM: b.OffsetM, LengthM: b.LengthM, DepthM: b.DepthM,
+				HeightM: b.HeightM, Kind: pb.BuildingKind(b.Kind),
+			})
+		}
 	}
 	return pc
 }

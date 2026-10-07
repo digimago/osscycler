@@ -124,3 +124,31 @@ func secs(s float64) string {
 	}
 	return fmt.Sprintf("%.1f s", s)
 }
+
+// race starts the course of an earlier ride, with that ride as the ghost.
+func (m Model) race(r *pb.RideResult) (Model, tea.Cmd, bool) {
+	id, at := r.GetCourseId(), r.GetFinishedUnixMs()
+	if _, ok := m.courses[id]; !ok {
+		m.notice = r.GetCourseName() + " is no longer in the courses folder"
+		return m, nil, true
+	}
+	m.picking = false
+	cmds := m.cmds
+	return m, m.command("start ride", func(ctx context.Context) error { return cmds.StartRideAgainst(ctx, id, at) }), true
+}
+
+// activityResult is the finished course ride in the selected recording,
+// if there is one: the first, for a recording with several.
+func (m Model) activityResult() *pb.RideResult {
+	i := m.pickIdx[tabActivities]
+	if i >= len(m.activities) {
+		return nil
+	}
+	name := m.activities[i].GetName()
+	for j := len(m.results) - 1; j >= 0; j-- { // results are newest first
+		if r := m.results[j]; r.GetFile() == name {
+			return r
+		}
+	}
+	return nil
+}

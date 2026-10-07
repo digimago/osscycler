@@ -31,6 +31,7 @@ import (
 	"github.com/digimago/osscycler/profile"
 	"github.com/digimago/osscycler/record"
 	"github.com/digimago/osscycler/ride"
+	"github.com/digimago/osscycler/scenery"
 	"github.com/digimago/osscycler/telemetry"
 )
 
@@ -48,6 +49,8 @@ const (
 type Rides interface {
 	Courses() []*course.Course
 	Start(courseID string) error
+	// StartAgainst races the earlier ride that finished at finished.
+	StartAgainst(courseID string, finished time.Time) error
 	Stop() error
 	SetDifficulty(pct float64) float64
 }
@@ -105,7 +108,7 @@ type Control interface {
 
 // Profile changes the rider's settings.
 type Profile interface {
-	SetProfile(ctx context.Context, weightKg, ftpW *float64) (telemetry.Profile, error)
+	SetProfile(ctx context.Context, weightKg, ftpW, heightCm *float64) (telemetry.Profile, error)
 }
 
 // Recorder ends the recorded activity on the rider's request.
@@ -124,6 +127,13 @@ type Services struct {
 	Profile    Profile
 	Activities Activities
 	Control    Control
+	Scenery    Scenery
+}
+
+// Scenery is what lies along each course, from map data; nil while
+// unknown.
+type Scenery interface {
+	Get(courseID string) *scenery.Scenery
 }
 
 // NewServer returns a gRPC server exposing hub and svc. Calls without the
@@ -148,7 +158,7 @@ func NewServer(hub *telemetry.Hub, svc Services, token string, opts ...grpc.Serv
 		}),
 	)
 	s := grpc.NewServer(opts...)
-	pb.RegisterTelemetryServiceServer(s, &telemetryServer{hub: hub, cal: svc.Calibrator, rides: svc.Rides, workouts: svc.Workouts, recorder: svc.Recorder, history: svc.History, profile: svc.Profile, activities: svc.Activities, control: svc.Control, maxHz: DefaultRateHz})
+	pb.RegisterTelemetryServiceServer(s, &telemetryServer{hub: hub, cal: svc.Calibrator, rides: svc.Rides, workouts: svc.Workouts, recorder: svc.Recorder, history: svc.History, profile: svc.Profile, activities: svc.Activities, control: svc.Control, scenery: svc.Scenery, maxHz: DefaultRateHz})
 	return s, nil
 }
 
@@ -173,6 +183,7 @@ type telemetryServer struct {
 	profile    Profile              // nil: no rider profile
 	activities Activities           // nil: nothing recorded
 	control    Control              // nil: no manual control
+	scenery    Scenery              // nil: no map data
 	maxHz      uint32
 }
 
@@ -267,7 +278,7 @@ func (s *telemetryServer) SetProfile(ctx context.Context, req *pb.SetProfileRequ
 	if s.profile == nil {
 		return nil, status.Error(codes.Unimplemented, "this core has no rider profile")
 	}
-	p, err := s.profile.SetProfile(ctx, req.WeightKg, req.FtpW)
+	p, err := s.profile.SetProfile(ctx, req.WeightKg, req.FtpW, req.HeightCm)
 	switch {
 	case errors.Is(err, profile.ErrOutOfRange):
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -290,7 +301,7 @@ func (s *telemetryServer) ListResults(context.Context, *pb.ListResultsRequest) (
 		resp.Results = append(resp.Results, &pb.RideResult{
 			FinishedUnixMs: e.Finished.UnixMilli(), CourseId: e.CourseID, CourseName: e.CourseName,
 			StartM: e.StartM, DistanceM: e.DistanceM, ElapsedS: e.ElapsedS, AvgPowerW: e.AvgPowerW,
-			ClimbedM: e.ClimbedM, DifficultyPct: e.DifficultyPct, PersonalBest: e.PB,
+			ClimbedM: e.ClimbedM, DifficultyPct: e.DifficultyPct, PersonalBest: e.PB, File: e.File,
 		})
 	}
 	return resp, nil
@@ -318,7 +329,11 @@ func (s *telemetryServer) ListCourses(context.Context, *pb.ListCoursesRequest) (
 	}
 	resp := &pb.ListCoursesResponse{}
 	for _, c := range s.rides.Courses() {
-		resp.Courses = append(resp.Courses, CourseToProto(c))
+		var sc *scenery.Scenery
+		if s.scenery != nil {
+			sc = s.scenery.Get(c.ID)
+		}
+		resp.Courses = append(resp.Courses, CourseToProto(c, sc))
 	}
 	return resp, nil
 }
@@ -327,10 +342,16 @@ func (s *telemetryServer) StartRide(_ context.Context, req *pb.StartRideRequest)
 	if s.rides == nil {
 		return nil, status.Error(codes.Unimplemented, "this core has no courses")
 	}
-	switch err := s.rides.Start(req.GetCourseId()); {
-	case errors.Is(err, ride.ErrUnknownCourse):
+	var err error
+	if req.AgainstFinishedUnixMs != nil {
+		err = s.rides.StartAgainst(req.GetCourseId(), time.UnixMilli(req.GetAgainstFinishedUnixMs()))
+	} else {
+		err = s.rides.Start(req.GetCourseId())
+	}
+	switch {
+	case errors.Is(err, ride.ErrUnknownCourse), errors.Is(err, ride.ErrUnknownRide):
 		return nil, status.Error(codes.NotFound, err.Error())
-	case errors.Is(err, ride.ErrRideActive), errors.Is(err, profile.ErrIncomplete):
+	case errors.Is(err, ride.ErrRideActive), errors.Is(err, profile.ErrIncomplete), errors.Is(err, ride.ErrCourseChanged):
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	case err != nil:
 		return nil, status.Error(codes.Internal, err.Error())

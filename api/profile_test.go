@@ -13,10 +13,10 @@ import (
 	"github.com/digimago/osscycler/telemetry"
 )
 
-type stubProfile struct{ weights, ftps []*float64 }
+type stubProfile struct{ weights, ftps, heights []*float64 }
 
-func (s *stubProfile) SetProfile(_ context.Context, w, f *float64) (telemetry.Profile, error) {
-	s.weights, s.ftps = append(s.weights, w), append(s.ftps, f)
+func (s *stubProfile) SetProfile(_ context.Context, w, f, h *float64) (telemetry.Profile, error) {
+	s.weights, s.ftps, s.heights = append(s.weights, w), append(s.ftps, f), append(s.heights, h)
 	if f != nil && *f > profile.MaxFTPW {
 		return telemetry.Profile{}, profile.Check(profile.FTP, *f)
 	}
@@ -48,6 +48,10 @@ func TestSetProfile(t *testing.T) {
 	}
 	if p := resp.GetProfile(); fmt.Sprint(p.GetMissing()) != "[ftp_w]" || p.GetSuggestedFtpW() != 220 {
 		t.Errorf("profile %v", p)
+	}
+	h := 183.0
+	if _, err := cl.SetProfile(ctx, &pb.SetProfileRequest{HeightCm: &h}); err != nil || sp.heights[1] == nil || *sp.heights[1] != 183 || sp.weights[1] != nil {
+		t.Errorf("height: %v, passed %v", err, sp.heights)
 	}
 	f := 5000.0
 	if _, err := cl.SetProfile(ctx, &pb.SetProfileRequest{FtpW: &f}); status.Code(err) != codes.InvalidArgument {

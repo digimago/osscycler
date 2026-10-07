@@ -11,6 +11,7 @@ import (
 
 	"github.com/digimago/osscycler/course"
 	"github.com/digimago/osscycler/record"
+	"github.com/digimago/osscycler/ride"
 )
 
 var t0 = time.Date(2026, 10, 1, 18, 0, 0, 0, time.UTC)
@@ -120,4 +121,32 @@ func TestGhostFromRecording(t *testing.T) {
 	if g, err := s.Ghost(c, 0); g != nil || err != nil {
 		t.Errorf("full course: %v, %v", g, err)
 	}
+
+	// The same ride picked by when it finished: from where it started.
+	es, _ := s.Results()
+	race, startM, err := s.Race(c, time.UnixMilli(es[0].Finished.UnixMilli()))
+	if err != nil || startM != 1480 || race.Elapsed != g.Elapsed {
+		t.Errorf("race: start %.0f, %v, %v; want from 1480 m in %v", startM, race, err, g.Elapsed)
+	}
+	if _, _, err := s.Race(c, es[0].Finished.Add(time.Hour)); err != ride.ErrUnknownRide {
+		t.Errorf("unknown ride: %v", err)
+	}
+	// A course edited since (here: a different ID's results don't apply,
+	// and a shorter course doesn't match the stretch).
+	short, _ := course.New("demo-hills", "Shorter", shorten(t, c, 2500))
+	if _, _, err := s.Race(short, es[0].Finished); err != ride.ErrCourseChanged {
+		t.Errorf("changed course: %v", err)
+	}
+}
+
+// shorten returns c's track up to distance d as points.
+func shorten(t *testing.T, c *course.Course, d float64) []course.Point {
+	t.Helper()
+	var pts []course.Point
+	for x := 0.0; x <= d; x += 10 {
+		lat, lon := c.Position(x)
+		ele, _ := c.At(x)
+		pts = append(pts, course.Point{Lat: lat, Lon: lon, Ele: ele})
+	}
+	return pts
 }

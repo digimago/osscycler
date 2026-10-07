@@ -83,7 +83,7 @@ func TestOnboarding(t *testing.T) {
 
 	// Weight first: rides may start; the trainer has the weight, and the
 	// ride is simulated with rider plus bike.
-	p, err := f.svc.SetProfile(context.Background(), ptr(87), nil)
+	p, err := f.svc.SetProfile(context.Background(), ptr(87), nil, nil)
 	if err != nil || p.NeedWeight || !p.NeedFTP || p.SuggestedFTPW != 220 {
 		t.Fatalf("after weight: %+v, %v", p, err)
 	}
@@ -99,7 +99,7 @@ func TestOnboarding(t *testing.T) {
 
 	// Then FTP: complete, and workouts pass the gate (this one isn't in
 	// the library).
-	p, _ = f.svc.SetProfile(context.Background(), nil, ptr(265))
+	p, _ = f.svc.SetProfile(context.Background(), nil, ptr(265), nil)
 	if !p.Complete || f.state() != p {
 		t.Errorf("after FTP: %+v (published %+v)", p, f.state())
 	}
@@ -117,9 +117,46 @@ func TestOnboarding(t *testing.T) {
 	}
 }
 
+// Height and weight size the rider's drag for the rides that follow;
+// -cda overrides it.
+func TestDragFromSize(t *testing.T) {
+	f := setup(t, nil)
+	cda := func() float64 {
+		f.svc.Rides().Start("flat")
+		defer f.svc.Rides().Stop()
+		st, _ := f.hub.Latest()
+		return st.Ride.Sim.CdA
+	}
+	f.svc.SetProfile(context.Background(), ptr(75), ptr(200), nil)
+	if got := cda(); got != sim.DefaultCdA {
+		t.Errorf("without a height: %.4f, want the reference %.2f", got, sim.DefaultCdA)
+	}
+	p, err := f.svc.SetProfile(context.Background(), nil, nil, ptr(195))
+	if err != nil || p.HeightCm != 195 || p.CdA != sim.CdAFor(1.95, 75) {
+		t.Fatalf("height 195: %+v, %v", p, err)
+	}
+	if got := cda(); got != sim.CdAFor(1.95, 75) {
+		t.Errorf("ride after height: %.4f, want %.4f", got, sim.CdAFor(1.95, 75))
+	}
+	f.svc.SetProfile(context.Background(), ptr(90), nil, nil)
+	if got := cda(); got != sim.CdAFor(1.95, 90) {
+		t.Errorf("ride after weight: %.4f, want %.4f", got, sim.CdAFor(1.95, 90))
+	}
+	if m, _ := profile.Open(f.path); m.Get().HeightCm != 195 {
+		t.Error("height not saved")
+	}
+	if _, err := f.svc.SetProfile(context.Background(), nil, nil, ptr(300)); !errors.Is(err, profile.ErrOutOfRange) {
+		t.Errorf("300 cm: %v", err)
+	}
+	f.svc.FixCdA(0.25)
+	if got, p := cda(), f.state(); got != 0.25 || !p.CdAForced || p.CdA != 0.25 {
+		t.Errorf("-cda 0.25: ride %.4f, published %+v", got, p)
+	}
+}
+
 func TestSetProfileChecksFirst(t *testing.T) {
 	f := setup(t, nil)
-	if _, err := f.svc.SetProfile(context.Background(), ptr(80), ptr(5000)); !errors.Is(err, profile.ErrOutOfRange) {
+	if _, err := f.svc.SetProfile(context.Background(), ptr(80), ptr(5000), nil); !errors.Is(err, profile.ErrOutOfRange) {
 		t.Fatalf("FTP 5000 W: %v", err)
 	}
 	if p := f.state(); p.WeightKg != 0 || len(f.tr.users) != 0 {

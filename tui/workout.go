@@ -21,13 +21,14 @@ const (
 	workoutShownFor = 10 * time.Second
 )
 
-// Picker tabs.
+// Picker tabs: r cycles through the ride tabs, w opens the workouts.
 const (
 	tabCourses = iota
-	tabWorkouts
 	tabHistory
 	tabActivities
+	tabWorkouts
 	numTabs
+	rideTabs = tabWorkouts
 )
 
 type workoutsMsg struct {
@@ -88,7 +89,7 @@ func (m Model) onWorkouts(msg workoutsMsg) (Model, tea.Cmd) {
 	for _, w := range msg.workouts {
 		m.workoutDefs[w.GetId()] = w
 	}
-	m.pickIdx[tabWorkouts] = min(m.pickIdx[tabWorkouts], max(0, len(msg.workouts)-1))
+	m.pickIdx[tabWorkouts] = min(m.pickIdx[tabWorkouts], len(msg.workouts)) // row 0 is fixed power
 	return m, nil
 }
 
@@ -130,6 +131,10 @@ func (m Model) workoutKey(key string) (Model, tea.Cmd, bool) {
 			}
 			return m, nil, true
 		case "enter":
+			if m.pickIdx[tabWorkouts] == 0 {
+				m.picking, m.input = false, m.ergPrompt()
+				return m, nil, true
+			}
 			w := m.selectedWorkout()
 			if w == nil {
 				return m, nil, true
@@ -167,18 +172,20 @@ func (m Model) workoutKey(key string) (Model, tea.Cmd, bool) {
 		return m, m.command("skip segment", m.cmds.SkipSegment), true
 	case key == "x":
 		if m.now().Before(m.abortUntil) {
-			m.abortUntil, m.notice = time.Time{}, ""
+			m.abortUntil, m.asking = time.Time{}, ""
 			return m, m.command("abort workout", m.cmds.StopWorkout), true
 		}
 		m.abortUntil = m.now().Add(abortConfirm)
-		m.notice = "press x again to abort the workout"
+		m = m.ask("press x again to abort the workout", m.abortUntil)
 		return m, nil, true
 	}
 	return m, nil, false
 }
 
+// selectedWorkout is the workout under the cursor; nil on the fixed power
+// row above them.
 func (m Model) selectedWorkout() *pb.WorkoutDef {
-	if i := m.pickIdx[tabWorkouts]; i < len(m.workoutList) {
+	if i := m.pickIdx[tabWorkouts] - 1; i >= 0 && i < len(m.workoutList) {
 		return m.workoutList[i]
 	}
 	return nil
@@ -239,10 +246,18 @@ func avgTarget(w *pb.WorkoutDef) float64 {
 }
 
 func (m Model) workoutRows(width int) []string {
-	var rows []string
+	fixed := "Fixed power (ERG)"
+	if c := m.control(); c.GetMode() == pb.ControlMode_CONTROL_MODE_POWER {
+		fixed += fmt.Sprintf(": now %.0f W", c.GetTarget())
+	}
+	cursor, style := "  ", lipgloss.NewStyle()
+	if m.pickIdx[tabWorkouts] == 0 {
+		cursor, style = "▸ ", style.Bold(true).Foreground(lipgloss.Color("220"))
+	}
+	rows := []string{style.Render(fmt.Sprintf("%s%-34s %s", cursor, fixed, dimStyle.Render("hold one power, no workout")))}
 	for i, w := range m.workoutList {
 		cursor, style := "  ", lipgloss.NewStyle()
-		if i == m.pickIdx[tabWorkouts] {
+		if i+1 == m.pickIdx[tabWorkouts] {
 			cursor, style = "▸ ", style.Bold(true).Foreground(lipgloss.Color("220"))
 		}
 		if w.GetError() != "" {
@@ -252,7 +267,7 @@ func (m Model) workoutRows(width int) []string {
 		rows = append(rows, style.Render(fmt.Sprintf("%s%-34s %8s  ~%3.0f%% FTP",
 			cursor, truncate(w.GetName(), 34), clock(w.GetDurationS()), avgTarget(w)*100)))
 	}
-	if len(rows) == 0 {
+	if len(m.workoutList) == 0 {
 		rows = append(rows, dimStyle.Render("  no workouts yet: press n to write one, or drop .zwo files in the library folder"))
 	}
 	return rows
@@ -268,36 +283,10 @@ func (m Model) workoutBody(width, height int) string {
 	info := m.workoutInfo(width)
 	tilesH := height - lipgloss.Height(info)
 
-	target, targetStyle := fmt.Sprintf("%.0f", p.GetTargetW()), lipgloss.NewStyle().Foreground(zoneColor(p.GetTargetW()/p.GetFtpW()))
-	if p.GetFree() {
-		target, targetStyle = "FREE", dimStyle
-		if strings.HasPrefix(p.GetSegmentLabel(), "Max") {
-			target = "MAX"
-		}
-	}
-	ms := m.metrics()
-	tiles := []metric{
-		{"TARGET", target, "W", targetStyle, nil},
-		ms[0], // power
-		{strings.ToUpper(p.GetSegmentLabel()), clock(p.GetSegmentRemainingS()), "left", lipgloss.NewStyle(), nil},
-		ms[1], // heart rate
-	}
-	if target == "FREE" || target == "MAX" {
-		tiles[0].value, tiles[0].unit = "--", target // the block font has no letters
-	}
-	tileH, tileW := tilesH/2, width/2
-	var body string
-	if tileH >= BigHeight+3 && tileW >= 30 {
-		body = lipgloss.JoinVertical(lipgloss.Left,
-			lipgloss.JoinHorizontal(lipgloss.Top, bigTile(tiles[0], tileW, tileH), bigTile(tiles[1], width-tileW, tileH)),
-			lipgloss.JoinHorizontal(lipgloss.Top, bigTile(tiles[2], tileW, tilesH-tileH), bigTile(tiles[3], width-tileW, tilesH-tileH)))
-	} else {
-		var b strings.Builder
-		for _, mt := range tiles {
-			fmt.Fprintf(&b, "%s %s %s\n", labelStyle.Render(fmt.Sprintf("%-18s", truncate(mt.label, 18))),
-				mt.style.Bold(true).Render(fmt.Sprintf("%7s", mt.value)), unitStyle.Render(mt.unit))
-		}
-		body = lipgloss.Place(width, max(tilesH, 4), lipgloss.Center, lipgloss.Center, b.String())
+	tiles := m.screenTiles(screenWorkout)
+	body := m.grid(tiles, width, tilesH)
+	if body == "" {
+		body = tileList(tiles, 18, width, max(tilesH, 4))
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, body, info)
 }

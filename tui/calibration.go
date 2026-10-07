@@ -18,6 +18,8 @@ type Commands interface {
 	CancelCalibration(ctx context.Context) error
 	ListCourses(ctx context.Context) ([]*pb.Course, error)
 	StartRide(ctx context.Context, courseID string) error
+	// StartRideAgainst races an earlier ride, by when it finished.
+	StartRideAgainst(ctx context.Context, courseID string, finishedUnixMs int64) error
 	StopRide(ctx context.Context) error
 	SetDifficulty(ctx context.Context, pct float64) (float64, error)
 	ListWorkouts(ctx context.Context) ([]*pb.WorkoutDef, error)
@@ -29,7 +31,7 @@ type Commands interface {
 	SetFTP(ctx context.Context, watts float64) (float64, error)
 	EndActivity(ctx context.Context, discard bool) (file string, err error)
 	ListResults(ctx context.Context) ([]*pb.RideResult, error)
-	SetProfile(ctx context.Context, weightKg, ftpW *float64) (*pb.RiderProfile, error)
+	SetProfile(ctx context.Context, weightKg, ftpW, heightCm *float64) (*pb.RiderProfile, error)
 	ListActivities(ctx context.Context) ([]*pb.Activity, error)
 	ExportActivity(ctx context.Context, name string, w io.Writer) (int64, error)
 	SetTrainerControl(ctx context.Context, mode pb.ControlMode, v float64) (float64, error)

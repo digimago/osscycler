@@ -39,6 +39,7 @@ func run() error {
 	caFile := flag.String("tls-ca", "", "CA certificate to verify the core; enables TLS")
 	rate := flag.Uint("rate", 10, "maximum updates per second")
 	exportDir := flag.String("export-dir", defaultExportDir(), "where s in the ACTIVITIES tab saves a ride's FIT file")
+	layoutFile := flag.String("layout", filepath.Join(home.Dir(), "tui.json"), "where the tile arrangement (o) and digit size (z) are kept")
 	tour := flag.Bool("tour", false, "demo: walk through the features automatically (any key takes over); made for a core started with -fake")
 	flag.Parse()
 
@@ -79,10 +80,18 @@ func run() error {
 	defer cancel()
 	client := pb.NewTelemetryServiceClient(conn)
 	model := tui.New(*addr, commands{client}).WithExportDir(*exportDir)
+	if l, err := tui.LoadLayout(*layoutFile); err != nil {
+		// Never overwrite a file we can't read: arrange for this session only.
+		model = model.WithLayout(tui.Layout{}, "").WithNotice("tile layout not loaded, changes won't be saved: " + err.Error())
+	} else {
+		model = model.WithLayout(l, *layoutFile)
+	}
 	var t *tui.Tour
 	if *tour {
 		t = tui.NewTour()
 		model = model.WithTour(t)
+	} else {
+		model = model.WithMenu()
 	}
 	p := tea.NewProgram(model)
 	go stream(ctx, client, uint32(*rate), p.Send)
@@ -150,6 +159,11 @@ func (c commands) ListCourses(ctx context.Context) ([]*pb.Course, error) {
 
 func (c commands) StartRide(ctx context.Context, id string) error {
 	_, err := c.c.StartRide(ctx, &pb.StartRideRequest{CourseId: id})
+	return err
+}
+
+func (c commands) StartRideAgainst(ctx context.Context, id string, finishedUnixMs int64) error {
+	_, err := c.c.StartRide(ctx, &pb.StartRideRequest{CourseId: id, AgainstFinishedUnixMs: &finishedUnixMs})
 	return err
 }
 
@@ -233,8 +247,8 @@ func defaultExportDir() string {
 	return home
 }
 
-func (c commands) SetProfile(ctx context.Context, weightKg, ftpW *float64) (*pb.RiderProfile, error) {
-	resp, err := c.c.SetProfile(ctx, &pb.SetProfileRequest{WeightKg: weightKg, FtpW: ftpW})
+func (c commands) SetProfile(ctx context.Context, weightKg, ftpW, heightCm *float64) (*pb.RiderProfile, error) {
+	resp, err := c.c.SetProfile(ctx, &pb.SetProfileRequest{WeightKg: weightKg, FtpW: ftpW, HeightCm: heightCm})
 	return resp.GetProfile(), err
 }
 

@@ -64,8 +64,9 @@ type TelemetryServiceClient interface {
 	// ListCourses returns the courses the core can ride, with their profiles.
 	ListCourses(ctx context.Context, in *ListCoursesRequest, opts ...grpc.CallOption) (*ListCoursesResponse, error)
 	// StartRide arms a ride on a course; the clock starts at the first pedal
-	// stroke. FAILED_PRECONDITION if a ride is under way, NOT_FOUND for an
-	// unknown course.
+	// stroke. FAILED_PRECONDITION if a ride is under way or the course has
+	// changed since the ride to race, NOT_FOUND for an unknown course or
+	// ride to race.
 	StartRide(ctx context.Context, in *StartRideRequest, opts ...grpc.CallOption) (*StartRideResponse, error)
 	// StopRide aborts a ride under way, or dismisses a finished one.
 	StopRide(ctx context.Context, in *StopRideRequest, opts ...grpc.CallOption) (*StopRideResponse, error)
@@ -100,10 +101,10 @@ type TelemetryServiceClient interface {
 	// stretch's personal best marked (the fastest on a course from a given
 	// start point).
 	ListResults(ctx context.Context, in *ListResultsRequest, opts ...grpc.CallOption) (*ListResultsResponse, error)
-	// SetProfile changes the rider's weight and/or FTP and saves them
-	// (onboarding, or editing later). A weight change reaches the trainer
-	// at once and the simulation from the next ride. Out-of-range values
-	// are INVALID_ARGUMENT.
+	// SetProfile changes the rider's weight, FTP and/or height and saves
+	// them (onboarding, or editing later). A weight change reaches the
+	// trainer at once; weight and height reach the simulation from the next
+	// ride. Out-of-range values are INVALID_ARGUMENT.
 	SetProfile(ctx context.Context, in *SetProfileRequest, opts ...grpc.CallOption) (*SetProfileResponse, error)
 	// ListActivities lists the finished recordings (FIT files) on the
 	// core, newest first.
@@ -381,8 +382,9 @@ type TelemetryServiceServer interface {
 	// ListCourses returns the courses the core can ride, with their profiles.
 	ListCourses(context.Context, *ListCoursesRequest) (*ListCoursesResponse, error)
 	// StartRide arms a ride on a course; the clock starts at the first pedal
-	// stroke. FAILED_PRECONDITION if a ride is under way, NOT_FOUND for an
-	// unknown course.
+	// stroke. FAILED_PRECONDITION if a ride is under way or the course has
+	// changed since the ride to race, NOT_FOUND for an unknown course or
+	// ride to race.
 	StartRide(context.Context, *StartRideRequest) (*StartRideResponse, error)
 	// StopRide aborts a ride under way, or dismisses a finished one.
 	StopRide(context.Context, *StopRideRequest) (*StopRideResponse, error)
@@ -417,10 +419,10 @@ type TelemetryServiceServer interface {
 	// stretch's personal best marked (the fastest on a course from a given
 	// start point).
 	ListResults(context.Context, *ListResultsRequest) (*ListResultsResponse, error)
-	// SetProfile changes the rider's weight and/or FTP and saves them
-	// (onboarding, or editing later). A weight change reaches the trainer
-	// at once and the simulation from the next ride. Out-of-range values
-	// are INVALID_ARGUMENT.
+	// SetProfile changes the rider's weight, FTP and/or height and saves
+	// them (onboarding, or editing later). A weight change reaches the
+	// trainer at once; weight and height reach the simulation from the next
+	// ride. Out-of-range values are INVALID_ARGUMENT.
 	SetProfile(context.Context, *SetProfileRequest) (*SetProfileResponse, error)
 	// ListActivities lists the finished recordings (FIT files) on the
 	// core, newest first.

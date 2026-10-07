@@ -76,12 +76,16 @@ func (m Model) showRide() bool {
 // used the key.
 func (m Model) rideKey(key string) (Model, tea.Cmd, bool) {
 	if m.picking {
-		n := [numTabs]int{len(m.courseList), len(m.workoutList), len(m.results), len(m.activities)}[m.tab]
+		n := [numTabs]int{len(m.courseList), len(m.results), len(m.activities), len(m.workoutList) + 1}[m.tab]
 		switch key {
-		case "tab", "right", "l":
-			m.tab = (m.tab + 1) % numTabs
-		case "shift+tab", "left", "h":
-			m.tab = (m.tab + numTabs - 1) % numTabs
+		case "tab", "right":
+			if m.tab < rideTabs {
+				m.tab = (m.tab + 1) % rideTabs
+			}
+		case "shift+tab", "left":
+			if m.tab < rideTabs {
+				m.tab = (m.tab + rideTabs - 1) % rideTabs
+			}
 		case "up", "k":
 			m.pickIdx[m.tab] = max(0, m.pickIdx[m.tab]-1)
 		case "down", "j":
@@ -91,15 +95,22 @@ func (m Model) rideKey(key string) (Model, tea.Cmd, bool) {
 				return m, m.exportSelected(), true
 			}
 		case "enter":
-			if m.tab == tabActivities {
+			switch {
+			case m.tab == tabActivities:
+				// A course ride in it is raced; anything else is saved.
+				if r := m.activityResult(); r != nil {
+					return m.race(r)
+				}
 				return m, m.exportSelected(), true
+			case m.tab == tabHistory && n > 0:
+				return m.race(m.results[m.pickIdx[tabHistory]])
 			}
 			if m.tab == tabCourses && n > 0 {
 				id := m.courseList[m.pickIdx[tabCourses]].GetId()
 				m.picking = false
 				return m, m.command("start ride", func(ctx context.Context) error { return m.cmds.StartRide(ctx, id) }), true
 			}
-		case "esc", "r":
+		case "esc", "r", "w":
 			m.picking = false
 		}
 		return m, nil, true
@@ -119,19 +130,28 @@ func (m Model) rideKey(key string) (Model, tea.Cmd, bool) {
 			_, err := cmds.SetDifficulty(ctx, want)
 			return err
 		}), true
-	case key == "r" && !m.rideActive() && !m.workoutActive() && !m.calibrationActive() && m.countdown == 0:
+	case (key == "r" || key == "w") && !m.rideActive() && !m.workoutActive() && !m.calibrationActive() && m.countdown == 0:
 		m.notice = ""
 		m.picking = true
+		switch {
+		case key == "w":
+			m.tab = tabWorkouts
+		case m.tab == tabWorkouts:
+			m.tab = tabCourses
+		}
 		return m, tea.Batch(m.fetchCourses(false), m.fetchWorkouts(false), m.fetchResults(), m.fetchActivities()), true
 	case key == "x" && m.rideActive():
 		if m.now().Before(m.abortUntil) {
-			m.abortUntil = time.Time{}
-			m.notice = ""
+			m.abortUntil, m.asking = time.Time{}, ""
 			return m, m.command("abort ride", m.cmds.StopRide), true
 		}
 		m.abortUntil = m.now().Add(abortConfirm)
-		m.notice = "press x again to abort the ride"
+		m = m.ask("press x again to abort the ride", m.abortUntil)
 		return m, nil, true
+	case key == "v" && m.rideActive() && m.roadScene() != nil:
+		m.tiles = !m.tiles
+		m, cmd := m.animate()
+		return m, cmd, true
 	case (key == "x" || key == "enter") && m.showRide() && !m.rideActive():
 		return m, m.command("close ride", m.cmds.StopRide), true
 	}
@@ -150,7 +170,37 @@ func (m Model) onCourses(msg coursesMsg) (Model, tea.Cmd) {
 		m.courses[c.GetId()] = c
 	}
 	m.pickIdx[tabCourses] = min(m.pickIdx[tabCourses], max(0, len(msg.courses)-1))
-	return m, nil
+	m.scenes = make(map[string]*roadScene, len(msg.courses))
+	for _, c := range msg.courses {
+		if sc := newRoadScene(c); sc != nil {
+			m.scenes[c.GetId()] = sc
+		}
+	}
+	return m.animate()
+}
+
+// roadScene is the road view of the course being ridden; nil without one.
+func (m Model) roadScene() *roadScene { return m.scenes[m.ride().GetCourseId()] }
+
+// roadMoving reports whether the road view is on screen and scrolling.
+func (m Model) roadMoving() bool {
+	return !m.tiles && m.ridePhase() == pb.RidePhase_RIDE_PHASE_RIDING && m.roadScene() != nil
+}
+
+// ridePos is the rider's distance on the course for drawing. The core
+// moves the rider 4 times a second; in between the position is carried
+// forward at the current speed, and the small difference to the next
+// reported position is blended out over posBlend instead of jumping.
+func (m Model) ridePos() float64 {
+	const posBlend = 0.4 // s
+	r := m.ride()
+	d := r.GetDistanceM()
+	if r.GetPhase() == pb.RidePhase_RIDE_PHASE_RIDING && !m.posAt.IsZero() {
+		dt := math.Max(0, m.now().Sub(m.posAt).Seconds())
+		d += r.GetSpeedMps()*math.Min(dt, 0.5) + m.posErr*math.Max(0, 1-dt/posBlend)
+		d = math.Min(d, r.GetCourseDistanceM())
+	}
+	return d
 }
 
 // needCourse fetches the course list if a ride references a course we
@@ -174,15 +224,18 @@ func (m Model) pickerPanel(width, height int) string {
 		}
 		return dimStyle.Render(name)
 	}
-	lines := []string{tabName(tabCourses, "COURSES") + "    " + tabName(tabWorkouts, "WORKOUTS") + "    " + tabName(tabHistory, "HISTORY") + "    " + tabName(tabActivities, "ACTIVITIES"), ""}
+	lines := []string{tabName(tabCourses, "COURSES") + "    " + tabName(tabHistory, "HISTORY") + "    " + tabName(tabActivities, "ACTIVITIES"), ""}
+	if m.tab == tabWorkouts {
+		lines[0] = tabName(tabWorkouts, "WORKOUTS")
+	}
 	var hint string
 	switch m.tab {
 	case tabHistory:
 		lines = append(lines, m.historyRows(height-6)...)
-		hint = "↑/↓ scroll · ★ fastest on that course from that start · tab activities · esc back"
+		hint = "↑/↓ choose · enter race that ride again · ★ fastest on that course from that start · tab activities · esc back"
 	case tabActivities:
 		lines = append(lines, m.activityRows(height-6)...)
-		hint = "↑/↓ choose · s save the FIT file to " + m.exportDir + " · tab courses · esc back"
+		hint = "↑/↓ choose · enter race that ride (course rides) · s save the FIT file to " + m.exportDir + " · tab courses · esc back"
 	case tabCourses:
 		for i, c := range m.courseList {
 			cursor := "  "
@@ -201,13 +254,13 @@ func (m Model) pickerPanel(width, height int) string {
 		if len(m.courseList) == 0 {
 			lines = append(lines, dimStyle.Render("  no courses: start the core with -courses DIR"))
 		}
-		hint = "↑/↓ choose · enter ride · tab workouts · esc back"
+		hint = "↑/↓ choose · enter ride · tab history · esc back"
 	default:
 		lines = append(lines, m.workoutRows(width)...)
 		if w := m.selectedWorkout(); w != nil && w.GetError() == "" {
 			lines = append(lines, "", workoutProfile(w, -1, min(width-4, 80), 4))
 		}
-		hint = fmt.Sprintf("↑/↓ choose · enter ride · n new · e edit · E edit as text · f FTP %.0f W · tab history · esc back", m.wk().GetFtpW())
+		hint = fmt.Sprintf("↑/↓ choose · enter start · n new · e edit · E edit as text · f FTP %.0f W · esc back", m.wk().GetFtpW())
 	}
 	lines = append(lines, "", dimStyle.Render(hint))
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center,
@@ -235,28 +288,73 @@ func (m Model) rideBody(width, height int) string {
 		tilesH++ // JoinVertical of an empty string still takes a line
 	}
 
-	grade := r.GetGradePct()
-	ms := []metric{
-		m.metrics()[0], // power
-		{"GRADE", fmt.Sprintf("%.1f", grade), "%", lipgloss.NewStyle().Foreground(gradeColor(grade)), nil},
-		m.timeTile(),
-		{"TO GO", fmt.Sprintf("%.2f", math.Max(0, r.GetCourseDistanceM()-r.GetDistanceM())/1000), "km", speedStyle, nil},
-	}
-	var tiles string
-	tileH, tileW := tilesH/2, width/2
-	if tileH >= BigHeight+3 && tileW >= 30 {
-		tiles = lipgloss.JoinVertical(lipgloss.Left,
-			lipgloss.JoinHorizontal(lipgloss.Top, bigTile(ms[0], tileW, tileH), bigTile(ms[1], width-tileW, tileH)),
-			lipgloss.JoinHorizontal(lipgloss.Top, bigTile(ms[2], tileW, tilesH-tileH), bigTile(ms[3], width-tileW, tilesH-tileH)))
-	} else {
-		var b strings.Builder
-		for _, mt := range ms {
-			fmt.Fprintf(&b, "%s %s %s\n", labelStyle.Render(fmt.Sprintf("%-6s", mt.label)),
-				mt.style.Bold(true).Render(fmt.Sprintf("%8s", mt.value)), unitStyle.Render(mt.unit))
+	ms := m.screenTiles(screenRide)
+	if sc := m.roadScene(); sc != nil && !m.tiles {
+		if body := m.roadBody(sc, ms, width, tilesH, info, profile); body != "" {
+			return body
 		}
-		tiles = lipgloss.Place(width, max(tilesH, 4), lipgloss.Center, lipgloss.Center, b.String())
+	}
+	tiles := m.grid(ms, width, tilesH)
+	if tiles == "" {
+		tiles = tileList(ms, 10, width, max(tilesH, 4))
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, tiles, info, profile)
+}
+
+// roadBody puts the road view between a row of the ride's numbers and the
+// info line and profile; empty when the road would be too small to read.
+// height is what the tiles would get.
+func (m Model) roadBody(sc *roadScene, ms []metric, width, height int, info, profile string) string {
+	const minRoad = 8
+	// The largest digits that fit side by side and leave the road at
+	// least half the space; one line of numbers otherwise.
+	tileW := width / len(ms)
+	fits := func(size digitSize) bool {
+		if height-(size.height()+2) < max(minRoad, height/2) {
+			return false
+		}
+		for _, mt := range ms {
+			if lipgloss.Width(size.render(mt.value))+2 > tileW || lipgloss.Width(mt.label)+2 > tileW || lipgloss.Width(mt.unit)+2 > tileW {
+				return false
+			}
+		}
+		return true
+	}
+	var row string
+	for _, size := range m.sizes() {
+		if !fits(size) {
+			continue
+		}
+		tiles := make([]string, len(ms))
+		for i, mt := range ms {
+			tiles[i] = bigTile(mt, tileW+boolInt(i < width%len(ms)), size.height()+2, size)
+		}
+		row = lipgloss.JoinHorizontal(lipgloss.Top, tiles...)
+		break
+	}
+	if row == "" {
+		parts := make([]string, len(ms))
+		for i, mt := range ms {
+			parts[i] = labelStyle.Render(mt.label) + " " + mt.style.Bold(true).Render(mt.value) + " " + unitStyle.Render(mt.unit)
+		}
+		row = lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(strings.Join(parts, "    "))
+	}
+	roadH := height - lipgloss.Height(row)
+	if roadH < minRoad {
+		return ""
+	}
+	road := sc.render(m.ridePos(), m.ghostAt(), width, roadH)
+	if profile == "" {
+		return lipgloss.JoinVertical(lipgloss.Left, row, road, info)
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, row, road, info, profile)
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // rideInfo is one line of secondary numbers, or the start instruction.
@@ -271,9 +369,13 @@ func (m Model) rideInfo(width int) string {
 		return center.Render(bigWarn.Render("start pedalling to start the clock") + dimStyle.Render("  ·  "+r.GetCourseName()+race))
 	}
 	ms := m.metrics()
+	credit := ""
+	if sc := m.roadScene(); sc != nil && !m.tiles && sc.attribution != "" {
+		credit = dimStyle.Render(" · " + sc.attribution)
+	}
 	return center.Render(fmt.Sprintf("%s bpm · %s rpm · %.1f km/h · %.0f/%.0f m climbed · %s",
 		ms[1].value, ms[2].value, r.GetSpeedMps()*3.6, r.GetClimbedM(), r.GetCourseGainM(),
-		dimStyle.Render(truncate(r.GetCourseName(), 40))))
+		dimStyle.Render(truncate(r.GetCourseName(), 40))) + credit)
 }
 
 func (m Model) rideResult(width, height int, finished bool) string {

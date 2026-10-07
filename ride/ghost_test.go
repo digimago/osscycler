@@ -10,9 +10,18 @@ import (
 	"github.com/digimago/osscycler/telemetry"
 )
 
-type oneGhost struct{ g *Ghost }
+type oneGhost struct {
+	g      *Ghost
+	startM float64
+}
 
 func (o oneGhost) Ghost(*course.Course, float64) (*Ghost, error) { return o.g, nil }
+func (o oneGhost) Race(*course.Course, time.Time) (*Ghost, float64, error) {
+	if o.g == nil {
+		return nil, 0, ErrUnknownRide
+	}
+	return o.g, o.startM, nil
+}
 
 // ghostOf replays power on the test course into a ghost.
 func ghostOf(t *testing.T, power []PowerSample) *Ghost {
@@ -44,7 +53,7 @@ func TestGhostLookups(t *testing.T) {
 func race(t *testing.T, g *Ghost, power func(at time.Duration) uint16, check func(telemetry.Ride)) telemetry.Ride {
 	t.Helper()
 	s, hub, _ := newSession(t)
-	s.cfg.Ghosts = oneGhost{g}
+	s.cfg.Ghosts = oneGhost{g: g}
 	if err := s.Start("test"); err != nil {
 		t.Fatal(err)
 	}
@@ -105,11 +114,30 @@ func TestRaceTheGhost(t *testing.T) {
 
 func TestNoGhost(t *testing.T) {
 	s, hub, _ := newSession(t)
-	s.cfg.Ghosts = oneGhost{nil}
+	s.cfg.Ghosts = oneGhost{}
 	s.Start("test")
 	setPower(hub, 250)
 	s.tick(time.Now())
 	if g := ride(hub).Ghost; g != (telemetry.RideGhost{}) {
 		t.Errorf("ghost without one: %+v", g)
+	}
+}
+
+// Racing a chosen ride starts where that ride started, with it as the
+// ghost, whatever the session's own start.
+func TestStartAgainst(t *testing.T) {
+	s, hub, _ := newSession(t)
+	g := &Ghost{Label: "7 Oct 18:00", Elapsed: time.Minute, Trace: []TracePoint{{0, 300}, {time.Minute, 1000}}}
+	s.cfg.Ghosts = oneGhost{g: g, startM: 300}
+	if err := s.StartAgainst("test", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if r := ride(hub); r.StartDistanceM != 300 || r.DistanceM != 300 || r.Ghost.Label != g.Label {
+		t.Errorf("armed from %.0f at %.0f racing %q; want from 300 racing %q", r.StartDistanceM, r.DistanceM, r.Ghost.Label, g.Label)
+	}
+	s.Stop()
+	s.cfg.Ghosts = oneGhost{}
+	if err := s.StartAgainst("test", time.Now()); err != ErrUnknownRide {
+		t.Errorf("unknown ride: %v", err)
 	}
 }

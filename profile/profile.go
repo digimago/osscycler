@@ -18,8 +18,10 @@ import (
 
 // Profile is the rider's settings. Zero weight or FTP means unknown.
 type Profile struct {
-	WeightKg      float64 `json:"weight_kg,omitempty"`
-	FTPW          float64 `json:"ftp_w,omitempty"`
+	WeightKg float64 `json:"weight_kg,omitempty"`
+	FTPW     float64 `json:"ftp_w,omitempty"`
+	// HeightCm sizes the rider's drag; optional (zero: unknown).
+	HeightCm      float64 `json:"height_cm,omitempty"`
 	DifficultyPct float64 `json:"difficulty_pct"`
 	BikeKg        float64 `json:"bike_kg"`
 }
@@ -34,6 +36,8 @@ const (
 	MaxWeightKg = 200
 	MinFTPW     = 50
 	MaxFTPW     = 600
+	MinHeightCm = 120
+	MaxHeightCm = 220
 )
 
 // Complete reports whether onboarding has what it needs.
@@ -46,6 +50,7 @@ const (
 	Weight Field = iota
 	FTP
 	Difficulty
+	Height
 	numFields
 )
 
@@ -119,6 +124,8 @@ func field(p *Profile, f Field) *float64 {
 		return &p.WeightKg
 	case FTP:
 		return &p.FTPW
+	case Height:
+		return &p.HeightCm
 	}
 	return &p.DifficultyPct
 }
@@ -145,6 +152,10 @@ func Check(f Field, v float64) error {
 	case FTP:
 		if v < MinFTPW || v > MaxFTPW {
 			return rangeError(fmt.Sprintf("FTP %.0f W: want %d to %d W", v, MinFTPW, MaxFTPW))
+		}
+	case Height:
+		if v < MinHeightCm || v > MaxHeightCm {
+			return rangeError(fmt.Sprintf("height %.0f cm: want %d to %d cm", v, MinHeightCm, MaxHeightCm))
 		}
 	case Difficulty:
 		if v < 0 || v > 100 {

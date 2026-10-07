@@ -60,12 +60,12 @@ func (m Model) controlKey(key string) (Model, tea.Cmd, bool) {
 		return m, nil, false
 	}
 	c := m.control()
+	// w (fixed power) is in the workout picker.
 	prompt := map[string]struct {
 		mode   pb.ControlMode
 		prompt string
 		start  float64
 	}{
-		"w": {pb.ControlMode_CONTROL_MODE_POWER, "ERG target in watts: ", 150},
 		"g": {pb.ControlMode_CONTROL_MODE_GRADE, "Grade in %: ", 3},
 		"l": {pb.ControlMode_CONTROL_MODE_LEVEL, "Brake level in % of maximum: ", 30},
 	}
@@ -97,6 +97,15 @@ func (m Model) controlKey(key string) (Model, tea.Cmd, bool) {
 		return m, m.command("release trainer", cmds.ReleaseTrainerControl), true
 	}
 	return m, nil, false
+}
+
+// ergPrompt asks for a fixed power: the one in effect when ERG is on.
+func (m Model) ergPrompt() *input {
+	v := 150.0
+	if c := m.control(); c.GetMode() == pb.ControlMode_CONTROL_MODE_POWER {
+		v = c.GetTarget()
+	}
+	return &input{prompt: "ERG target in watts: ", value: num(v), control: pb.ControlMode_CONTROL_MODE_POWER}
 }
 
 // num writes a target without needless decimals.

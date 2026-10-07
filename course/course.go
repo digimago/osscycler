@@ -152,6 +152,29 @@ func (c *Course) Profile() (ele, gradePct []float64) {
 	return append([]float64(nil), c.ele...), gradePct
 }
 
+// metresPerDegree is the length of a degree of latitude on the haversine
+// sphere.
+const metresPerDegree = 6371000.0 * math.Pi / 180
+
+// Track returns where each profile sample lies on the map, in metres east
+// and north of the start, for renderers that draw the road's bends. It is
+// a flat projection around the start: within about 1 % over any course
+// that fits in a day's ride.
+func (c *Course) Track() (east, north []float64) {
+	east, north = make([]float64, len(c.dist)), make([]float64, len(c.dist))
+	for i, d := range c.dist {
+		east[i], north[i] = c.Project(c.Position(d))
+	}
+	return east, north
+}
+
+// Project maps a point to metres east and north of the start, as Track
+// does.
+func (c *Course) Project(lat, lon float64) (east, north float64) {
+	kx := metresPerDegree * math.Cos(c.lat[0]*math.Pi/180)
+	return (lon - c.lon[0]) * kx, (lat - c.lat[0]) * metresPerDegree
+}
+
 // despike applies a repeated running median: five points wide in the
 // interior, three next to the ends, and Tukey's end-point rule for the first
 // and last point. It removes spikes up to two points wide anywhere and

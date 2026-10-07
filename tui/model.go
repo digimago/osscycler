@@ -4,6 +4,8 @@ package tui
 
 import (
 	"fmt"
+	"math"
+	"slices"
 	"strings"
 	"time"
 
@@ -49,13 +51,66 @@ type Model struct {
 	draft            *draft  // workout being edited
 	ending           *ending // end-ride question
 	onboarding       *onboarding
-	onboardLater     bool      // the rider put onboarding off this session
-	input            *input    // numeric prompt
-	abortUntil       time.Time // a second x before this aborts the ride
+	onboardLater     bool       // the rider put onboarding off this session
+	menu             *menuState // the start menu (m)
+	input            *input     // numeric prompt
+	abortUntil       time.Time  // a second x before this aborts the ride
 	now              func() time.Time
 
 	tour        *Tour // demo autopilot; nil without -tour
 	tourCaption string
+
+	scenes    map[string]*roadScene // road views by course ID
+	tiles     bool                  // v: big tiles instead of the road view
+	posAt     time.Time             // when the ride distance last changed
+	posErr    float64               // shown minus reported then, blended out
+	animating bool                  // a frame tick is pending
+	help      bool                  // the key help is open
+	cadence   []cadenceSample       // recent readings, for the averaged tile
+	// z: medium digits even where large ones would fit.
+	mediumDigits bool
+	layout       Layout     // the rider's tile arrangement
+	layoutPath   string     // where it is saved; "" for this session only
+	arranging    *arranging // the tile editor (o)
+	// asking is a second key press being asked for, shown over the
+	// screen until askUntil.
+	asking   string
+	askUntil time.Time
+}
+
+// ask shows a request for a confirming key press over the screen.
+func (m Model) ask(text string, until time.Time) Model {
+	m.asking, m.askUntil = text, until
+	return m
+}
+
+var askStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#ffffff")).Background(lipgloss.Color("#b3261e")).Bold(true).Padding(1, 4)
+
+// withAsk lays the pending question over the middle of body.
+func (m Model) withAsk(body string) string {
+	if m.asking == "" || !m.now().Before(m.askUntil) {
+		return body
+	}
+	bar := askStyle.Render(m.asking)
+	x := max(0, (lipgloss.Width(body)-lipgloss.Width(bar))/2)
+	y := max(0, (lipgloss.Height(body)-lipgloss.Height(bar))/2)
+	return lipgloss.NewCompositor(lipgloss.NewLayer(body), lipgloss.NewLayer(bar).X(x).Y(y).Z(1)).Render()
+}
+
+// frameMsg asks for the next frame of the road view.
+type frameMsg struct{}
+
+func frameTick() tea.Cmd {
+	return tea.Tick(roadFrame, func(time.Time) tea.Msg { return frameMsg{} })
+}
+
+// animate starts the road view's frames when they should run and aren't.
+func (m Model) animate() (Model, tea.Cmd) {
+	if m.animating || !m.roadMoving() {
+		return m, nil
+	}
+	m.animating = true
+	return m, frameTick()
 }
 
 // New returns a model for the core at addr. cmds may be nil for a
@@ -96,20 +151,45 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onProfileSaved(msg)
 	case countdownMsg:
 		return m.onCountdown(msg)
+	case layoutSavedMsg:
+		if msg.err != nil {
+			m.notice = "saving the tile layout failed: " + msg.err.Error()
+		}
 	case commandMsg:
 		if msg.err != nil {
 			m.notice = msg.what + " failed: " + friendlyErr(msg.err)
 		}
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+	case frameMsg:
+		if m.roadMoving() {
+			return m, frameTick()
+		}
+		m.animating = false
 	case StateMsg:
+		shown, old := m.ridePos(), m.ride()
 		m.st, m.connected, m.connErr = msg.State, true, nil
+		m = m.withCadence(m.now())
+		if r := m.ride(); r.GetDistanceM() != old.GetDistanceM() || r.GetPhase() != old.GetPhase() {
+			// Carry the position forward from here; blend out the difference
+			// from what was shown rather than jumping.
+			m.posAt, m.posErr = m.now(), 0
+			if r.GetCourseId() == old.GetCourseId() && r.GetPhase() == pb.RidePhase_RIDE_PHASE_RIDING {
+				if e := shown - r.GetDistanceM(); math.Abs(e) < 20 {
+					m.posErr = e
+				}
+			}
+		}
 		if m.needsOnboarding() {
 			m = m.startOnboarding(false)
 		}
+		if m.menu != nil && m.busy() {
+			m.menu = nil // joined something already running: show it
+		}
 		m, c1 := m.needCourse()
 		m, c2 := m.needWorkout()
-		return m, tea.Batch(c1, c2)
+		m, c3 := m.animate()
+		return m, tea.Batch(c1, c2, c3)
 	case ConnMsg:
 		m.connected, m.connErr = msg.Err == nil, msg.Err
 		if msg.Err != nil {
@@ -177,10 +257,28 @@ func (m Model) View() tea.View {
 // handleKey routes a key press, real or from the tour.
 func (m Model) handleKey(key string) (tea.Model, tea.Cmd) {
 	// In the workout editor q is just a letter; ctrl+c still quits.
-	if key == "ctrl+c" || (key == "q" && m.draft == nil) {
+	if key == "ctrl+c" {
+		return m, tea.Quit
+	}
+	// Any key closes the help; it does nothing else.
+	if m.help {
+		m.help = false
+		return m, nil
+	}
+	if m.helpKey(key) {
+		m.help = true
+		return m, nil
+	}
+	if next, cmd, ok := m.layoutKey(key); ok {
+		return next, cmd
+	}
+	if key == "q" && m.draft == nil {
 		return m, tea.Quit
 	}
 	if m.cmds != nil {
+		if next, cmd, ok := m.menuKey(key); ok {
+			return next, cmd
+		}
 		if next, cmd, ok := m.onboardKey(key); ok {
 			return next, cmd
 		}
@@ -218,13 +316,13 @@ func (m Model) renderScreen() string {
 		return ""
 	}
 	footer := m.footer()
-	ms := m.metrics()
+	ms := m.screenTiles(screenDashboard)
 
 	// The grade strip (rides) or workout profile (workouts) sits at the
 	// very bottom.
 	var strip string
 	switch {
-	case m.draft != nil || m.picking || m.input != nil || m.ending != nil || m.onboarding != nil:
+	case m.help || m.arranging != nil || m.draft != nil || m.picking || m.input != nil || m.ending != nil || m.onboarding != nil || m.menu != nil:
 	case m.showWorkout() && m.workoutActive():
 		if w := m.workoutDefs[m.wk().GetId()]; w != nil && m.height >= 20 {
 			strip = workoutProfile(w, m.wk().GetElapsedS(), m.width, 4)
@@ -238,12 +336,16 @@ func (m Model) renderScreen() string {
 	if strip != "" {
 		bodyH -= lipgloss.Height(strip)
 	}
-	tileH := bodyH / 2
-	tileW := m.width / 2
 	var body string
 	switch {
+	case m.help:
+		body = m.helpPanel(m.width, bodyH)
+	case m.arranging != nil:
+		body = m.arrangePanel(m.width, bodyH)
 	case m.onboarding != nil:
 		body = m.onboardPanel(m.width, bodyH)
+	case m.menu != nil:
+		body = m.menuPanel(m.width, bodyH)
 	case m.ending != nil:
 		body = m.endPanel(m.width, bodyH)
 	case m.input != nil:
@@ -259,30 +361,46 @@ func (m Model) renderScreen() string {
 		body = m.rideBody(m.width, bodyH)
 	case m.countdown > 0 || m.calibrationActive() || m.showResult():
 		body = m.calibrationPanel(m.width, bodyH)
-	case tileH >= BigHeight+3 && tileW >= 30:
-		var rows []string
-		for i := 0; i < len(ms); i += 2 {
-			rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top,
-				bigTile(ms[i], tileW, tileH), bigTile(ms[i+1], m.width-tileW, tileH)))
-		}
-		body = lipgloss.JoinVertical(lipgloss.Left, rows...)
+	case m.grid(ms, m.width, bodyH) != "":
+		body = m.grid(ms, m.width, bodyH)
 	default:
 		body = m.compact(ms)
 	}
+	body = m.withAsk(body)
 	if strip != "" {
 		return lipgloss.JoinVertical(lipgloss.Left, body, footer, strip)
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, body, footer)
 }
 
-func bigTile(mt metric, w, h int) string {
+// sizes are the digit sizes tiles may use, largest first: z keeps them
+// medium.
+func (m Model) sizes() []digitSize {
+	if m.mediumDigits {
+		return []digitSize{sizeMedium}
+	}
+	return []digitSize{sizeLarge, sizeMedium}
+}
+
+// grid lays metrics out as tiles with the largest digits that fit; empty
+// when none do.
+func (m Model) grid(ms []metric, width, height int) string {
+	for _, size := range m.sizes() {
+		if g := tileGrid(ms, width, height, size); g != "" {
+			return g
+		}
+	}
+	return ""
+}
+
+func bigTile(mt metric, w, h int, size digitSize) string {
 	us := unitStyle
 	if mt.unitStyle != nil {
 		us = *mt.unitStyle
 	}
 	content := lipgloss.JoinVertical(lipgloss.Center,
 		labelStyle.Render(mt.label),
-		mt.style.Render(Big(mt.value)),
+		mt.style.Render(size.render(mt.value)),
 		us.Render(mt.unit))
 	return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, content)
 }
@@ -332,14 +450,9 @@ func (m Model) footer() string {
 		sensors += "   " + rec
 	}
 
+	// The trainer's wish for a spin-down is a key hint, not a warning: the
+	// Flux asks after every power-up, and a warning hid the other hints.
 	var warnings []string
-	if tr.GetResistanceCalibrationRequired() && !m.calibrationActive() && m.countdown == 0 && !m.rideActive() && !m.workoutActive() {
-		hint := "spin-down calibration recommended"
-		if m.canCalibrate() {
-			hint += ": press c"
-		}
-		warnings = append(warnings, hint)
-	}
 	if tr.GetUserConfigRequired() {
 		warnings = append(warnings, "trainer wants your weight: press p")
 	}
@@ -420,25 +533,36 @@ func friendlyErr(err error) string {
 // keyHints lists the keys that do something right now.
 func (m Model) keyHints() string {
 	if m.cmds == nil {
+		if m.st.GetTrainer().GetResistanceCalibrationRequired() && !m.calibrationActive() {
+			return dimStyle.Render("trainer asks for a spin-down calibration · q quit")
+		}
 		return dimStyle.Render("q quit")
 	}
 	var h []string
 	switch {
+	case m.menu != nil:
+		return dimStyle.Render("↑↓ choose · enter do it · esc free ride · " + helpHint + " · q quit")
+	case m.picking:
+		// The picker lists its own keys; the dashboard's don't apply here.
+		return dimStyle.Render("esc back · " + helpHint + " · q quit")
 	case m.draft != nil:
-		return dimStyle.Render("ctrl+c quit")
+		return dimStyle.Render("F1 help · ctrl+c quit")
 	case m.workoutActive():
-		return dimStyle.Render(fmt.Sprintf("+/- intensity %.0f%% · n skip · x x abort · q quit", m.wk().GetIntensityPct()))
+		return dimStyle.Render(fmt.Sprintf("+/- intensity %.0f%% · n skip · x x abort · %s · q quit", m.wk().GetIntensityPct(), helpHint))
 	case m.controlActive():
 		step := controlStep[m.control().GetMode()]
-		return dimStyle.Render(fmt.Sprintf("+/- %s · w watts · g grade · l level · x free ride · q quit", num(step)))
+		return dimStyle.Render(fmt.Sprintf("+/- %s · w ERG or workout · g grade · l level · x free ride · %s · q quit", num(step), helpHint))
 	case m.showWorkout():
 		h = append(h, "x close")
 	case m.rideActive():
+		if m.roadScene() != nil {
+			h = append(h, map[bool]string{false: "v tiles", true: "v road"}[m.tiles])
+		}
 		h = append(h, "x x abort ride")
 	case m.showRide():
 		h = append(h, "x close")
 	default:
-		h = append(h, "r ride", "w/g/l trainer")
+		h = append(h, "m menu", "r ride", "w workout", "g/l trainer")
 		if need := missingText(m.profile()); need != "" {
 			h = append(h, "p add "+need)
 		} else if m.profile() != nil {
@@ -455,5 +579,14 @@ func (m Model) keyHints() string {
 		h = append(h, "C recalibrate")
 	}
 	h = append(h, fmt.Sprintf("+/- difficulty %.0f%%", m.difficulty()))
-	return dimStyle.Render(strings.Join(append(h, "q quit"), " · "))
+	h = append(h, helpHint, "q quit")
+	// On a narrow screen leave out the hints least needed (the help lists
+	// every key), rather than wrapping onto a second line.
+	for _, drop := range []string{"+/- difficulty", "g/l trainer", "w workout", "r ride"} {
+		if m.width == 0 || lipgloss.Width(strings.Join(h, " · ")) <= m.width {
+			break
+		}
+		h = slices.DeleteFunc(h, func(s string) bool { return strings.HasPrefix(s, drop) })
+	}
+	return dimStyle.Render(strings.Join(h, " · "))
 }

@@ -79,3 +79,24 @@ func TestTrainerGrade(t *testing.T) {
 		}
 	}
 }
+
+func TestCdAForRiderSize(t *testing.T) {
+	if got := CdAFor(RefHeightM, RefRiderKg); math.Abs(got-DefaultCdA) > 1e-12 {
+		t.Errorf("reference rider: %.4f, want %.2f", got, DefaultCdA)
+	}
+	small, tall, heavy := CdAFor(1.70, 75), CdAFor(1.95, 75), CdAFor(1.80, 87)
+	if !(small < DefaultCdA && tall > DefaultCdA && heavy > DefaultCdA) {
+		t.Errorf("1.70 m %.3f, 1.95 m %.3f, 87 kg %.3f around %.2f", small, tall, heavy, DefaultCdA)
+	}
+	// Bassett's area for the reference rider is about 0.34 m².
+	if a := FrontalArea(1.80, 75); math.Abs(a-0.341) > 0.002 {
+		t.Errorf("frontal area %.3f m²", a)
+	}
+	// A bigger rider is slower on the flat at the same power, not faster.
+	p := DefaultParams(87, 9)
+	before := p.SteadySpeed(200, 0)
+	p.CdA = heavy
+	if after := p.SteadySpeed(200, 0); after >= before {
+		t.Errorf("87 kg with its own drag: %.2f m/s, not slower than %.2f", after, before)
+	}
+}

@@ -47,8 +47,8 @@ func (m Model) endKey(key string) (Model, tea.Cmd, bool) {
 			m.ending, m.notice = nil, ""
 			return m, m.endActivity(true), true
 		}
+		// The panel asks for the second d, right where the rider looks.
 		m.ending = &ending{discardUntil: m.now().Add(abortConfirm)}
-		m.notice = "press d again to discard: the ride will be deleted"
 	case "esc":
 		m.ending, m.notice = nil, ""
 	}
@@ -82,7 +82,13 @@ func (m Model) endPanel(width, height int) string {
 	lines := []string{
 		titleStyle.Render("END RIDE?"), "",
 		fmt.Sprintf("%s riding · %.2f km", clock(r.GetTimerS()), r.GetDistanceM()/1000), "",
-		okStyle.Render("enter save") + dimStyle.Render("  ·  d discard  ·  esc keep riding"),
+	}
+	if m.now().Before(m.ending.discardUntil) {
+		lines = append(lines,
+			badStyle.Bold(true).Reverse(true).Render(" press d again to delete this ride "), "",
+			dimStyle.Render("enter save instead  ·  esc keep riding"))
+	} else {
+		lines = append(lines, okStyle.Render("enter save")+dimStyle.Render("  ·  d discard  ·  esc keep riding"))
 	}
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center,
 		lipgloss.JoinVertical(lipgloss.Center, lines...))

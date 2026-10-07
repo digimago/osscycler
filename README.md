@@ -6,6 +6,8 @@ gradient, race your best time as a ghost, or do structured ERG workouts.
 Every ride is recorded as a FIT file on your own disk. No account, no
 cloud, no subscription.
 
+![Climbing the built-in figure-8 track in the terminal: power, cadence, grade, lap time and distance to go above a pixel-art road with the ghost of the best lap ahead, the lap times on the left, and the track's profile and the grade ahead below](docs/screenshots/figure-8.png)
+
 What it does today:
 
 - **Course rides** on any GPX route you've ridden or planned: the trainer
@@ -17,7 +19,8 @@ What it does today:
   gap shown live.
 - **ERG workouts**: the trainer holds each target power. Write workouts
   in the built-in editor, or bring Zwift `.zwo` files.
-- **Free riding**, with or without a fixed power, grade or resistance.
+- **Free riding**, round a built-in test track or with just the numbers,
+  with or without a fixed power, grade or resistance.
 - **Recording**: every ride is saved as a FIT file, ready to upload by
   hand to intervals.icu, Garmin Connect or anywhere else.
 
@@ -126,6 +129,8 @@ pop in on the left for 15 seconds, your fastest in bold. Press `w` on a
 track for a workout or a fixed power: the trainer then follows the
 workout, and the road goes on (its free parts follow the track's grade).
 The tracks lie in open sea, so they need no map data.
+
+![An interval workout on the 400 m oval: target power, power, cadence, time left in the interval and heart rate above the road, and the workout's profile in power-zone colours at the bottom](docs/screenshots/workout-on-the-oval.png)
 
 On the dashboard you see power, heart rate, cadence and speed.
 

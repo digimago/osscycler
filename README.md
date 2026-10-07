@@ -95,28 +95,37 @@ start the screen:
 osscycler-tui
 ```
 
-The first time, osscycler asks for your weight and your FTP. Your weight
-sets how climbs feel and how fast you go on a course; your FTP sets the
-targets of ERG workouts. Not sure of your FTP? Take the suggestion and
-change it later.
+The first time, osscycler asks for your weight, your height and your
+FTP. Your weight sets how climbs feel and how fast you go on a course;
+your height (optional) and weight together size how much air you push,
+as a taller or heavier rider does; your FTP sets the targets of ERG
+workouts. Not sure of your FTP? Take the suggestion and change it later.
 
-Before the first ride, do a spin-down calibration when the trainer asks
-for one (press `c` and follow the screen).
+Before the first ride, do a spin-down calibration (press `c` and follow
+the screen). Some trainers ask for one again after every power-up; the
+screen then shows `c calibrate` among its keys, and you can ride without
+it.
 
 **No trainer at hand?** Start the core with `-fake` instead: a simulated
 rider pedals for you, so you can try everything.
 
 ## Riding
 
+The screen opens with a menu: free ride, ride a course, a workout, your
+activities, your profile, calibrate, or quit. Pick one with the arrows
+and `enter`, or press its letter; `esc` is a free ride. `m` brings the
+menu back.
+
 On the dashboard you see power, heart rate, cadence and speed.
 
 | Key | Does |
 | --- | --- |
+| `m` | The menu |
 | `r` | Rides: COURSES, HISTORY, ACTIVITIES (`tab` switches) |
 | `w` | Workouts, with a fixed power (ERG) at the top |
 | `+` / `-` | Trainer difficulty on courses, in 10 % steps (50 % is Zwift's default) |
 | `g` / `l` | Free riding at a fixed grade (%) or resistance level (%) |
-| `p` | Your profile: weight and FTP |
+| `p` | Your profile: weight, height and FTP |
 | `c` / `C` | Spin-down calibration: when the trainer asks / any time |
 | `e` | End the ride, outside a course ride or workout: save it (`enter`) or discard it (`d d`) |
 | `o` | Arrange the tiles on this screen: order, show, hide (dashboard, course ride, workout) |

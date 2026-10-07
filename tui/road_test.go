@@ -4,6 +4,7 @@ import (
 	"math"
 	"strings"
 	"testing"
+	"time"
 
 	"charm.land/lipgloss/v2"
 
@@ -92,5 +93,43 @@ func TestRoadGhostVisible(t *testing.T) {
 	}
 	if diff < 20 {
 		t.Errorf("a ghost 20 m ahead changed %d pixels, want a visible rider", diff)
+	}
+}
+
+// The core moves the rider 4 times a second while other state (trainer,
+// heart rate) arrives in between: the drawn position must advance
+// steadily, never back.
+func TestRidePosSteady(t *testing.T) {
+	const speed = 10.0 // m/s
+	clock := time.Unix(0, 0)
+	m := New("test", nil)
+	m.now = func() time.Time { return clock }
+	state := func(d float64) StateMsg {
+		return StateMsg{State: &pb.State{Ride: &pb.Ride{
+			Phase: pb.RidePhase_RIDE_PHASE_RIDING, CourseId: "c", CourseDistanceM: 10000,
+			DistanceM: d, SpeedMps: speed,
+		}}}
+	}
+	reported := 0.0
+	last := -1.0
+	for step := 0; step <= 200; step++ { // 10 s in 50 ms frames
+		now := float64(step) * 0.05
+		clock = time.Unix(0, 0).Add(time.Duration(now * float64(time.Second)))
+		switch {
+		case step%5 == 0: // a ride tick every 250 ms, a little behind (jitter)
+			reported = speed*now - 0.3*float64(step%3)
+			next, _ := m.Update(state(reported))
+			m = next.(Model)
+		case step%2 == 0: // other state, same ride distance
+			next, _ := m.Update(state(reported))
+			m = next.(Model)
+		}
+		pos := m.ridePos()
+		if last >= 0 && step > 5 {
+			if d := pos - last; d < 0.2 || d > 0.8 {
+				t.Fatalf("at %.2f s the position moved %.2f m in a frame, want about %.2f", now, d, speed*0.05)
+			}
+		}
+		last = pos
 	}
 }

@@ -4,6 +4,7 @@ package tui
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -59,7 +60,8 @@ type Model struct {
 
 	scenes    map[string]*roadScene // road views by course ID
 	tiles     bool                  // v: big tiles instead of the road view
-	stateAt   time.Time             // when the last state arrived
+	posAt     time.Time             // when the ride distance last changed
+	posErr    float64               // shown minus reported then, blended out
 	animating bool                  // a frame tick is pending
 }
 
@@ -129,8 +131,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.animating = false
 	case StateMsg:
+		shown, old := m.ridePos(), m.ride()
 		m.st, m.connected, m.connErr = msg.State, true, nil
-		m.stateAt = m.now()
+		if r := m.ride(); r.GetDistanceM() != old.GetDistanceM() || r.GetPhase() != old.GetPhase() {
+			// Carry the position forward from here; blend out the difference
+			// from what was shown rather than jumping.
+			m.posAt, m.posErr = m.now(), 0
+			if r.GetCourseId() == old.GetCourseId() && r.GetPhase() == pb.RidePhase_RIDE_PHASE_RIDING {
+				if e := shown - r.GetDistanceM(); math.Abs(e) < 20 {
+					m.posErr = e
+				}
+			}
+		}
 		if m.needsOnboarding() {
 			m = m.startOnboarding(false)
 		}

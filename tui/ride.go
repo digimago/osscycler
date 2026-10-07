@@ -171,14 +171,18 @@ func (m Model) roadMoving() bool {
 	return !m.tiles && m.ridePhase() == pb.RidePhase_RIDE_PHASE_RIDING && m.roadScene() != nil
 }
 
-// ridePos is the rider's distance on the course, carried forward at the
-// current speed since the last state so the road scrolls smoothly.
+// ridePos is the rider's distance on the course for drawing. The core
+// moves the rider 4 times a second; in between the position is carried
+// forward at the current speed, and the small difference to the next
+// reported position is blended out over posBlend instead of jumping.
 func (m Model) ridePos() float64 {
+	const posBlend = 0.4 // s
 	r := m.ride()
 	d := r.GetDistanceM()
-	if r.GetPhase() == pb.RidePhase_RIDE_PHASE_RIDING && !m.stateAt.IsZero() {
-		dt := math.Max(0, math.Min(m.now().Sub(m.stateAt).Seconds(), 0.5))
-		d = math.Min(d+r.GetSpeedMps()*dt, r.GetCourseDistanceM())
+	if r.GetPhase() == pb.RidePhase_RIDE_PHASE_RIDING && !m.posAt.IsZero() {
+		dt := math.Max(0, m.now().Sub(m.posAt).Seconds())
+		d += r.GetSpeedMps()*math.Min(dt, 0.5) + m.posErr*math.Max(0, 1-dt/posBlend)
+		d = math.Min(d, r.GetCourseDistanceM())
 	}
 	return d
 }
@@ -352,9 +356,13 @@ func (m Model) rideInfo(width int) string {
 		return center.Render(bigWarn.Render("start pedalling to start the clock") + dimStyle.Render("  ·  "+r.GetCourseName()+race))
 	}
 	ms := m.metrics()
+	credit := ""
+	if sc := m.roadScene(); sc != nil && !m.tiles && sc.attribution != "" {
+		credit = dimStyle.Render(" · " + sc.attribution)
+	}
 	return center.Render(fmt.Sprintf("%s bpm · %s rpm · %.1f km/h · %.0f/%.0f m climbed · %s",
 		ms[1].value, ms[2].value, r.GetSpeedMps()*3.6, r.GetClimbedM(), r.GetCourseGainM(),
-		dimStyle.Render(truncate(r.GetCourseName(), 40))))
+		dimStyle.Render(truncate(r.GetCourseName(), 40))) + credit)
 }
 
 func (m Model) rideResult(width, height int, finished bool) string {

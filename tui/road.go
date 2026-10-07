@@ -2,6 +2,7 @@ package tui
 
 import (
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -27,6 +28,8 @@ const (
 	roadSmoothM  = 40.0  // the track is smoothed over this span (GPS jitter)
 	roadTreeM    = 6.0   // a tree may stand every this many metres
 	roadGhostM   = 1.0   // the ghost rides this far right of the centre line
+	roadNearM    = 15.0  // land use is given this far out from the centre line
+	roadFarM     = 60.0  // and this far
 	// roadFrame paces the animation between state updates.
 	roadFrame = 50 * time.Millisecond
 )
@@ -62,6 +65,11 @@ func mix(a, b rgb, t float64) rgb {
 type roadScene struct {
 	step, finish     float64
 	east, north, ele []float64
+	// From map data, when the core has it: four land uses per sample (left
+	// far, left near, right near, right far) and the buildings by distance.
+	land        []byte
+	buildings   []*pb.Building
+	attribution string
 }
 
 // newRoadScene returns nil for a course without a track (an older core).
@@ -72,8 +80,35 @@ func newRoadScene(c *pb.Course) *roadScene {
 		return nil
 	}
 	k := int(math.Round(roadSmoothM / step / 2))
-	return &roadScene{step: step, finish: c.GetDistanceM(),
-		east: movingAverage(e, k), north: movingAverage(n, k), ele: movingAverage(ele, 0)}
+	sc := &roadScene{step: step, finish: c.GetDistanceM(),
+		east: movingAverage(e, k), north: movingAverage(n, k), ele: movingAverage(ele, 0),
+		buildings: c.GetBuildings(), attribution: c.GetAttribution()}
+	if l := c.GetLandUse(); len(l) == 4*len(e) {
+		sc.land = l
+	}
+	return sc
+}
+
+// landAt is the land use at distance s and lateral metres from the centre
+// line (right positive).
+func (sc *roadScene) landAt(s, lateral float64) pb.LandUse {
+	if sc.land == nil {
+		return pb.LandUse_LAND_USE_UNSPECIFIED
+	}
+	i := max(0, min(int(math.Round(s/sc.step)), len(sc.land)/4-1))
+	near := math.Abs(lateral) < (roadNearM+roadFarM)/2
+	var k int
+	switch {
+	case lateral < 0 && near:
+		k = 1
+	case lateral < 0:
+		k = 0
+	case near:
+		k = 2
+	default:
+		k = 3
+	}
+	return pb.LandUse(sc.land[4*i+k])
 }
 
 // movingAverage is centred over 2k+1 samples, narrowing at the ends.
@@ -230,7 +265,9 @@ func (sc *roadScene) pixels(pos, ghost float64, w, h int) []rgb {
 	// that nearer road hasn't covered, so crests hide what lies behind.
 	clip := float64(h)
 	var segs []roadSeg
-	for s := pos + 1; s <= pos+roadDrawM; s += roadSegM {
+	// The first point just ahead of the eye; the rest on a fixed grid along
+	// the course, so the road's shape doesn't shimmer as the rider moves.
+	for s := pos + 1; s <= pos+roadDrawM; s = nextGrid(s, pos) {
 		sx, sy, depth, ok := cam.project(sc.at(s))
 		if !ok {
 			if len(segs) > 0 {
@@ -246,49 +283,88 @@ func (sc *roadScene) pixels(pos, ghost float64, w, h int) []rgb {
 		segs = append(segs, cur)
 	}
 
-	// Trees and the ghost, far to near, each hidden below the road nearer
-	// than where it stands.
+	// Trees, buildings and the ghost, far to near, each hidden below the
+	// road nearer than where it stands.
 	if len(segs) == 0 {
 		return px
 	}
+	// segAt projects distance s itself, hidden below the road nearer than s.
 	segAt := func(s float64) (roadSeg, bool) {
-		i := int(math.Round((s - segs[0].s) / roadSegM))
-		if i < 0 || i >= len(segs) {
+		i := sort.Search(len(segs), func(i int) bool { return segs[i].s > s }) // first point beyond s
+		if i == 0 || i == len(segs) {
 			return roadSeg{}, false
 		}
-		return segs[i], true
+		sx, sy, depth, ok := cam.project(sc.at(s))
+		if !ok {
+			return roadSeg{}, false
+		}
+		return roadSeg{s: s, sx: sx, sy: sy, depth: depth, clip: segs[i].clip}, true
 	}
-	ghostDrawn := ghost < 0
+	type sprite struct {
+		s    float64
+		draw func()
+	}
+	var sprites []sprite
 	for k := int(math.Floor((pos + roadDrawM) / roadTreeM)); float64(k)*roadTreeM > pos+8; k-- {
 		s := float64(k) * roadTreeM
-		if !ghostDrawn && ghost >= s {
-			ghostDrawn = true
-			if g, ok := segAt(ghost); ok && ghost > pos+2 {
-				drawGhost(set, cam, g)
-			}
-		}
-		hash := splitmix(uint64(k))
-		if hash%4 != 0 { // one in four slots has a tree
-			continue
-		}
 		g, ok := segAt(s)
 		if !ok {
 			continue
 		}
-		side := 1.0
-		if hash&(1<<8) != 0 {
-			side = -1
+		for side := range 2 {
+			for n := range 3 {
+				hash := splitmix(uint64(k)*8 + uint64(side*4+n))
+				off := roadHalfM + 1.5 + float64(hash>>8%400)/10
+				land := sc.landAt(s, off*float64(2*side-1))
+				rule := treeRules[land]
+				if hash%64 >= rule.per64 {
+					continue
+				}
+				if rule.rowM > 0 { // orchards plant in rows
+					off = roadHalfM + 3 + math.Round(off/rule.rowM)*rule.rowM
+				}
+				lateral := off * float64(2*side-1)
+				height := rule.minH + float64(hash>>20%100)/100*rule.spanH
+				pine := hash>>28%4 < rule.pine4
+				sprites = append(sprites, sprite{s, func() { drawTree(set, cam, g, lateral, height, pine) }})
+			}
 		}
-		off := side * (roadHalfM + 4 + float64(hash>>16%80)/10)
-		height := 6 + float64(hash>>24%70)/10
-		drawTree(set, cam, g, off, height, hash&(1<<9) != 0)
 	}
-	if !ghostDrawn {
-		if g, ok := segAt(ghost); ok && ghost > pos+2 {
-			drawGhost(set, cam, g)
+	for _, b := range sc.buildings {
+		s0, s1 := b.GetDistanceM()-b.GetLengthM()/2, b.GetDistanceM()+b.GetLengthM()/2
+		if s1 < pos+3 || s0 > pos+roadDrawM {
+			continue
 		}
+		first, last := segs[0].s, segs[len(segs)-1].s-0.01
+		near, ok := segAt(math.Max(s0, first))
+		if !ok {
+			continue
+		}
+		far, ok := segAt(math.Min(s1, last))
+		if !ok {
+			far = segs[len(segs)-1]
+		}
+		front := s0 >= first
+		sprites = append(sprites, sprite{math.Max(s0, pos), func() { drawBuilding(set, cam, b, near, far, front) }})
+	}
+	if g, ok := segAt(ghost); ok && ghost > pos+2 {
+		sprites = append(sprites, sprite{ghost, func() { drawGhost(set, cam, g) }})
+	}
+	sort.SliceStable(sprites, func(i, j int) bool { return sprites[i].s > sprites[j].s })
+	for _, sp := range sprites {
+		sp.draw()
 	}
 	return px
+}
+
+// nextGrid is the next road point after s: on the roadSegM grid, at least
+// half a step on so no band gets too thin.
+func nextGrid(s, pos float64) float64 {
+	n := (math.Floor(s/roadSegM) + 1) * roadSegM
+	if n-s < roadSegM/2 && s == pos+1 {
+		n += roadSegM
+	}
+	return n
 }
 
 // band fills the rows between a nearer and a farther road point.
@@ -310,8 +386,9 @@ func (sc *roadScene) band(px []rgb, w int, cam roadCamera, near, far roadSeg, cl
 		mPerPx := depth / cam.f
 		fog := (depth - roadFogFromM) / (roadDrawM - roadFogFromM)
 
+		odd := int(math.Floor(s/roadStripeM))%2 != 0
 		grass, asphalt := grassA, asphaltA
-		if int(math.Floor(s/roadStripeM))%2 != 0 {
+		if odd {
 			grass, asphalt = grassB, asphaltB
 		}
 		dash := math.Mod(s, 2*roadDashM) < roadDashM
@@ -323,7 +400,7 @@ func (sc *roadScene) band(px []rgb, w int, cam roadCamera, near, far roadSeg, cl
 			var c rgb
 			switch {
 			case ax > roadHalfM:
-				c = grass
+				c = sc.ground(s, lateral, odd, grass)
 			case finish:
 				c = lineColor
 				if (int(math.Floor(lateral/0.5))+int(math.Floor((s-sc.finish)/0.5)))%2 != 0 {
@@ -413,4 +490,149 @@ func splitmix(x uint64) uint64 {
 	x = (x ^ x>>30) * 0xbf58476d1ce4e5b9
 	x = (x ^ x>>27) * 0x94d049bb133111eb
 	return x ^ x>>31
+}
+
+// treeRule is how trees grow on a kind of land: the chance of each of
+// three candidate spots per slot and side, out of 64; heights; the share
+// of pines, out of 4; and the row spacing of planted trees.
+type treeRule struct {
+	per64       uint64
+	minH, spanH float64
+	pine4       uint64
+	rowM        float64
+}
+
+var treeRules = map[pb.LandUse]treeRule{
+	pb.LandUse_LAND_USE_UNSPECIFIED: {per64: 3, minH: 6, spanH: 7, pine4: 2},
+	pb.LandUse_LAND_USE_MEADOW:      {per64: 3, minH: 6, spanH: 7, pine4: 1},
+	pb.LandUse_LAND_USE_FARMLAND:    {per64: 1, minH: 6, spanH: 6, pine4: 0},
+	pb.LandUse_LAND_USE_FOREST:      {per64: 56, minH: 11, spanH: 9, pine4: 2},
+	pb.LandUse_LAND_USE_BUILT:       {per64: 5, minH: 5, spanH: 5, pine4: 1},
+	pb.LandUse_LAND_USE_WATER:       {},
+	pb.LandUse_LAND_USE_ORCHARD:     {per64: 40, minH: 3, spanH: 1.5, rowM: 4},
+	pb.LandUse_LAND_USE_HEATH:       {per64: 8, minH: 2, spanH: 4, pine4: 3},
+}
+
+// groundColors per land use: two shades that alternate (in stripes across
+// the road, or rows along it for crops).
+var groundColors = map[pb.LandUse][2]rgb{
+	pb.LandUse_LAND_USE_FARMLAND: {{0x8f, 0xa0, 0x3c}, {0x6e, 0x80, 0x2c}},
+	pb.LandUse_LAND_USE_FOREST:   {{0x2e, 0x52, 0x27}, {0x29, 0x4a, 0x23}},
+	pb.LandUse_LAND_USE_BUILT:    {{0x8a, 0x93, 0x7c}, {0x80, 0x88, 0x73}},
+	pb.LandUse_LAND_USE_WATER:    {{0x3d, 0x70, 0xa0}, {0x45, 0x7a, 0xab}},
+	pb.LandUse_LAND_USE_ORCHARD:  {{0x66, 0xa6, 0x44}, {0x5c, 0x98, 0x3d}},
+	pb.LandUse_LAND_USE_HEATH:    {{0x86, 0x6a, 0x78}, {0x7a, 0x60, 0x6c}},
+}
+
+// ground is the colour beside the road; grass is the plain verge.
+func (sc *roadScene) ground(s, lateral float64, odd bool, grass rgb) rgb {
+	if math.Abs(lateral) < roadHalfM+1 {
+		return grass
+	}
+	land := sc.landAt(s, lateral)
+	c, ok := groundColors[land]
+	if !ok {
+		return grass
+	}
+	if land == pb.LandUse_LAND_USE_FARMLAND {
+		odd = int(math.Floor(lateral/1.2))%2 != 0 // crop rows
+	}
+	if odd {
+		return c[1]
+	}
+	return c[0]
+}
+
+var (
+	wallColors = map[pb.BuildingKind][]rgb{
+		pb.BuildingKind_BUILDING_KIND_HOUSE: {{0x9c, 0x4a, 0x32}, {0xb5, 0x6a, 0x45}, {0xd8, 0xd2, 0xc4}, {0xc9, 0xb2, 0x8a}},
+		pb.BuildingKind_BUILDING_KIND_FLAT:  {{0x9a, 0x9e, 0xa3}, {0xb8, 0xb4, 0xa8}, {0x8c, 0x5a, 0x48}},
+		pb.BuildingKind_BUILDING_KIND_BARN:  {{0x5a, 0x4a, 0x3a}, {0x3c, 0x46, 0x40}, {0x8a, 0x84, 0x78}},
+	}
+	roofColors = []rgb{{0x4a, 0x3a, 0x38}, {0xa0, 0x4b, 0x2e}, {0x3a, 0x3e, 0x44}}
+	glassColor = rgb{0x34, 0x44, 0x55}
+)
+
+// drawBuilding draws a building as a box beside the road: the wall facing
+// the road from its near to its far end, then (when it is still ahead)
+// the end facing the rider, with a gable for pitched roofs and windows by
+// floor.
+func drawBuilding(set func(x, y int, c rgb), cam roadCamera, b *pb.Building, near, far roadSeg, front bool) {
+	hash := splitmix(math.Float64bits(b.GetDistanceM()) ^ math.Float64bits(b.GetOffsetM()))
+	kind := b.GetKind()
+	walls, ok := wallColors[kind]
+	if !ok {
+		kind, walls = pb.BuildingKind_BUILDING_KIND_HOUSE, wallColors[pb.BuildingKind_BUILDING_KIND_HOUSE]
+	}
+	wall, roof := walls[hash%uint64(len(walls))], roofColors[hash>>8%uint64(len(roofColors))]
+	h, depth := b.GetHeightM(), b.GetDepthM()
+	var roofH float64
+	switch kind {
+	case pb.BuildingKind_BUILDING_KIND_HOUSE:
+		roofH = math.Min(h*0.45, depth*0.5)
+	case pb.BuildingKind_BUILDING_KIND_BARN:
+		roofH = math.Min(h*0.5, depth*0.45)
+	}
+	wallH := h - roofH
+	windows := kind != pb.BuildingKind_BUILDING_KIND_BARN
+	side := math.Copysign(1, b.GetOffsetM())
+	inner, outer := b.GetOffsetM()-side*depth/2, b.GetOffsetM()+side*depth/2
+	clip := near.clip
+	fogAt := func(d float64) float64 { return (d - roadFogFromM) / (roadDrawM - roadFogFromM) }
+	isWindow := func(along, up, floorH float64) bool {
+		return windows && math.Mod(along, 2.6) > 1.1 && math.Mod(up, floorH) > 0.9 && math.Mod(up, floorH) < 2.2 && up < wallH-0.4
+	}
+	floorH := 3.0
+
+	// The wall facing the road, with a band of roof above it.
+	fN, fF := cam.f/near.depth, cam.f/far.depth
+	xN, xF := near.sx+inner*fN, far.sx+inner*fF
+	if math.Abs(xF-xN) >= 0.5 {
+		lo, hi := math.Min(xN, xF), math.Max(xN, xF)
+		for x := int(math.Floor(lo)); float64(x) < hi; x++ {
+			t := (float64(x) + 0.5 - xN) / (xF - xN)
+			if t < 0 || t > 1 {
+				continue
+			}
+			d := 1 / (1/near.depth + (1/far.depth-1/near.depth)*t)
+			f := cam.f / d
+			ground := near.sy + (far.sy-near.sy)*t
+			top := ground - wallH*f
+			along := (d - near.depth) / math.Max(far.depth-near.depth, 1e-9) * b.GetLengthM()
+			fog := fogAt(d)
+			for y := int(math.Floor(top - roofH*f*0.6)); float64(y) < math.Min(ground, clip); y++ {
+				c := mix(wall, rgb{0, 0, 0}, 0.25) // in shade
+				if float64(y)+0.5 < top {
+					c = roof
+				} else if isWindow(along, (ground-float64(y)-0.5)/f, floorH) {
+					c = glassColor
+				}
+				set(x, y, mix(c, fogColor, fog))
+			}
+		}
+	}
+	if !front {
+		return
+	}
+	// The end facing the rider, with its gable.
+	left, right := near.sx+math.Min(inner, outer)*fN, near.sx+math.Max(inner, outer)*fN
+	mid := near.sx + b.GetOffsetM()*fN
+	top := near.sy - wallH*fN
+	fog := fogAt(near.depth)
+	for x := int(math.Floor(left)); float64(x) < right; x++ {
+		across := (float64(x) + 0.5 - left) / fN
+		gable := roofH * fN * (1 - math.Abs(float64(x)+0.5-mid)/((right-left)/2))
+		for y := int(math.Floor(top - gable)); float64(y) < math.Min(near.sy, clip); y++ {
+			c := wall
+			switch {
+			case float64(y)+0.5 < top && kind == pb.BuildingKind_BUILDING_KIND_BARN:
+				c = roof
+			case float64(y)+0.5 < top:
+				c = mix(wall, rgb{0, 0, 0}, 0.1)
+			case isWindow(across, (near.sy-float64(y)-0.5)/fN, floorH):
+				c = glassColor
+			}
+			set(x, y, mix(c, fogColor, fog))
+		}
+	}
 }

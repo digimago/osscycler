@@ -132,3 +132,39 @@ func TestArrangeWithShiftArrows(t *testing.T) {
 		t.Errorf("shift+↑ moved %q to the top, want heart_rate", got)
 	}
 }
+
+func TestArrangeByNumber(t *testing.T) {
+	m := calModel(&stubCommands{})
+	m.st.Trainer.ResistanceCalibrationRequired = false
+	m = pressAll(m, "o") // power, heart_rate, cadence, speed shown; cadence_5s, distance hidden
+	shown := func(m Model) []string {
+		var ids []string
+		for _, id := range m.arranging.order {
+			if m.arranging.shown[id] {
+				ids = append(ids, id)
+			}
+		}
+		return ids
+	}
+	// Speed (4th) to place 1: the others shift down.
+	m2 := pressAll(m, "down", "down", "down", "1")
+	if got := shown(m2); !slices.Equal(got, []string{"speed", "power", "heart_rate", "cadence"}) {
+		t.Errorf("4th to 1: %v", got)
+	}
+	if m2.arranging.order[m2.arranging.cursor] != "speed" {
+		t.Error("the cursor didn't follow the tile")
+	}
+	// A hidden tile (distance) to place 2 is shown there.
+	m2 = pressAll(m, "down", "down", "down", "down", "down", "2")
+	if got := shown(m2); !slices.Equal(got, []string{"power", "distance", "heart_rate", "cadence", "speed"}) {
+		t.Errorf("hidden to 2: %v", got)
+	}
+	// Past the end: last.
+	m2 = pressAll(m, "8")
+	if got := shown(m2); !slices.Equal(got, []string{"heart_rate", "cadence", "speed", "power"}) {
+		t.Errorf("1st to 8: %v", got)
+	}
+	if out := plain(m.render()); !strings.Contains(out, "press its place: 1-8") {
+		t.Errorf("hint:\n%s", out)
+	}
+}

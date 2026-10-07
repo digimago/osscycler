@@ -32,6 +32,7 @@ func (m Model) helpContext() (string, []helpEntry) {
 		return "TILES", append([]helpEntry{
 			{"↑ ↓", "choose a tile"},
 			{"shift + ↑ ↓", "move it up or down: the order on screen"},
+			{"1 - 8", "put it in that place; the ones from there move down one"},
 			{"space  x", "show or hide it"},
 			{"r", "back to the defaults"},
 			{"z", "digit size: large or medium"},

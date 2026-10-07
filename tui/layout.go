@@ -297,6 +297,14 @@ func (m Model) layoutKey(key string) (Model, tea.Cmd, bool) {
 		default:
 			a.shown[id] = !a.shown[id]
 		}
+	case "1", "2", "3", "4", "5", "6", "7", "8":
+		id := a.order[a.cursor]
+		if !a.shown[id] && count >= maxTiles {
+			m.notice = fmt.Sprintf("at most %d tiles", maxTiles)
+			break
+		}
+		a.shown[id] = true
+		a.cursor = a.place(id, int(key[0]-'0'))
 	case "r":
 		def := m
 		def.layout.Tiles = nil
@@ -327,6 +335,26 @@ func (m Model) layoutKey(key string) (Model, tea.Cmd, bool) {
 	return m, nil, true
 }
 
+// place moves id to be the nth shown tile (1-based), the tiles from
+// there on moving down one; past the last it goes last. It returns the
+// tile's new index in order.
+func (a *arranging) place(id string, n int) int {
+	a.order = slices.DeleteFunc(a.order, func(o string) bool { return o == id })
+	at, seen := len(a.order), 0
+	for i, o := range a.order {
+		if !a.shown[o] {
+			continue
+		}
+		if seen++; seen == n {
+			at = i
+			break
+		}
+		at = i + 1 // after the last shown so far
+	}
+	a.order = slices.Insert(a.order, at, id)
+	return at
+}
+
 func (m Model) arrangePanel(width, height int) string {
 	a := m.arranging
 	lines := []string{titleStyle.Render("TILES: " + screenNames[a.screen]), ""}
@@ -349,7 +377,8 @@ func (m Model) arrangePanel(width, height int) string {
 		size = "medium"
 	}
 	lines = append(lines, "",
-		dimStyle.Render("↑/↓ choose · hold shift and press ↑/↓ to move it · space show or hide · r defaults · enter save · esc cancel"),
+		dimStyle.Render("↑/↓ choose · hold shift and press ↑/↓ to move it, or press its place: 1-8"),
+		dimStyle.Render("space show or hide · r defaults · enter save · esc cancel"),
 		dimStyle.Render("z digit size: "+size+" (smaller digits fit more tiles)"))
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, lipgloss.JoinVertical(lipgloss.Left, lines...))
 }

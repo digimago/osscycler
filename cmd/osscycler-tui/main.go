@@ -90,6 +90,8 @@ func run() error {
 	if *tour {
 		t = tui.NewTour()
 		model = model.WithTour(t)
+	} else {
+		model = model.WithMenu()
 	}
 	p := tea.NewProgram(model)
 	go stream(ctx, client, uint32(*rate), p.Send)

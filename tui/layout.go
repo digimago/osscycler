@@ -250,6 +250,9 @@ func (m Model) startArranging(screen string) Model {
 // layoutKey handles o and z, and every key while the editor is open.
 func (m Model) layoutKey(key string) (Model, tea.Cmd, bool) {
 	if m.arranging == nil {
+		if m.menu != nil {
+			return m, nil, false // the menu has the keys
+		}
 		switch {
 		case key == "o" && m.tileScreen() != "":
 			return m.startArranging(m.tileScreen()), nil, true

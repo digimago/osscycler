@@ -51,9 +51,10 @@ type Model struct {
 	draft            *draft  // workout being edited
 	ending           *ending // end-ride question
 	onboarding       *onboarding
-	onboardLater     bool      // the rider put onboarding off this session
-	input            *input    // numeric prompt
-	abortUntil       time.Time // a second x before this aborts the ride
+	onboardLater     bool       // the rider put onboarding off this session
+	menu             *menuState // the start menu (m)
+	input            *input     // numeric prompt
+	abortUntil       time.Time  // a second x before this aborts the ride
 	now              func() time.Time
 
 	tour        *Tour // demo autopilot; nil without -tour
@@ -182,6 +183,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.needsOnboarding() {
 			m = m.startOnboarding(false)
 		}
+		if m.menu != nil && m.busy() {
+			m.menu = nil // joined something already running: show it
+		}
 		m, c1 := m.needCourse()
 		m, c2 := m.needWorkout()
 		m, c3 := m.animate()
@@ -272,6 +276,9 @@ func (m Model) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	if m.cmds != nil {
+		if next, cmd, ok := m.menuKey(key); ok {
+			return next, cmd
+		}
 		if next, cmd, ok := m.onboardKey(key); ok {
 			return next, cmd
 		}
@@ -315,7 +322,7 @@ func (m Model) renderScreen() string {
 	// very bottom.
 	var strip string
 	switch {
-	case m.help || m.arranging != nil || m.draft != nil || m.picking || m.input != nil || m.ending != nil || m.onboarding != nil:
+	case m.help || m.arranging != nil || m.draft != nil || m.picking || m.input != nil || m.ending != nil || m.onboarding != nil || m.menu != nil:
 	case m.showWorkout() && m.workoutActive():
 		if w := m.workoutDefs[m.wk().GetId()]; w != nil && m.height >= 20 {
 			strip = workoutProfile(w, m.wk().GetElapsedS(), m.width, 4)
@@ -337,6 +344,8 @@ func (m Model) renderScreen() string {
 		body = m.arrangePanel(m.width, bodyH)
 	case m.onboarding != nil:
 		body = m.onboardPanel(m.width, bodyH)
+	case m.menu != nil:
+		body = m.menuPanel(m.width, bodyH)
 	case m.ending != nil:
 		body = m.endPanel(m.width, bodyH)
 	case m.input != nil:
@@ -531,6 +540,8 @@ func (m Model) keyHints() string {
 	}
 	var h []string
 	switch {
+	case m.menu != nil:
+		return dimStyle.Render("↑↓ choose · enter do it · esc free ride · " + helpHint + " · q quit")
 	case m.picking:
 		// The picker lists its own keys; the dashboard's don't apply here.
 		return dimStyle.Render("esc back · " + helpHint + " · q quit")
@@ -551,7 +562,7 @@ func (m Model) keyHints() string {
 	case m.showRide():
 		h = append(h, "x close")
 	default:
-		h = append(h, "r ride", "w workout", "g/l trainer")
+		h = append(h, "m menu", "r ride", "w workout", "g/l trainer")
 		if need := missingText(m.profile()); need != "" {
 			h = append(h, "p add "+need)
 		} else if m.profile() != nil {

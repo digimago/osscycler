@@ -39,6 +39,8 @@ func (m Model) helpContext() (string, []helpEntry) {
 			{"enter", "save"},
 			{"esc  o", "cancel"},
 		}, always...)
+	case m.menu != nil:
+		return "MENU", append(menuHelp(), always...)
 	case m.onboarding != nil:
 		return "YOUR PROFILE", append([]helpEntry{
 			{"0-9 .", "type the value"}, {"backspace", "delete a digit"},
@@ -128,6 +130,7 @@ func (m Model) helpContext() (string, []helpEntry) {
 		}, always...)
 	}
 	return "DASHBOARD", append([]helpEntry{
+		{"m", "the menu: everything you can do from here"},
 		{"r", "rides: courses, your history, recordings"},
 		{"w", "workouts, or a fixed power (ERG)"},
 		{"g", "ride at a fixed grade"},

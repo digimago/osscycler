@@ -72,8 +72,7 @@ func rideToProto(r telemetry.Ride) *pb.Ride {
 	}
 }
 
-// CourseToProto converts a course with its full profile.
-// ProfileToProto converts the rider profile; nil for a core without one.
+// profileToProto converts the rider profile; nil for a core without one.
 func profileToProto(p telemetry.Profile) *pb.RiderProfile {
 	if !p.Known {
 		return nil
@@ -106,8 +105,10 @@ func ghostToProto(g telemetry.RideGhost) *pb.RideGhost {
 	return &pb.RideGhost{Label: g.Label, DistanceM: g.DistanceM, GapS: g.Gap.Seconds(), TimeS: g.Elapsed.Seconds()}
 }
 
+// CourseToProto converts a course with its full profile and track.
 func CourseToProto(c *course.Course) *pb.Course {
 	ele, grade := c.Profile()
+	east, north := c.Track()
 	pc := &pb.Course{
 		Id:                c.ID,
 		Name:              c.Name,
@@ -119,9 +120,12 @@ func CourseToProto(c *course.Course) *pb.Course {
 		ProfileStepM:      c.Spacing,
 		ProfileElevationM: make([]float32, len(ele)),
 		ProfileGradePct:   make([]float32, len(grade)),
+		ProfileEastM:      make([]float32, len(east)),
+		ProfileNorthM:     make([]float32, len(north)),
 	}
 	for i := range ele {
 		pc.ProfileElevationM[i], pc.ProfileGradePct[i] = float32(ele[i]), float32(grade[i])
+		pc.ProfileEastM[i], pc.ProfileNorthM[i] = float32(east[i]), float32(north[i])
 	}
 	return pc
 }

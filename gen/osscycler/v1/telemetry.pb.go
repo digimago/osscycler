@@ -2580,8 +2580,13 @@ type Course struct {
 	ProfileStepM      float64   `protobuf:"fixed64,8,opt,name=profile_step_m,json=profileStepM,proto3" json:"profile_step_m,omitempty"`
 	ProfileElevationM []float32 `protobuf:"fixed32,9,rep,packed,name=profile_elevation_m,json=profileElevationM,proto3" json:"profile_elevation_m,omitempty"`
 	ProfileGradePct   []float32 `protobuf:"fixed32,10,rep,packed,name=profile_grade_pct,json=profileGradePct,proto3" json:"profile_grade_pct,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// Where each profile sample lies on the map, in metres east and north of
+	// the start (a flat projection of the GPX track, as recorded: renderers
+	// smooth it to taste). For drawing the road's bends.
+	ProfileEastM  []float32 `protobuf:"fixed32,11,rep,packed,name=profile_east_m,json=profileEastM,proto3" json:"profile_east_m,omitempty"`
+	ProfileNorthM []float32 `protobuf:"fixed32,12,rep,packed,name=profile_north_m,json=profileNorthM,proto3" json:"profile_north_m,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Course) Reset() {
@@ -2680,6 +2685,20 @@ func (x *Course) GetProfileElevationM() []float32 {
 func (x *Course) GetProfileGradePct() []float32 {
 	if x != nil {
 		return x.ProfileGradePct
+	}
+	return nil
+}
+
+func (x *Course) GetProfileEastM() []float32 {
+	if x != nil {
+		return x.ProfileEastM
+	}
+	return nil
+}
+
+func (x *Course) GetProfileNorthM() []float32 {
+	if x != nil {
+		return x.ProfileNorthM
 	}
 	return nil
 }
@@ -4536,7 +4555,7 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\x0edifficulty_pct\x18\x01 \x01(\x01R\rdifficultyPct\"\x14\n" +
 	"\x12ListCoursesRequest\"E\n" +
 	"\x13ListCoursesResponse\x12.\n" +
-	"\acourses\x18\x01 \x03(\v2\x14.osscycler.v1.CourseR\acourses\"\xc3\x02\n" +
+	"\acourses\x18\x01 \x03(\v2\x14.osscycler.v1.CourseR\acourses\"\x91\x03\n" +
 	"\x06Course\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1d\n" +
@@ -4549,7 +4568,9 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\x0eprofile_step_m\x18\b \x01(\x01R\fprofileStepM\x12.\n" +
 	"\x13profile_elevation_m\x18\t \x03(\x02R\x11profileElevationM\x12*\n" +
 	"\x11profile_grade_pct\x18\n" +
-	" \x03(\x02R\x0fprofileGradePct\"/\n" +
+	" \x03(\x02R\x0fprofileGradePct\x12$\n" +
+	"\x0eprofile_east_m\x18\v \x03(\x02R\fprofileEastM\x12&\n" +
+	"\x0fprofile_north_m\x18\f \x03(\x02R\rprofileNorthM\"/\n" +
 	"\x10StartRideRequest\x12\x1b\n" +
 	"\tcourse_id\x18\x01 \x01(\tR\bcourseId\"\x13\n" +
 	"\x11StartRideResponse\"\x11\n" +

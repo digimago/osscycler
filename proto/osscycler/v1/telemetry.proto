@@ -312,6 +312,11 @@ message Course {
   double profile_step_m = 8;
   repeated float profile_elevation_m = 9;
   repeated float profile_grade_pct = 10;
+  // Where each profile sample lies on the map, in metres east and north of
+  // the start (a flat projection of the GPX track, as recorded: renderers
+  // smooth it to taste). For drawing the road's bends.
+  repeated float profile_east_m = 11;
+  repeated float profile_north_m = 12;
 }
 
 message StartRideRequest {

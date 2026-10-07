@@ -41,6 +41,12 @@ type Course struct {
 	Loss     float64 // m
 	MaxGrade float64 // %
 	MinGrade float64 // %
+	// Loop: the finish is the start, and rides go round and round. At and
+	// Position wrap past the line.
+	Loop bool
+	// Builtin marks osscycler's own test tracks: no GPX file, and no map
+	// data to fetch for them.
+	Builtin bool
 
 	dist  []float64 // sample positions, 0 .. Distance
 	ele   []float64 // smoothed elevation at each sample
@@ -113,9 +119,9 @@ func New(id, name string, pts []Point) (*Course, error) {
 }
 
 // At returns the elevation and grade at distance d from the start, clamped
-// to the course.
+// to the course (on a loop, d wraps round).
 func (c *Course) At(d float64) (ele, gradePct float64) {
-	d = math.Max(0, math.Min(d, c.Distance))
+	d = c.clamp(d)
 	i := sort.SearchFloat64s(c.dist, d) // first sample >= d
 	if i == 0 {
 		return c.ele[0], c.grade[0]
@@ -132,7 +138,7 @@ func (c *Course) At(d float64) (ele, gradePct float64) {
 // interpolates in a straight line, within centimetres of the great
 // circle at any recording interval.
 func (c *Course) Position(d float64) (lat, lon float64) {
-	d = math.Max(0, math.Min(d, c.Distance))
+	d = c.clamp(d)
 	td := c.trackDist
 	i := sort.SearchFloat64s(td, d)
 	if i == 0 {
@@ -142,6 +148,18 @@ func (c *Course) Position(d float64) (lat, lon float64) {
 		i = len(td) - 1
 	}
 	return lerp(td[i-1], c.lat[i-1], td[i], c.lat[i], d), lerp(td[i-1], c.lon[i-1], td[i], c.lon[i], d)
+}
+
+// clamp keeps d on the course: within it, or on a loop the same point a
+// lap on or back.
+func (c *Course) clamp(d float64) float64 {
+	if c.Loop {
+		if d = math.Mod(d, c.Distance); d < 0 {
+			d += c.Distance
+		}
+		return d
+	}
+	return math.Max(0, math.Min(d, c.Distance))
 }
 
 // Profile returns elevation and grade every Spacing metres from the start

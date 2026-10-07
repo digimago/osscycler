@@ -1031,10 +1031,16 @@ func TestEndRide(t *testing.T) {
 		t.Errorf("save: ends %v notice %q", cmds.ends, m2.notice)
 	}
 
-	// One d only asks; the second discards.
+	// One d only asks, in the panel itself (not the footer); the second
+	// discards.
 	m3, cmd := press(m, "d")
-	if cmd != nil || m3.ending == nil || !strings.Contains(m3.notice, "press d again") {
-		t.Fatalf("first d: notice %q", m3.notice)
+	if cmd != nil || m3.ending == nil || m3.notice != "" {
+		t.Fatalf("first d: ending %v, notice %q", m3.ending != nil, m3.notice)
+	}
+	out := plain(m3.render())
+	ask, footer := strings.Index(out, "press d again to delete this ride"), strings.Index(out, "● core")
+	if ask < 0 || ask > footer || strings.Contains(out, "d discard") {
+		t.Errorf("the panel doesn't ask for the second d above the footer:\n%s", out)
 	}
 	m3, cmd = press(m3, "d")
 	m3 = run(m3, cmd)

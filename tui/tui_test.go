@@ -118,6 +118,7 @@ type stubCommands struct {
 	courses            []*pb.Course
 	rides              []string
 	races              []string
+	heights            []float64
 	stops              int
 	difficulties       []float64
 	workouts           []*pb.WorkoutDef
@@ -137,7 +138,7 @@ type stubCommands struct {
 	profileCalls       [][2]*float64
 }
 
-func (s *stubCommands) SetProfile(_ context.Context, w, f *float64) (*pb.RiderProfile, error) {
+func (s *stubCommands) SetProfile(_ context.Context, w, f, h *float64) (*pb.RiderProfile, error) {
 	p := s.profile
 	if p == nil {
 		p = &pb.RiderProfile{}
@@ -147,6 +148,10 @@ func (s *stubCommands) SetProfile(_ context.Context, w, f *float64) (*pb.RiderPr
 	}
 	if f != nil {
 		p.FtpW = *f
+	}
+	if h != nil {
+		p.HeightCm = *h
+		s.heights = append(s.heights, *h)
 	}
 	s.profile = p
 	s.profileCalls = append(s.profileCalls, [2]*float64{w, f})
@@ -1178,7 +1183,7 @@ func TestOnboarding(t *testing.T) {
 	next, _ := m0.Update(StateMsg{State: st})
 	m := next.(Model)
 	out := plain(m.render())
-	for _, want := range []string{"WELCOME TO OSSCYCLER", "1/2  Your weight:", "kg", "climbs feel", "profile.json", "esc later"} {
+	for _, want := range []string{"WELCOME TO OSSCYCLER", "1/3  Your weight:", "kg", "climbs feel", "profile.json", "esc later"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("onboarding lacks %q:\n%s", want, out)
 		}
@@ -1196,7 +1201,15 @@ func TestOnboarding(t *testing.T) {
 	if len(cmds.profileCalls) != 1 || *cmds.profileCalls[0][0] != 87 || cmds.profileCalls[0][1] != nil {
 		t.Fatalf("calls %v", cmds.profileCalls)
 	}
-	if out := plain(m.render()); !strings.Contains(out, "2/2  Your FTP: 220") || !strings.Contains(out, "2.5 W/kg") {
+	// Height is optional: enter on the empty field skips it.
+	if out := plain(m.render()); !strings.Contains(out, "2/3  Your height:") || !strings.Contains(out, "Optional") {
+		t.Errorf("height step:\n%s", out)
+	}
+	m = pressAll(m, "enter")
+	if len(cmds.profileCalls) != 1 || len(cmds.heights) != 0 {
+		t.Errorf("skipping the height sent %v", cmds.heights)
+	}
+	if out := plain(m.render()); !strings.Contains(out, "3/3  Your FTP: 220") || !strings.Contains(out, "2.5 W/kg") {
 		t.Errorf("FTP step:\n%s", out)
 	}
 	m, cmd = press(m, "enter")
@@ -1220,6 +1233,23 @@ func TestOnboarding(t *testing.T) {
 	}
 	if m2 := pressAll(m, "esc"); m2.onboarding != nil || m2.onboardLater {
 		t.Error("esc while editing should just close")
+	}
+	// Editing: weight kept, a height entered and sent, out of range caught.
+	m, cmd = press(m, "enter")
+	m = run(m, cmd)
+	m = pressAll(m, "300", "enter")
+	if len(cmds.heights) != 0 || !strings.Contains(m.notice, "120 to 220") {
+		t.Errorf("300 cm: sent %v, notice %q", cmds.heights, m.notice)
+	}
+	m = pressAll(m, "backspace", "backspace", "backspace", "183")
+	m, cmd = press(m, "enter")
+	m = run(m, cmd)
+	if fmt.Sprint(cmds.heights) != "[183]" || !strings.Contains(plain(m.render()), "3/3  Your FTP: 220") {
+		t.Errorf("height 183: sent %v\n%s", cmds.heights, plain(m.render()))
+	}
+	// esc goes back a step while editing, with the value in the profile.
+	if out := plain(pressAll(m, "esc").render()); !strings.Contains(out, "2/3  Your height: 183") {
+		t.Errorf("back to height:\n%s", out)
 	}
 }
 

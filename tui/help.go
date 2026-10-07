@@ -132,7 +132,7 @@ func (m Model) helpContext() (string, []helpEntry) {
 		{"w", "workouts, or a fixed power (ERG)"},
 		{"g", "ride at a fixed grade"},
 		{"l", "ride at a fixed brake level"},
-		{"p", "your profile: weight and FTP"},
+		{"p", "your profile: weight, height and FTP"},
 		{"+ / -", "trainer difficulty on courses, in 10 % steps"},
 		{"c / C", "spin-down calibration: when the trainer asks / any time"},
 		{"e", "end the ride: save or discard the recording"},

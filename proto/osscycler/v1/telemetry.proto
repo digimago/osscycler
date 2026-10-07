@@ -75,10 +75,10 @@ service TelemetryService {
   // start point).
   rpc ListResults(ListResultsRequest) returns (ListResultsResponse);
 
-  // SetProfile changes the rider's weight and/or FTP and saves them
-  // (onboarding, or editing later). A weight change reaches the trainer
-  // at once and the simulation from the next ride. Out-of-range values
-  // are INVALID_ARGUMENT.
+  // SetProfile changes the rider's weight, FTP and/or height and saves
+  // them (onboarding, or editing later). A weight change reaches the
+  // trainer at once; weight and height reach the simulation from the next
+  // ride. Out-of-range values are INVALID_ARGUMENT.
   rpc SetProfile(SetProfileRequest) returns (SetProfileResponse);
 
   // ListActivities lists the finished recordings (FIT files) on the
@@ -155,6 +155,8 @@ message ExportActivityResponse {
 message SetProfileRequest {
   optional double weight_kg = 1;
   optional double ftp_w = 2;
+  // Sizes the rider's drag on courses: 120-220 cm.
+  optional double height_cm = 3;
 }
 
 message SetProfileResponse {
@@ -475,6 +477,14 @@ message RiderProfile {
   repeated string missing = 9;
   // A starting FTP for onboarding (2.5 W/kg from the weight).
   double suggested_ftp_w = 10;
+  // Optional; 0 when unknown (the drag area is then the reference
+  // rider's).
+  double height_cm = 11;
+  // Drag area course rides start with, m²: from height and weight.
+  double cda = 12;
+  bool height_forced = 13;
+  // Set by -cda on the core: the rider's size doesn't apply this run.
+  bool cda_forced = 14;
 }
 
 // The core records every ride to a FIT file on its own disk, whether or

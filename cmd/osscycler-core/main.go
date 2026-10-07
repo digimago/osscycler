@@ -80,7 +80,8 @@ func run() error {
 		courseDir     = flag.String("courses", home.Courses(), "directory of .gpx courses to offer for rides")
 		difficulty    = flag.Float64("difficulty", 50, "trainer difficulty in percent for this run, overriding the profile (testing). As in Zwift: climbs × difficulty, descents × half × difficulty; riding time always uses the real grade")
 		maxGrade      = flag.Float64("max-grade", 16, "steepest grade the trainer can apply, percent")
-		cda           = flag.Float64("cda", 0.32, "drag area for the ride simulation, m² (0.32 hoods, 0.25 drops)")
+		cda           = flag.Float64("cda", sim.DefaultCdA, "drag area for the ride simulation, m² (0.32 hoods, 0.25 drops); given, it replaces the one from the rider's height and weight")
+		riderCm       = flag.Float64("rider-cm", 0, "rider height in cm for this run, overriding the profile (testing)")
 		crr           = flag.Float64("crr", 0.004, "rolling resistance for the ride simulation")
 		rideStart     = flag.Float64("ride-start-m", 0, "start course rides this many metres in, rolling (practise a section; the demo uses it)")
 		workoutDir    = flag.String("workouts", home.Workouts(), "directory of .zwo workouts")
@@ -127,11 +128,15 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("%w (fix or remove the file, or pass -profile)", err)
 	}
-	bikeSet := false
+	bikeSet, cdaSet := false, false
 	flag.Visit(func(f *flag.Flag) {
 		switch f.Name {
 		case "rider-kg":
 			prof.Force(profile.Weight, user.UserWeightKg)
+		case "rider-cm":
+			prof.Force(profile.Height, *riderCm)
+		case "cda":
+			cdaSet = true
 		case "ftp":
 			prof.Force(profile.FTP, *ftp)
 		case "difficulty":
@@ -257,6 +262,9 @@ func run() error {
 	// The rider service applies profile changes everywhere, saves them, and
 	// holds rides and workouts back until the profile supports them.
 	riders := rider.New(prof, hub, source, rides, workouts, user, log)
+	if cdaSet {
+		riders.FixCdA(*cda)
+	}
 	manual := control.New(hub, source, *maxGrade, log)
 	svc := api.Services{Calibrator: source, Rides: riders.Rides(), Profile: riders, Control: manual}
 	var scenes *scenery.Store

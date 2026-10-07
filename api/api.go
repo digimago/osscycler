@@ -108,7 +108,7 @@ type Control interface {
 
 // Profile changes the rider's settings.
 type Profile interface {
-	SetProfile(ctx context.Context, weightKg, ftpW *float64) (telemetry.Profile, error)
+	SetProfile(ctx context.Context, weightKg, ftpW, heightCm *float64) (telemetry.Profile, error)
 }
 
 // Recorder ends the recorded activity on the rider's request.
@@ -278,7 +278,7 @@ func (s *telemetryServer) SetProfile(ctx context.Context, req *pb.SetProfileRequ
 	if s.profile == nil {
 		return nil, status.Error(codes.Unimplemented, "this core has no rider profile")
 	}
-	p, err := s.profile.SetProfile(ctx, req.WeightKg, req.FtpW)
+	p, err := s.profile.SetProfile(ctx, req.WeightKg, req.FtpW, req.HeightCm)
 	switch {
 	case errors.Is(err, profile.ErrOutOfRange):
 		return nil, status.Error(codes.InvalidArgument, err.Error())

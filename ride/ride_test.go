@@ -33,7 +33,7 @@ func (r *recordingTrainer) all() []float64 {
 }
 
 // testCourse is 1 km flat, then 1 km at 8 %, then 1 km at -6 %.
-func testCourse(t *testing.T) *course.Course {
+func testCourse(t testing.TB) *course.Course {
 	t.Helper()
 	const mPerDeg = 6371000 * math.Pi / 180
 	var pts []course.Point
@@ -54,7 +54,7 @@ func testCourse(t *testing.T) *course.Course {
 	return c
 }
 
-func newSession(t *testing.T) (*Session, *telemetry.Hub, *recordingTrainer) {
+func newSession(t testing.TB) (*Session, *telemetry.Hub, *recordingTrainer) {
 	hub := telemetry.NewHub()
 	tr := &recordingTrainer{}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))

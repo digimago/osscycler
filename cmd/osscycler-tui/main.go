@@ -245,8 +245,8 @@ func defaultExportDir() string {
 	return home
 }
 
-func (c commands) SetProfile(ctx context.Context, weightKg, ftpW *float64) (*pb.RiderProfile, error) {
-	resp, err := c.c.SetProfile(ctx, &pb.SetProfileRequest{WeightKg: weightKg, FtpW: ftpW})
+func (c commands) SetProfile(ctx context.Context, weightKg, ftpW, heightCm *float64) (*pb.RiderProfile, error) {
+	resp, err := c.c.SetProfile(ctx, &pb.SetProfileRequest{WeightKg: weightKg, FtpW: ftpW, HeightCm: heightCm})
 	return resp.GetProfile(), err
 }
 

@@ -101,10 +101,10 @@ type TelemetryServiceClient interface {
 	// stretch's personal best marked (the fastest on a course from a given
 	// start point).
 	ListResults(ctx context.Context, in *ListResultsRequest, opts ...grpc.CallOption) (*ListResultsResponse, error)
-	// SetProfile changes the rider's weight and/or FTP and saves them
-	// (onboarding, or editing later). A weight change reaches the trainer
-	// at once and the simulation from the next ride. Out-of-range values
-	// are INVALID_ARGUMENT.
+	// SetProfile changes the rider's weight, FTP and/or height and saves
+	// them (onboarding, or editing later). A weight change reaches the
+	// trainer at once; weight and height reach the simulation from the next
+	// ride. Out-of-range values are INVALID_ARGUMENT.
 	SetProfile(ctx context.Context, in *SetProfileRequest, opts ...grpc.CallOption) (*SetProfileResponse, error)
 	// ListActivities lists the finished recordings (FIT files) on the
 	// core, newest first.
@@ -419,10 +419,10 @@ type TelemetryServiceServer interface {
 	// stretch's personal best marked (the fastest on a course from a given
 	// start point).
 	ListResults(context.Context, *ListResultsRequest) (*ListResultsResponse, error)
-	// SetProfile changes the rider's weight and/or FTP and saves them
-	// (onboarding, or editing later). A weight change reaches the trainer
-	// at once and the simulation from the next ride. Out-of-range values
-	// are INVALID_ARGUMENT.
+	// SetProfile changes the rider's weight, FTP and/or height and saves
+	// them (onboarding, or editing later). A weight change reaches the
+	// trainer at once; weight and height reach the simulation from the next
+	// ride. Out-of-range values are INVALID_ARGUMENT.
 	SetProfile(context.Context, *SetProfileRequest) (*SetProfileResponse, error)
 	// ListActivities lists the finished recordings (FIT files) on the
 	// core, newest first.

@@ -139,6 +139,20 @@ func (s *Session) SetMass(kg float64) {
 	s.cfg.Params.MassKg = kg
 }
 
+// SetCdA sets the drag area for rides started from now on, as SetMass.
+func (s *Session) SetCdA(cda float64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cfg.Params.CdA = cda
+}
+
+// Params is the simulation rides started now get.
+func (s *Session) Params() sim.Params {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cfg.Params
+}
+
 func (s *Session) find(id string) *course.Course {
 	for _, c := range s.courses {
 		if c.ID == id {

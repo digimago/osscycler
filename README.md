@@ -119,12 +119,14 @@ On the dashboard you see power, heart rate, cadence and speed.
 | `p` | Your profile: weight and FTP |
 | `c` / `C` | Spin-down calibration: when the trainer asks / any time |
 | `e` | End the ride, outside a course ride or workout: save it (`enter`) or discard it (`d d`) |
+| `o` | Arrange the tiles on this screen: order, show, hide (dashboard, course ride, workout) |
+| `z` | Digit size: large or medium (medium fits more tiles) |
 | `?` / `h` / F1 | Every key for the screen you're on |
 | `q` | Quit the screen (the core keeps running) |
 
 **Course rides.** Pick a course and press `enter`; the clock starts when
-you start pedalling. Above the road you see power, grade, time and
-distance to go; the strip at the bottom shows the next 250 m, coloured
+you start pedalling. Above the road you see power, cadence (averaged
+over 5 seconds), grade, time and distance to go; the strip at the bottom shows the next 250 m, coloured
 by steepness. `v` swaps the road for big numbers and back. If you've
 finished the course before, you race your best time: the gap shows
 under the time, and your ghost rides ahead of you on the road. `x`
@@ -143,6 +145,12 @@ To use Zwift workouts, copy your `.zwo` files into the workouts folder.
 Press `enter` on any ride to ride that course again with that ride as
 your ghost, from where it started. In ACTIVITIES, `enter` does the same
 for a recorded course ride.
+
+Press `o` on the dashboard, a course ride or a workout to choose which
+numbers it shows and in what order (heart rate, speed, average power and
+more are there to pick), and `z` to switch between large and medium
+digits. The screen uses the largest digits that fit. Your choice is
+kept in `~/osscycler/tui.json` on the machine running the screen.
 
 ## Your rides and settings
 

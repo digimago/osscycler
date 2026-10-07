@@ -12,3 +12,5 @@ local.mk
 
 # OpenStreetMap data cached next to the courses
 .osm/
+# A rider profile written in the repo root by a local run
+/profile.json

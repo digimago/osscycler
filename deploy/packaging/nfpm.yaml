@@ -12,6 +12,9 @@ description: |
   Self-hosted indoor cycling: a core that drives an ANT+ FE-C smart trainer
   (course rides, ERG workouts, FIT recording) and a terminal renderer.
 homepage: https://github.com/digimago/osscycler
+# The GPL goes with every copy of the binaries: where each system keeps a
+# package's license (Debian: the copyright file; RPM: %license).
+license: GPL-3.0-only
 contents:
   - src: ${BUILD_DIR}/osscycler-core
     dst: /usr/bin/osscycler-core
@@ -23,6 +26,13 @@ contents:
     dst: /usr/lib/systemd/system/osscycler@.service
   - src: README.md
     dst: /usr/share/doc/osscycler/README.md
+  - src: LICENSE
+    dst: /usr/share/doc/osscycler/copyright
+    packager: deb
+  - src: LICENSE
+    dst: /usr/share/licenses/osscycler/LICENSE
+    type: license
+    packager: rpm
 scripts:
   postinstall: deploy/packaging/postinstall.sh
   preremove: deploy/packaging/preremove.sh

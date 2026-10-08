@@ -4,8 +4,8 @@ Everything here is run from the repository root with `make`; `make help`
 lists the targets. The design, the decisions behind it, the protocol
 notes and the working conventions are in [CLAUDE.md](CLAUDE.md), the
 notes osscycler's AI-assisted development works from (see the README).
-Each package documents its own part: start with `go doc ./telemetry`,
-`go doc ./ride` and `go doc ./api`, and the gRPC schema in
+Each package documents its own part: start with `go doc ./internal/telemetry`,
+`go doc ./internal/ride` and `go doc ./internal/api`, and the gRPC schema in
 `proto/osscycler/v1/telemetry.proto`.
 
 ## Setup

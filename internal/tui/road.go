@@ -16,7 +16,7 @@ import (
 // stripes and trees scroll past with the rider's speed.
 
 const (
-	roadEyeM     = 2.0   // eye height above the road
+	roadEyeM     = 1.6   // eye height above the road: a rider on a bike, as the 3D renderer
 	roadHalfM    = 2.75  // half the road's width
 	roadLineM    = 0.15  // edge and centre line width
 	roadDashM    = 3.0   // centre-line dashes, with gaps as long

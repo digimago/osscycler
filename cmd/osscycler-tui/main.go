@@ -20,10 +20,10 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/digimago/osscycler/api"
 	pb "github.com/digimago/osscycler/gen/osscycler/v1"
-	"github.com/digimago/osscycler/home"
-	"github.com/digimago/osscycler/tui"
+	"github.com/digimago/osscycler/internal/api"
+	"github.com/digimago/osscycler/internal/home"
+	"github.com/digimago/osscycler/internal/tui"
 )
 
 func main() {

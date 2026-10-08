@@ -120,3 +120,24 @@ func TestHumanTouches(t *testing.T) {
 		t.Errorf("signs %+v", sc.Signs)
 	}
 }
+
+func TestTurnAtATJunction(t *testing.T) {
+	// The route turns right off a road that goes on north under another
+	// name, keeping its own road's name (as the Beekhuizenseweg at the
+	// Posbank): a junction, the road going on drawn ahead.
+	c := lCourse(t)
+	d := &Data{Elements: []Element{
+		way(1, map[string]string{"highway": "unclassified", "name": "Weg"}, []int64{10, 11, 12},
+			[2]float64{0, -50}, [2]float64{0, 1000}, [2]float64{1100, 1000}),
+		way(2, map[string]string{"highway": "unclassified", "name": "Doorweg"}, []int64{11, 20}, [2]float64{0, 1000}, [2]float64{0, 1300}),
+		// A side road off the straight: still not shown.
+		way(3, map[string]string{"highway": "residential", "name": "Zijweg"}, []int64{30, 31}, [2]float64{0, 400}, [2]float64{-200, 400}),
+	}}
+	js := Build(c, d).Junctions
+	if len(js) != 1 || js[0].Kind != JunctionTurn || math.Abs(js[0].DistanceM-1000) > 10 {
+		t.Fatalf("junctions %+v, want one turn at 1000 m", js)
+	}
+	if b := js[0].Branches; len(b) != 1 || angleDiff(b[0].BearingDeg, 0) > 3 {
+		t.Errorf("branches %+v, want the road going on north", b)
+	}
+}

@@ -67,6 +67,7 @@ const (
 	branchMaxM   = 80.0 // branches are drawn this far at most
 	sameWayDeg   = 30.0 // a branch this close to the route's own direction is the route
 	mergeM       = 25.0 // junctions this close together are one
+	turnDeg      = 30.0 // the route turning this much where another road meets it turns at a junction
 	parkingNearM = 60.0 // car parks this close to the road are shown
 	parkingMinM2 = 1000.0
 	signNearM    = 15.0 // signs this close to the route stand by it
@@ -396,6 +397,32 @@ func junctions(r []routePt, roads []*road, own []int) []Junction {
 			}
 		}
 		prev = cur
+	}
+
+	// Turns where the route keeps its road's name: it bends sharply where
+	// another road meets it, as at a T-junction whose through road goes on
+	// under another name (the Beekhuizenseweg at the Posbank turns right
+	// off the line that goes on as the Schietbergseweg). A turn as much as
+	// a change of road is.
+	for k, rd := range roads {
+		if rd.class == "service" || rd.layer || rd.motorway {
+			continue
+		}
+		for j := range rd.x {
+			d, off := nearestOnRoute(r, rd.x[j], rd.y[j], 0, math.Inf(1))
+			if off > nodeNearM {
+				continue
+			}
+			i := int(math.Round(d / stepD))
+			if o := own[max(0, min(i, len(own)-1))]; o == k || o >= 0 && sameRoad(roads[o], rd) {
+				continue // riding on it
+			}
+			in, outB := bearingAt(r, d-15, d), bearingAt(r, d, d+15)
+			if angleDiff(in, outB) < turnDeg {
+				continue // a side road along a straight: not shown
+			}
+			add(Junction{DistanceM: d, Kind: JunctionTurn, Branches: branchesAt(roads, rd.x[j], rd.y[j], in, outB, notService)})
+		}
 	}
 
 	// Major roads crossed on the level: they share a node with the route's

@@ -94,13 +94,93 @@ func TestBuild(t *testing.T) {
 
 func TestQueryCoversRoute(t *testing.T) {
 	c := straightCourse(t)
-	q := Query(c, 0, c.Distance)
-	if !strings.Contains(q, `way["landuse"]`) || !strings.Contains(q, `way["building"]`) || !strings.HasSuffix(q, "out geom;\n") {
-		t.Errorf("query lacks parts:\n%s", q)
+	q := queries(c, []float64{0, c.Distance})[0]
+	for _, part := range []string{`way["landuse"]`, `way["building"]`, `way["highway"~`, `node["place"`, "[timeout:90]", "out geom;\n"} {
+		if !strings.Contains(q, part) {
+			t.Errorf("query lacks %s:\n%s", part, q)
+		}
 	}
-	// 1 km: one box.
+	// A straight road north: one column of tiles per layer, one box each.
 	if n := strings.Count(q, `way["building"]`); n != 1 {
-		t.Errorf("%d boxes for 1 km, want 1", n)
+		t.Errorf("%d building boxes for 1 km due north, want 1:\n%s", n, q)
+	}
+}
+
+// outAndBack runs 2 km north and back on the same road.
+func outAndBack(t *testing.T) *course.Course {
+	t.Helper()
+	var pts []course.Point
+	for i := 0; i <= 200; i++ {
+		pts = append(pts, course.Point{Lat: lat0 + float64(i)*10/111195, Lon: lon0, Ele: 5})
+	}
+	for i := 199; i >= 0; i-- {
+		pts = append(pts, course.Point{Lat: lat0 + float64(i)*10/111195, Lon: lon0 + 1e-6, Ele: 5})
+	}
+	c, err := course.New("back", "Back", pts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+func TestQueriesAskForATileOnce(t *testing.T) {
+	c := outAndBack(t)
+	qs := queries(c, []float64{0, c.Distance / 2, c.Distance})
+	if !strings.Contains(qs[0], `way["building"]`) {
+		t.Fatalf("the way out asks for no buildings:\n%s", qs[0])
+	}
+	// The way back passes the same tiles: only its places remain.
+	for _, part := range []string{`["landuse"]`, `["building"]`, `["highway"`, `["amenity"`} {
+		if strings.Contains(qs[1], part) {
+			t.Errorf("the way back asks again for %s:\n%s", part, qs[1])
+		}
+	}
+	if !strings.Contains(qs[1], `node["place"`) {
+		t.Error("the way back lost its places")
+	}
+}
+
+func TestTilesNearReachEveryPoint(t *testing.T) {
+	const margin = 300.0
+	mLon := 111195 * math.Cos(lat0*math.Pi/180)
+	ts := tilesNear(lat0+0.0012, lon0+0.0031, margin, tileLat, tileLon)
+	in := map[tile]bool{}
+	for _, tl := range ts {
+		in[tl] = true
+	}
+	for a := 0.0; a < 2*math.Pi; a += 0.05 {
+		for r := 0.0; r <= margin; r += 25 {
+			lat := lat0 + 0.0012 + r*math.Sin(a)/111195
+			lon := lon0 + 0.0031 + r*math.Cos(a)/mLon
+			if tl := (tile{int(math.Floor(lon / tileLon)), int(math.Floor(lat / tileLat))}); !in[tl] {
+				t.Fatalf("point %.0f m away at %.2f rad lies in tile %v, not listed", r, a, tl)
+			}
+		}
+	}
+	if len(ts) > 16 {
+		t.Errorf("%d tiles for a 600 m circle in 278 m tiles, want at most 16", len(ts))
+	}
+}
+
+func TestBlocksCoverTheirTilesExactly(t *testing.T) {
+	// An L: a column of 3 and a row of 4 sharing a corner, and a loose one.
+	ts := []tile{{0, 0}, {0, 1}, {0, 2}, {1, 0}, {2, 0}, {3, 0}, {7, 7}}
+	bs := blocks(ts)
+	covered := map[tile]int{}
+	for _, b := range bs {
+		for i := b.i0; i <= b.i1; i++ {
+			for j := b.j0; j <= b.j1; j++ {
+				covered[tile{i, j}]++
+			}
+		}
+	}
+	for _, tl := range ts {
+		if covered[tl] != 1 {
+			t.Errorf("tile %v covered %d times", tl, covered[tl])
+		}
+	}
+	if len(covered) != len(ts) || len(bs) > 3 {
+		t.Errorf("%d blocks covering %d tiles, want at most 3 covering %d", len(bs), len(covered), len(ts))
 	}
 }
 
@@ -193,7 +273,7 @@ func TestStoreFetchesOnlyWhatIsRiddenFromTheRider(t *testing.T) {
 	s.Want(c.ID, 6000)
 	waitFor(t, "both stretches", func() bool { return !s.Pending(c.ID) })
 	q := srv.asked()
-	if len(q) != 2 || q[0] != Query(c, stretchM, c.Distance) || q[1] != Query(c, 0, stretchM) {
+	if e := s.courses[c.ID]; len(q) != 2 || q[0] != e.parts[1].query || q[1] != e.parts[0].query {
 		t.Fatalf("%d queries, want the stretch from 5 km, then the one from 0", len(q))
 	}
 	if s.Get(c.ID) == nil {

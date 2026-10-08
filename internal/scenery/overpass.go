@@ -31,45 +31,11 @@ const (
 	// Attribution is the credit the ODbL requires with the data.
 	Attribution = "map data © OpenStreetMap contributors"
 
-	// chunkM splits the route into stretches with a box each, so the query
-	// covers a corridor rather than the whole box around a long route.
-	chunkM = 1000.0
-	// The margins widen each stretch's box: land use, buildings, roads the
-	// route meets, car parks beside it, signs along it, and the places
-	// whose limits it crosses.
-	landMarginM     = 300.0
-	buildingMarginM = 120.0
-	roadMarginM     = 30.0
-	parkingMarginM  = 80.0
-	signMarginM     = 25.0
-	placeMarginM    = 2000.0
+	// placeMarginM reaches the places whose limits the route crosses.
+	placeMarginM = 2000.0
 	// maxResponse guards against a runaway answer.
 	maxResponse = 256 << 20
 )
-
-// Query is the Overpass QL for what lies along c from d0 to d1: land use,
-// buildings, the roads it meets, car parks, town limit signs and places.
-func Query(c *course.Course, d0, d1 float64) string {
-	var b strings.Builder
-	b.WriteString("[out:json][timeout:180];\n(\n")
-	for start := d0; start < d1; start += chunkM {
-		land := bbox(c, start, math.Min(start+chunkM, d1), landMarginM)
-		build := bbox(c, start, math.Min(start+chunkM, d1), buildingMarginM)
-		for _, kind := range []string{"way", "relation"} {
-			fmt.Fprintf(&b, "  %s[\"landuse\"](%s);\n", kind, land)
-			fmt.Fprintf(&b, "  %s[\"natural\"~\"^(wood|water|scrub|heath|grassland|wetland|sand|beach|fell)$\"](%s);\n", kind, land)
-			fmt.Fprintf(&b, "  %s[\"leisure\"~\"^(park|garden|golf_course)$\"](%s);\n", kind, land)
-		}
-		fmt.Fprintf(&b, "  way[\"building\"](%s);\n", build)
-		end := math.Min(start+chunkM, d1)
-		fmt.Fprintf(&b, "  way[\"highway\"~\"%s\"](%s);\n", roadClasses, bbox(c, start, end, roadMarginM))
-		fmt.Fprintf(&b, "  nwr[\"amenity\"=\"parking\"](%s);\n", bbox(c, start, end, parkingMarginM))
-		fmt.Fprintf(&b, "  node[\"traffic_sign\"~\"city_limit\"](%s);\n", bbox(c, start, end, signMarginM))
-		fmt.Fprintf(&b, "  node[\"place\"~\"^(city|town|village|hamlet|suburb)$\"](%s);\n", bbox(c, start, end, placeMarginM))
-	}
-	b.WriteString(");\nout geom;\n")
-	return b.String()
-}
 
 // bbox is the Overpass box (south,west,north,east) around the course from
 // d0 to d1, widened by margin metres.

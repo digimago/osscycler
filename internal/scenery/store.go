@@ -387,13 +387,13 @@ func orEmpty(d *Data) *Data {
 // entryFor splits c into its stretches; the last one takes a short rest.
 func (s *Store) entryFor(c *course.Course) *entry {
 	n := max(1, int(math.Round(c.Distance/stretchM)))
-	e := &entry{c: c, have: make([]bool, n)}
+	bounds := make([]float64, n+1)
 	for k := range n {
-		d0, d1 := float64(k)*stretchM, float64(k+1)*stretchM
-		if k == n-1 {
-			d1 = c.Distance
-		}
-		q := Query(c, d0, d1)
+		bounds[k] = float64(k) * stretchM
+	}
+	bounds[n] = c.Distance
+	e := &entry{c: c, have: make([]bool, n)}
+	for k, q := range queries(c, bounds) {
 		e.parts = append(e.parts, stretch{q, s.cachePath(c.ID, k, q)})
 	}
 	return e

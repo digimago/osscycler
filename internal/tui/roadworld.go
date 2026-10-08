@@ -164,7 +164,8 @@ func drawCar(cv canvas, cam roadCamera, g roadSeg, off float64, body rgb) {
 }
 
 // drawSign draws a place-name sign on its post, off metres right of the
-// centre line: a blue panel with a white rim and a line of lettering.
+// centre line: the Dutch one, a wide blue panel with a line of white
+// lettering. (A rim to scale is under a pixel; drawn, it looked absurd.)
 func drawSign(cv canvas, cam roadCamera, g roadSeg, off float64) {
 	scale := cam.f / g.depth
 	if 2.6*scale < 2 {
@@ -172,7 +173,8 @@ func drawSign(cv canvas, cam roadCamera, g roadSeg, off float64) {
 	}
 	cx := g.sx + off*scale
 	fog := (g.depth - roadFogFromM) / (roadDrawM - roadFogFromM)
-	const panelW, panelH, top = 1.6, 0.7, 2.6
+	const panelW, panelH, top = 1.8, 0.6, 2.5
+	lettered := panelH*scale >= 5
 	ya, yb := span(g.sy-top*scale, math.Min(g.sy, g.clip), cv.h)
 	for y := ya; y < yb; y++ {
 		up := (g.sy - float64(y) - 0.5) / scale
@@ -188,12 +190,10 @@ func drawSign(cv canvas, cam roadCamera, g roadSeg, off float64) {
 		for x := xa; x < xb; x++ {
 			u := (float64(x) + 0.5 - (cx - panelW/2*scale)) / (panelW * scale)
 			c := signBlue
-			rim := 0.08 / panelH
-			switch {
-			case v < rim || v > 1-rim || u < rim*panelH/panelW || u > 1-rim*panelH/panelW:
+			// The name, as letters too small to read, once the panel is
+			// tall enough to keep blue above and below them.
+			if lettered && v > 0.36 && v < 0.64 && u > 0.12 && u < 0.88 && int(u*16)%3 != 2 {
 				c = signWhite
-			case v > 0.38 && v < 0.62 && u > 0.18 && u < 0.82 && int(u*14)%3 != 2:
-				c = signWhite // the name, as letters too small to read
 			}
 			cv.set(x, y, mix(c, fogColor, fog))
 		}

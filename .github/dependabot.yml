@@ -1,0 +1,34 @@
+# Dependabot version updates: Go modules and the GitHub Actions the
+# workflows use. Pull requests go to develop, like any other change, and
+# the check workflow runs on them (it needs no secrets, so Dependabot's
+# pull requests run it fully).
+#
+# Not covered: tools pinned in `go run pkg@version` lines (buf, staticcheck,
+# actionlint, nfpm, lipo); bump those by hand.
+version: 2
+updates:
+  - package-ecosystem: "gomod"
+    directory: "/"
+    target-branch: "develop"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "deps"
+    groups:
+      # One pull request for all minor and patch updates; majors come one
+      # by one, since they can need code changes.
+      go-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # Actions are pinned to commits with the tag in a comment; Dependabot
+  # updates both.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    target-branch: "develop"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns: ["*"]

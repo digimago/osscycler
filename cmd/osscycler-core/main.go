@@ -272,7 +272,7 @@ func run() error {
 		scenes = scenery.NewStore(scenery.Config{
 			CacheDir: filepath.Join(*courseDir, ".osm"), Fetch: *osmFetch, Endpoint: *osmURL,
 			UserAgent: "osscycler/" + version() + " (+https://github.com/digimago/osscycler)", Log: log,
-		})
+		}, rides.Courses())
 		svc.Scenery = scenes
 	}
 	if workouts != nil {
@@ -313,7 +313,7 @@ func run() error {
 	go telemetry.LogEvents(ctx, hub, log)
 	go rides.Run(ctx)
 	if scenes != nil {
-		go scenes.Run(ctx, rides.Courses())
+		go scenes.Run(ctx)
 	}
 	go manual.Run(ctx)
 	if workouts != nil {

@@ -16,7 +16,7 @@ import (
 // stripes and trees scroll past with the rider's speed.
 
 const (
-	roadEyeM     = 2.0   // eye height above the road
+	roadEyeM     = 1.6   // eye height above the road: a rider on a bike, as the 3D renderer
 	roadHalfM    = 2.75  // half the road's width
 	roadLineM    = 0.15  // edge and centre line width
 	roadDashM    = 3.0   // centre-line dashes, with gaps as long
@@ -344,7 +344,9 @@ func (sc *roadScene) pixels(pos, ghost float64, w, h int) []rgb {
 		draw func()
 	}
 	var sprites []sprite
-	for _, t := range sc.treeSpots(pos+8, pos+roadDrawM) {
+	// From just ahead of the rider: a roadside tree is still in view a few
+	// metres ahead (dropping them at 8 m made trees vanish while passing).
+	for _, t := range sc.treeSpots(pos+1, pos+roadDrawM) {
 		s, k := t.s, t.k
 		g, ok := segAt(s)
 		if !ok {

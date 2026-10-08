@@ -68,23 +68,10 @@ const (
 func Build(c *course.Course, d *Data) *Scenery {
 	east, north := c.Track()
 	n := len(east)
-	polys := polygons(c, d)
-	grid := map[[2]int][]int{}
-	for i, p := range polys {
-		for gx := cell(p.minX); gx <= cell(p.maxX); gx++ {
-			for gy := cell(p.minY); gy <= cell(p.maxY); gy++ {
-				grid[[2]int{gx, gy}] = append(grid[[2]int{gx, gy}], i)
-			}
-		}
-	}
+	lm := NewLandMap(c, d)
 	landAt := func(x, y float64) Land {
-		best, bestArea := LandNone, math.Inf(1)
-		for _, i := range grid[[2]int{cell(x), cell(y)}] {
-			if p := polys[i]; p.area < bestArea && p.contains(x, y) {
-				best, bestArea = p.land, p.area
-			}
-		}
-		return best
+		land, _ := lm.Area(x, y)
+		return land
 	}
 
 	sc := &Scenery{Land: make([]Land, 0, 4*n)}
@@ -124,6 +111,43 @@ func direction(east, north []float64, i int) (dx, dy float64) {
 
 func cell(v float64) int { return int(math.Floor(v / gridM)) }
 
+// LandMap tells the land use anywhere near a course, in its frame
+// (course.Project: metres east and north of the start).
+type LandMap struct {
+	polys []*polygon
+	grid  map[[2]int][]int
+}
+
+// NewLandMap indexes the areas in d.
+func NewLandMap(c *course.Course, d *Data) *LandMap {
+	m := &LandMap{polys: polygons(c, d), grid: map[[2]int][]int{}}
+	for i, p := range m.polys {
+		for gx := cell(p.minX); gx <= cell(p.maxX); gx++ {
+			for gy := cell(p.minY); gy <= cell(p.maxY); gy++ {
+				m.grid[[2]int{gx, gy}] = append(m.grid[[2]int{gx, gy}], i)
+			}
+		}
+	}
+	return m
+}
+
+// Area is the land use at x, y and the area that has it (-1 for none):
+// the smallest of the areas there, so a park inside a residential area is
+// a park.
+func (m *LandMap) Area(x, y float64) (Land, int) {
+	best, bestArea, id := LandNone, math.Inf(1), -1
+	for _, i := range m.grid[[2]int{cell(x), cell(y)}] {
+		if p := m.polys[i]; p.area < bestArea && p.contains(x, y) {
+			best, bestArea, id = p.land, p.area, i
+		}
+	}
+	return best, id
+}
+
+// Edges are the outline of area id, as x0, y0, x1, y1 segments (rings of
+// a multipolygon, inner ones too, possibly in pieces).
+func (m *LandMap) Edges(id int) [][4]float64 { return m.polys[id].edges }
+
 // polygon is an area in metres around the start, as edges: rings of a
 // multipolygon may come in pieces, and even-odd counting over all of them
 // still tells inside from outside.
@@ -132,6 +156,22 @@ type polygon struct {
 	edges                  [][4]float64
 	minX, minY, maxX, maxY float64
 	area                   float64 // of the bounding box; smaller wins
+	// bands lists the edges crossing each bandM-high band from minY, so
+	// a point is tested against the edges at its height only (a forest
+	// can have thousands).
+	bands [][]int32
+}
+
+const bandM = 25.0
+
+func (p *polygon) index() {
+	p.bands = make([][]int32, int((p.maxY-p.minY)/bandM)+1)
+	for i, e := range p.edges {
+		lo, hi := math.Min(e[1], e[3]), math.Max(e[1], e[3])
+		for b := int((lo - p.minY) / bandM); b <= int((hi-p.minY)/bandM) && b < len(p.bands); b++ {
+			p.bands[b] = append(p.bands[b], int32(i))
+		}
+	}
 }
 
 func (p *polygon) contains(x, y float64) bool {
@@ -139,7 +179,8 @@ func (p *polygon) contains(x, y float64) bool {
 		return false
 	}
 	in := false
-	for _, e := range p.edges {
+	for _, i := range p.bands[min(int((y-p.minY)/bandM), len(p.bands)-1)] {
+		e := p.edges[i]
 		if (e[1] > y) != (e[3] > y) && x < e[0]+(y-e[1])*(e[2]-e[0])/(e[3]-e[1]) {
 			in = !in
 		}
@@ -184,6 +225,7 @@ func polygons(c *course.Course, d *Data) []*polygon {
 			continue
 		}
 		p.area = (p.maxX - p.minX) * (p.maxY - p.minY)
+		p.index()
 		out = append(out, p)
 	}
 	return out

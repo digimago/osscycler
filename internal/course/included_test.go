@@ -30,9 +30,21 @@ func TestIncluded(t *testing.T) {
 		t.Fatal("no posbank")
 	}
 	if p.Name != "Posbank Loop" || p.Loop || p.Builtin ||
-		p.Distance < 32000 || p.Distance > 34000 || p.Gain < 140 || p.Gain > 200 || p.MaxGrade < 6 {
+		p.Distance < 31000 || p.Distance > 34000 || p.Gain < 140 || p.Gain > 200 || p.MaxGrade < 6 {
 		t.Errorf("posbank: %q loop %v builtin %v, %.0f m, gain %.0f m, max %.1f %%",
 			p.Name, p.Loop, p.Builtin, p.Distance, p.Gain, p.MaxGrade)
+	}
+	// It passes the Posbank on the Beekhuizenseweg, not through the car park
+	// north of it, where the first version's waypoint lay (a jog of two
+	// 80° turns at 6 km).
+	carPark := [2]float64{52.02942, 6.02377}
+	nearest := math.Inf(1)
+	for d := 0.0; d <= p.Distance; d += 2 {
+		lat, lon := p.Position(d)
+		nearest = math.Min(nearest, math.Hypot((lat-carPark[0])*111195, (lon-carPark[1])*111195*math.Cos(carPark[0]*math.Pi/180)))
+	}
+	if nearest < 15 {
+		t.Errorf("posbank passes %.0f m from the Posbank car park's middle: through it", nearest)
 	}
 }
 

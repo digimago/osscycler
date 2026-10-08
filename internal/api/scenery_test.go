@@ -2,10 +2,12 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	pb "github.com/digimago/osscycler/gen/osscycler/v1"
 	"github.com/digimago/osscycler/internal/course"
+	"github.com/digimago/osscycler/internal/ride"
 	"github.com/digimago/osscycler/internal/scenery"
 	"github.com/digimago/osscycler/internal/telemetry"
 )
@@ -17,6 +19,7 @@ type stubScenery struct {
 
 func (s stubScenery) Get(id string) *scenery.Scenery { return s.have[id] }
 func (s stubScenery) Pending(id string) bool         { return s.pending[id] }
+func (s stubScenery) Want(string, float64)           {}
 
 func TestListCoursesSaysMapDataIsComing(t *testing.T) {
 	var cs []*course.Course
@@ -61,5 +64,40 @@ func TestListCoursesSaysMapDataIsComing(t *testing.T) {
 				t.Errorf("junctions %v, parking %v, signs %v", j, p, sg)
 			}
 		}
+	}
+}
+
+type wantScenery struct {
+	stubScenery
+	wants []string
+}
+
+func (s *wantScenery) Want(id string, fromM float64) {
+	s.wants = append(s.wants, fmt.Sprintf("%s@%.0f", id, fromM))
+}
+
+func TestStartRideAsksForMapDataFromTheRider(t *testing.T) {
+	hub := telemetry.NewHub()
+	sc := &wantScenery{}
+	rides := &stubRides{}
+	srv, err := NewServer(hub, Services{Rides: rides, Scenery: sc}, testToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := dialServer(t, srv, testToken)
+	// The session armed the ride 6.2 km in (a rolling start).
+	hub.Update(func(s *telemetry.State) bool {
+		s.Ride.CourseID, s.Ride.DistanceM = "posbank", 6200
+		return true
+	})
+	if _, err := client.StartRide(context.Background(), &pb.StartRideRequest{CourseId: "posbank"}); err != nil {
+		t.Fatal(err)
+	}
+	rides.err = ride.ErrRideActive
+	if _, err := client.StartRide(context.Background(), &pb.StartRideRequest{CourseId: "other"}); err == nil {
+		t.Fatal("refused start went through")
+	}
+	if fmt.Sprint(sc.wants) != "[posbank@6200]" {
+		t.Errorf("wants %v, want posbank from 6200 m only (none for a refused start)", sc.wants)
 	}
 }

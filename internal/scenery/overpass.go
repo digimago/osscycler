@@ -1,8 +1,9 @@
 // Package scenery describes what lies along a course (fields, forest,
 // water, buildings) from OpenStreetMap, for renderers to draw.
 //
-// The map data comes from an Overpass API server, fetched once per course
-// in the background and cached; nothing waits for it. OpenStreetMap data
+// The map data comes from an Overpass API server, per 5 km stretch of a
+// course, fetched in the background for the courses being ridden and
+// cached; nothing waits for it. OpenStreetMap data
 // is © OpenStreetMap contributors, available under the ODbL: renderers
 // show Attribution with it.
 package scenery
@@ -10,12 +11,16 @@ package scenery
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
 	"net/http"
 	"net/url"
+	"regexp"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/digimago/osscycler/internal/course"
 )
@@ -42,25 +47,25 @@ const (
 	maxResponse = 256 << 20
 )
 
-// Query is the Overpass QL for what lies along c: land use, buildings,
-// the roads it meets, car parks, town limit signs and places.
-func Query(c *course.Course) string {
+// Query is the Overpass QL for what lies along c from d0 to d1: land use,
+// buildings, the roads it meets, car parks, town limit signs and places.
+func Query(c *course.Course, d0, d1 float64) string {
 	var b strings.Builder
 	b.WriteString("[out:json][timeout:180];\n(\n")
-	for start := 0.0; start < c.Distance; start += chunkM {
-		land := bbox(c, start, math.Min(start+chunkM, c.Distance), landMarginM)
-		build := bbox(c, start, math.Min(start+chunkM, c.Distance), buildingMarginM)
+	for start := d0; start < d1; start += chunkM {
+		land := bbox(c, start, math.Min(start+chunkM, d1), landMarginM)
+		build := bbox(c, start, math.Min(start+chunkM, d1), buildingMarginM)
 		for _, kind := range []string{"way", "relation"} {
 			fmt.Fprintf(&b, "  %s[\"landuse\"](%s);\n", kind, land)
 			fmt.Fprintf(&b, "  %s[\"natural\"~\"^(wood|water|scrub|heath|grassland|wetland|sand|beach|fell)$\"](%s);\n", kind, land)
 			fmt.Fprintf(&b, "  %s[\"leisure\"~\"^(park|garden|golf_course)$\"](%s);\n", kind, land)
 		}
 		fmt.Fprintf(&b, "  way[\"building\"](%s);\n", build)
-		d1 := math.Min(start+chunkM, c.Distance)
-		fmt.Fprintf(&b, "  way[\"highway\"~\"%s\"](%s);\n", roadClasses, bbox(c, start, d1, roadMarginM))
-		fmt.Fprintf(&b, "  nwr[\"amenity\"=\"parking\"](%s);\n", bbox(c, start, d1, parkingMarginM))
-		fmt.Fprintf(&b, "  node[\"traffic_sign\"~\"city_limit\"](%s);\n", bbox(c, start, d1, signMarginM))
-		fmt.Fprintf(&b, "  node[\"place\"~\"^(city|town|village|hamlet|suburb)$\"](%s);\n", bbox(c, start, d1, placeMarginM))
+		end := math.Min(start+chunkM, d1)
+		fmt.Fprintf(&b, "  way[\"highway\"~\"%s\"](%s);\n", roadClasses, bbox(c, start, end, roadMarginM))
+		fmt.Fprintf(&b, "  nwr[\"amenity\"=\"parking\"](%s);\n", bbox(c, start, end, parkingMarginM))
+		fmt.Fprintf(&b, "  node[\"traffic_sign\"~\"city_limit\"](%s);\n", bbox(c, start, end, signMarginM))
+		fmt.Fprintf(&b, "  node[\"place\"~\"^(city|town|village|hamlet|suburb)$\"](%s);\n", bbox(c, start, end, placeMarginM))
 	}
 	b.WriteString(");\nout geom;\n")
 	return b.String()
@@ -100,8 +105,14 @@ func Fetch(ctx context.Context, client *http.Client, endpoint, userAgent, query 
 	if err != nil {
 		return nil, err
 	}
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return nil, ErrRateLimited
+	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("overpass: %s: %s", resp.Status, strings.TrimSpace(firstLine(body)))
+		if msg := firstLine(body); msg != "" && !strings.HasPrefix(msg, "<") {
+			return nil, fmt.Errorf("overpass: %s: %s", resp.Status, msg)
+		}
+		return nil, fmt.Errorf("overpass: %s", resp.Status)
 	}
 	// Overpass reports a timeout or overload as "remark" in a 200 answer,
 	// with whatever it had so far: not something to cache.
@@ -120,9 +131,66 @@ func Fetch(ctx context.Context, client *http.Client, endpoint, userAgent, query 
 func firstLine(b []byte) string {
 	s := string(b[:min(len(b), 200)])
 	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		return s[:i]
+		s = s[:i]
 	}
-	return s
+	return strings.TrimSpace(s)
+}
+
+// ErrRateLimited is the server's answer while all of this client's slots
+// are taken: a query that just finished keeps its slot for a while.
+var ErrRateLimited = errors.New("overpass: too many requests")
+
+// slotWaitDefault is the wait for a slot when the server doesn't say.
+const slotWaitDefault = 30 * time.Second
+
+// slotWait asks the server how long until one of this client's slots is
+// free (its /api/status, beside the interpreter), at most maxWait.
+func slotWait(ctx context.Context, client *http.Client, endpoint, userAgent string, maxWait time.Duration) time.Duration {
+	wait := slotWaitDefault
+	status, ok := strings.CutSuffix(endpoint, "/interpreter")
+	if !ok {
+		return min(wait, maxWait)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, status+"/status", nil)
+	if err != nil {
+		return min(wait, maxWait)
+	}
+	req.Header.Set("User-Agent", userAgent)
+	resp, err := client.Do(req)
+	if err != nil {
+		return min(wait, maxWait)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	if resp.StatusCode == http.StatusOK {
+		if w, ok := parseSlotWait(string(body)); ok {
+			wait = w
+		}
+	}
+	return min(wait, maxWait)
+}
+
+var (
+	slotsFree = regexp.MustCompile(`(?m)^[1-9][0-9]* slots? available now`)
+	slotIn    = regexp.MustCompile(`(?m)^Slot available after: \S+, in (-?[0-9]+) seconds?\.`)
+)
+
+// parseSlotWait reads the wait for the first free slot from an Overpass
+// status page.
+func parseSlotWait(status string) (time.Duration, bool) {
+	if slotsFree.MatchString(status) {
+		return 0, true
+	}
+	best := -1
+	for _, m := range slotIn.FindAllStringSubmatch(status, -1) {
+		if n, err := strconv.Atoi(m[1]); err == nil && (best < 0 || n < best) {
+			best = max(n, 0)
+		}
+	}
+	if best < 0 {
+		return 0, false
+	}
+	return time.Duration(best+1) * time.Second, true
 }
 
 // Data is the parsed map data.
@@ -154,6 +222,27 @@ type Member struct {
 type LatLon struct {
 	Lat float64 `json:"lat"`
 	Lon float64 `json:"lon"`
+}
+
+// merge joins the data of several stretches. A way or relation that
+// reaches into more than one comes back with each: it is kept once.
+func merge(parts []*Data) *Data {
+	type key struct {
+		kind string
+		id   int64
+	}
+	seen := map[key]bool{}
+	d := &Data{}
+	for _, p := range parts {
+		for _, e := range p.Elements {
+			k := key{e.Type, e.ID}
+			if !seen[k] {
+				seen[k] = true
+				d.Elements = append(d.Elements, e)
+			}
+		}
+	}
+	return d
 }
 
 // Parse reads an Overpass JSON answer.

@@ -131,10 +131,12 @@ type Services struct {
 }
 
 // Scenery is what lies along each course, from map data; nil while
-// unknown. Pending tells whether it is still being fetched.
+// unknown. Pending tells whether more of it is being fetched; Want asks
+// for a course's map data when a ride on it starts, from where it starts.
 type Scenery interface {
 	Get(courseID string) *scenery.Scenery
 	Pending(courseID string) bool
+	Want(courseID string, fromM float64)
 }
 
 // NewServer returns a gRPC server exposing hub and svc. Calls without the
@@ -334,7 +336,7 @@ func (s *telemetryServer) ListCourses(context.Context, *pb.ListCoursesRequest) (
 		pending := false
 		if s.scenery != nil {
 			sc = s.scenery.Get(c.ID)
-			pending = sc == nil && s.scenery.Pending(c.ID)
+			pending = s.scenery.Pending(c.ID)
 		}
 		pc := CourseToProto(c, sc)
 		pc.MapDataPending = pending
@@ -360,6 +362,13 @@ func (s *telemetryServer) StartRide(_ context.Context, req *pb.StartRideRequest)
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	case err != nil:
 		return nil, status.Error(codes.Internal, err.Error())
+	}
+	if s.scenery != nil {
+		from := 0.0
+		if st, _ := s.hub.Latest(); st.Ride.CourseID == req.GetCourseId() {
+			from = st.Ride.DistanceM
+		}
+		s.scenery.Want(req.GetCourseId(), from)
 	}
 	return &pb.StartRideResponse{}, nil
 }

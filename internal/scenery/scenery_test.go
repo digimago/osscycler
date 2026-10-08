@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -92,133 +93,277 @@ func TestBuild(t *testing.T) {
 }
 
 func TestQueryCoversRoute(t *testing.T) {
-	q := Query(straightCourse(t))
+	c := straightCourse(t)
+	q := Query(c, 0, c.Distance)
 	if !strings.Contains(q, `way["landuse"]`) || !strings.Contains(q, `way["building"]`) || !strings.HasSuffix(q, "out geom;\n") {
 		t.Errorf("query lacks parts:\n%s", q)
 	}
-	// 1 km: one stretch.
+	// 1 km: one box.
 	if n := strings.Count(q, `way["building"]`); n != 1 {
-		t.Errorf("%d stretches for 1 km, want 1", n)
+		t.Errorf("%d boxes for 1 km, want 1", n)
 	}
 }
 
-func TestStoreFetchesOnceAndCaches(t *testing.T) {
-	raw, _ := json.Marshal(fixture())
-	var calls atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls.Add(1)
+// longCourse runs 12 km due north: two stretches, 0-5 km and 5-12 km.
+func longCourse(t *testing.T) *course.Course {
+	t.Helper()
+	var pts []course.Point
+	for i := 0; i <= 1200; i++ {
+		pts = append(pts, course.Point{Lat: lat0 + float64(i)*10/111195, Lon: lon0, Ele: 5})
+	}
+	c, err := course.New("long", "Long", pts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+// overpass is a test server answering with the fixture, and the queries
+// it was asked.
+type overpass struct {
+	*httptest.Server
+	mu      sync.Mutex
+	queries []string
+}
+
+func newOverpass(t *testing.T, answer func() []byte) *overpass {
+	o := &overpass{}
+	o.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if ua := r.Header.Get("User-Agent"); !strings.HasPrefix(ua, "osscycler") {
 			t.Errorf("User-Agent %q", ua)
 		}
-		if !strings.Contains(r.FormValue("data"), "out geom") {
-			t.Errorf("no query in the request")
-		}
-		w.Write(raw)
+		o.mu.Lock()
+		o.queries = append(o.queries, r.FormValue("data"))
+		o.mu.Unlock()
+		w.Write(answer())
 	}))
-	defer srv.Close()
+	t.Cleanup(o.Close)
+	return o
+}
+
+func (o *overpass) asked() []string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return append([]string(nil), o.queries...)
+}
+
+func fixtureJSON() []byte {
+	raw, _ := json.Marshal(fixture())
+	return raw
+}
+
+func waitFor(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// runStore runs s until the test ends.
+func runStore(t *testing.T, s *Store) {
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		s.Run(ctx)
+		close(done)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+}
+
+func TestStoreFetchesOnlyWhatIsRiddenFromTheRider(t *testing.T) {
+	srv := newOverpass(t, fixtureJSON)
 	dir := t.TempDir()
-	c := straightCourse(t)
+	c := longCourse(t)
 	cfg := Config{CacheDir: dir, Fetch: true, Endpoint: srv.URL, UserAgent: "osscycler-test"}
 
-	s := NewStore(cfg)
-	if s.Get(c.ID) != nil {
-		t.Fatal("scenery before running")
+	s := NewStore(cfg, []*course.Course{c})
+	runStore(t, s)
+	time.Sleep(20 * time.Millisecond)
+	if n := len(srv.asked()); n != 0 || s.Get(c.ID) != nil || s.Pending(c.ID) {
+		t.Fatalf("before a ride: %d fetches, scenery %v, pending %v", n, s.Get(c.ID) != nil, s.Pending(c.ID))
 	}
-	s.Run(context.Background(), []*course.Course{c})
-	if s.Get(c.ID) == nil || calls.Load() != 1 {
-		t.Fatalf("after a run: scenery %v, %d calls", s.Get(c.ID) != nil, calls.Load())
+	// A ride from 6 km: the second stretch first, then the first.
+	s.Want(c.ID, 6000)
+	waitFor(t, "both stretches", func() bool { return !s.Pending(c.ID) })
+	q := srv.asked()
+	if len(q) != 2 || q[0] != Query(c, stretchM, c.Distance) || q[1] != Query(c, 0, stretchM) {
+		t.Fatalf("%d queries, want the stretch from 5 km, then the one from 0", len(q))
 	}
-	files, _ := filepath.Glob(filepath.Join(dir, "north-*.json"))
-	if len(files) != 1 {
+	if s.Get(c.ID) == nil {
+		t.Fatal("no scenery after fetching")
+	}
+	files, _ := filepath.Glob(filepath.Join(dir, "long-*.json"))
+	if len(files) != 2 {
 		t.Fatalf("cache files: %v", files)
+	}
+	// Wanting a complete course fetches nothing.
+	s.Want(c.ID, 0)
+	time.Sleep(20 * time.Millisecond)
+	if n := len(srv.asked()); n != 2 || s.Pending(c.ID) {
+		t.Errorf("complete course wanted again: %d fetches, pending %v", n, s.Pending(c.ID))
 	}
 
 	// A new store reads the cache without asking the server, even with
 	// fetching off.
 	cfg.Fetch = false
-	s2 := NewStore(cfg)
-	s2.Run(context.Background(), []*course.Course{c})
-	if s2.Get(c.ID) == nil || calls.Load() != 1 {
-		t.Errorf("from cache: scenery %v, %d calls", s2.Get(c.ID) != nil, calls.Load())
+	s2 := NewStore(cfg, []*course.Course{c})
+	s2.loadCache(context.Background())
+	if s2.Get(c.ID) == nil || len(srv.asked()) != 2 {
+		t.Errorf("from cache: scenery %v, %d fetches", s2.Get(c.ID) != nil, len(srv.asked()))
 	}
+}
 
-	// A stale file for the course (an older GPX) is replaced on the next fetch.
-	stale := filepath.Join(dir, "north-0123456789ab.json")
-	os.WriteFile(stale, raw, 0o600)
-	os.Remove(files[0])
-	cfg.Fetch = true
-	NewStore(cfg).Run(context.Background(), []*course.Course{c})
-	if _, err := os.Stat(stale); !os.IsNotExist(err) {
-		t.Errorf("stale cache file kept")
+func TestStoreReplacesStaleCacheFiles(t *testing.T) {
+	srv := newOverpass(t, fixtureJSON)
+	dir := t.TempDir()
+	c := longCourse(t)
+	stale := []string{
+		"long-0123456789ab.json",   // the whole course, from before stretches
+		"long-0-0123456789ab.json", // stretch 0 of an older GPX
+		"long-7-0123456789ab.json", // a stretch the course no longer has
+	}
+	other := "longer-0-0123456789ab.json" // another course's
+	for _, name := range append(stale, other) {
+		os.WriteFile(filepath.Join(dir, name), fixtureJSON(), 0o600)
+	}
+	s := NewStore(Config{CacheDir: dir, Fetch: true, Endpoint: srv.URL, UserAgent: "osscycler-test"}, nil)
+	if _, err := s.Load(context.Background(), c); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range stale {
+		if _, err := os.Stat(filepath.Join(dir, name)); !os.IsNotExist(err) {
+			t.Errorf("%s kept", name)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, other)); err != nil {
+		t.Errorf("another course's file: %v", err)
 	}
 }
 
 func TestStoreRetriesThenGivesUp(t *testing.T) {
-	var calls atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls.Add(1)
-		// Overpass reports overload as a remark in a 200 answer.
-		w.Write([]byte(`{"elements":[],"remark":"runtime error: Query timed out"}`))
-	}))
-	defer srv.Close()
+	// Overpass reports overload as a remark in a 200 answer.
+	srv := newOverpass(t, func() []byte { return []byte(`{"elements":[],"remark":"runtime error: Query timed out"}`) })
 	saved := retryAfter
 	retryAfter = []time.Duration{time.Millisecond, time.Millisecond}
-	defer func() { retryAfter = saved }()
+	t.Cleanup(func() { retryAfter = saved }) // after the store stops
 
 	dir := t.TempDir()
-	s := NewStore(Config{CacheDir: dir, Fetch: true, Endpoint: srv.URL})
 	c := straightCourse(t)
-	s.Run(context.Background(), []*course.Course{c})
-	if s.Get(c.ID) != nil || calls.Load() != 3 {
-		t.Errorf("scenery %v after %d calls, want none after 3", s.Get(c.ID) != nil, calls.Load())
+	s := NewStore(Config{CacheDir: dir, Fetch: true, Endpoint: srv.URL, UserAgent: "osscycler-test"}, []*course.Course{c})
+	runStore(t, s)
+	s.Want(c.ID, 0)
+	waitFor(t, "giving up", func() bool { return !s.Pending(c.ID) })
+	if s.Get(c.ID) != nil || len(srv.asked()) != 3 {
+		t.Errorf("scenery %v after %d calls, want none after 3", s.Get(c.ID) != nil, len(srv.asked()))
 	}
 	if files, _ := filepath.Glob(filepath.Join(dir, "*")); len(files) != 0 {
 		t.Errorf("a failed answer was cached: %v", files)
 	}
+	// Riding it again tries again.
+	s.Want(c.ID, 0)
+	waitFor(t, "another attempt", func() bool { return len(srv.asked()) > 3 })
 }
 
 func TestStorePendingWhileFetching(t *testing.T) {
-	raw, _ := json.Marshal(fixture())
 	release := make(chan struct{})
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := newOverpass(t, func() []byte {
 		<-release
-		w.Write(raw)
-	}))
-	defer srv.Close()
+		return fixtureJSON()
+	})
 	c := straightCourse(t)
-	s := NewStore(Config{CacheDir: t.TempDir(), Fetch: true, Endpoint: srv.URL})
-	if s.Pending(c.ID) {
-		t.Error("pending before running")
-	}
-	done := make(chan struct{})
-	go func() {
-		s.Run(context.Background(), []*course.Course{c})
-		close(done)
-	}()
-	deadline := time.Now().Add(5 * time.Second)
-	for !s.Pending(c.ID) && time.Now().Before(deadline) {
-		time.Sleep(time.Millisecond)
-	}
+	track := course.Tracks()[0]
+	s := NewStore(Config{CacheDir: t.TempDir(), Fetch: true, Endpoint: srv.URL, UserAgent: "osscycler-test"}, []*course.Course{c, track})
+	runStore(t, s)
+	s.Want(c.ID, 0)
+	s.Want(track.ID, 0)
 	if !s.Pending(c.ID) || s.Get(c.ID) != nil {
 		t.Errorf("while fetching: pending %v, scenery %v", s.Pending(c.ID), s.Get(c.ID) != nil)
 	}
-	close(release)
-	<-done
-	if s.Pending(c.ID) || s.Get(c.ID) == nil {
-		t.Errorf("after fetching: pending %v, scenery %v", s.Pending(c.ID), s.Get(c.ID) != nil)
+	if s.Pending(track.ID) {
+		t.Error("a test track, which has no map, is pending")
 	}
+	close(release)
+	waitFor(t, "the map data", func() bool { return !s.Pending(c.ID) })
+	if s.Get(c.ID) == nil {
+		t.Error("no scenery after fetching")
+	}
+}
 
-	// Giving up ends it too.
-	saved := retryAfter
-	retryAfter = nil
-	defer func() { retryAfter = saved }()
-	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "busy", http.StatusGatewayTimeout)
-	}))
-	defer bad.Close()
-	s2 := NewStore(Config{CacheDir: t.TempDir(), Fetch: true, Endpoint: bad.URL})
-	s2.Run(context.Background(), []*course.Course{c})
-	if s2.Pending(c.ID) {
-		t.Error("still pending after giving up")
+func TestLoadForTheWorldBuilder(t *testing.T) {
+	srv := newOverpass(t, fixtureJSON)
+	dir := t.TempDir()
+	c := longCourse(t)
+	cfg := Config{CacheDir: dir, Endpoint: srv.URL, UserAgent: "osscycler-test"}
+	if d, err := NewStore(cfg, nil).Load(context.Background(), c); err == nil || len(d.Elements) != 0 {
+		t.Errorf("nothing cached, fetching off: %d elements, err %v", len(d.Elements), err)
+	}
+	cfg.Fetch = true
+	d, err := NewStore(cfg, nil).Load(context.Background(), c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Both stretches answer with the same elements: kept once.
+	if len(d.Elements) != len(fixture().Elements) || len(srv.asked()) != 2 {
+		t.Errorf("%d elements from %d fetches, want %d from 2", len(d.Elements), len(srv.asked()), len(fixture().Elements))
+	}
+	// The core's cache serves it next time.
+	cfg.Fetch = false
+	if d, err := NewStore(cfg, nil).Load(context.Background(), c); err != nil || len(d.Elements) != len(fixture().Elements) {
+		t.Errorf("from the cache: %d elements, err %v", len(d.Elements), err)
+	}
+}
+
+func TestParseSlotWait(t *testing.T) {
+	for _, tc := range []struct {
+		status string
+		want   time.Duration
+		ok     bool
+	}{
+		{"Rate limit: 2\n2 slots available now.\nCurrently running queries", 0, true},
+		{"Rate limit: 2\n1 slots available now.\nSlot available after: 2026-10-08T13:57:02Z, in 19 seconds.\n", 0, true},
+		{"Rate limit: 2\nSlot available after: 2026-10-08T13:56:51Z, in 8 seconds.\nSlot available after: 2026-10-08T13:57:02Z, in 19 seconds.\n", 9 * time.Second, true},
+		{"Rate limit: 2\nSlot available after: 2026-10-08T13:56:51Z, in -1 seconds.\n", time.Second, true},
+		{"<html>not a status page</html>", 0, false},
+	} {
+		got, ok := parseSlotWait(tc.status)
+		if got != tc.want || ok != tc.ok {
+			t.Errorf("%q: %v %v, want %v %v", tc.status, got, ok, tc.want, tc.ok)
+		}
+	}
+}
+
+func TestFetchWaitsForASlot(t *testing.T) {
+	var calls, statusCalls atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/interpreter", func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			http.Error(w, "<?xml version=\"1.0\"?>\nrate limited", http.StatusTooManyRequests)
+			return
+		}
+		w.Write(fixtureJSON())
+	})
+	mux.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) {
+		statusCalls.Add(1)
+		fmt.Fprint(w, "Rate limit: 2\nSlot available after: 2026-10-08T13:56:51Z, in 0 seconds.\n")
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	s := NewStore(Config{CacheDir: t.TempDir(), Fetch: true, Endpoint: srv.URL + "/api/interpreter", UserAgent: "osscycler-test"}, nil)
+	start := time.Now()
+	if _, err := s.Load(context.Background(), straightCourse(t)); err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 2 || statusCalls.Load() != 1 {
+		t.Errorf("%d queries, %d status checks; want 2 and 1", calls.Load(), statusCalls.Load())
+	}
+	if d := time.Since(start); d < time.Second || d > 5*time.Second {
+		t.Errorf("waited %v for a slot free in 0 s, want about 1 s", d)
 	}
 }

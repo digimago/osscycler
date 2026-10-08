@@ -447,3 +447,32 @@ func TestFetchWaitsForASlot(t *testing.T) {
 		t.Errorf("waited %v for a slot free in 0 s, want about 1 s", d)
 	}
 }
+
+func TestBandedContainsMatchesEveryEdge(t *testing.T) {
+	// A ring with a wavy edge of many vertices and a hole: the banded test
+	// must agree with counting every edge.
+	var ring []LatLon
+	kx := 111195 * math.Cos(lat0*math.Pi/180)
+	for k := 0; k <= 720; k++ {
+		a := float64(k) / 720 * 2 * math.Pi
+		r := 300 + 40*math.Sin(9*a)
+		ring = append(ring, LatLon{Lat: lat0 + r*math.Sin(a)/111195, Lon: lon0 + r*math.Cos(a)/kx})
+	}
+	ring[len(ring)-1] = ring[0]
+	d := &Data{Elements: []Element{{Type: "relation", ID: 1, Tags: map[string]string{"type": "multipolygon", "natural": "wood"},
+		Members: []Member{{Type: "way", Role: "outer", Geometry: ring}, {Type: "way", Role: "inner", Geometry: rect(-50, -50, 50, 50)}}}}}
+	p := polygons(straightCourse(t), d)[0]
+	for x := -400.0; x <= 400; x += 7 {
+		for y := -400.0; y <= 400; y += 7 {
+			want := false
+			for _, e := range p.edges {
+				if (e[1] > y) != (e[3] > y) && x < e[0]+(y-e[1])*(e[2]-e[0])/(e[3]-e[1]) {
+					want = !want
+				}
+			}
+			if got := p.contains(x, y); got != want {
+				t.Fatalf("at %v, %v: banded %v, every edge %v", x, y, got, want)
+			}
+		}
+	}
+}

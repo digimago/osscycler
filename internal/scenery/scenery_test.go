@@ -176,3 +176,49 @@ func TestStoreRetriesThenGivesUp(t *testing.T) {
 		t.Errorf("a failed answer was cached: %v", files)
 	}
 }
+
+func TestStorePendingWhileFetching(t *testing.T) {
+	raw, _ := json.Marshal(fixture())
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-release
+		w.Write(raw)
+	}))
+	defer srv.Close()
+	c := straightCourse(t)
+	s := NewStore(Config{CacheDir: t.TempDir(), Fetch: true, Endpoint: srv.URL})
+	if s.Pending(c.ID) {
+		t.Error("pending before running")
+	}
+	done := make(chan struct{})
+	go func() {
+		s.Run(context.Background(), []*course.Course{c})
+		close(done)
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for !s.Pending(c.ID) && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if !s.Pending(c.ID) || s.Get(c.ID) != nil {
+		t.Errorf("while fetching: pending %v, scenery %v", s.Pending(c.ID), s.Get(c.ID) != nil)
+	}
+	close(release)
+	<-done
+	if s.Pending(c.ID) || s.Get(c.ID) == nil {
+		t.Errorf("after fetching: pending %v, scenery %v", s.Pending(c.ID), s.Get(c.ID) != nil)
+	}
+
+	// Giving up ends it too.
+	saved := retryAfter
+	retryAfter = nil
+	defer func() { retryAfter = saved }()
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "busy", http.StatusGatewayTimeout)
+	}))
+	defer bad.Close()
+	s2 := NewStore(Config{CacheDir: t.TempDir(), Fetch: true, Endpoint: bad.URL})
+	s2.Run(context.Background(), []*course.Course{c})
+	if s2.Pending(c.ID) {
+		t.Error("still pending after giving up")
+	}
+}

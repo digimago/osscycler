@@ -365,24 +365,24 @@ func version() string {
 	return v
 }
 
-// newRides loads the courses, after the built-in test tracks, and sets up
+// newRides loads the courses, after the included ones, and sets up
 // the ride simulation.
 func newRides(hub *telemetry.Hub, trainer ride.Trainer, dir string, user fec.UserConfig,
 	difficulty, maxGrade, cda, crr, startM float64, ghosts ride.GhostSource, log *slog.Logger) *ride.Session {
-	courses := course.Tracks()
+	courses := course.Included()
 	if dir != "" {
 		own, err := course.LoadDir(dir)
 		if err != nil {
 			log.Warn("some courses failed to load", "err", err)
 		}
 		if len(own) == 0 && err == nil {
-			log.Warn("no courses yet: put .gpx files in the courses folder and restart", "dir", dir)
+			log.Info("no courses of your own yet: put .gpx files in the courses folder and restart", "dir", dir)
 		}
 	own:
 		for _, c := range own {
 			for _, t := range courses {
 				if t.ID == c.ID {
-					log.Warn("a course has the name of a built-in track: rename its file to ride it", "id", c.ID, "dir", dir)
+					log.Warn("a course has the name of an included one: rename its file to ride it", "id", c.ID, "dir", dir)
 					continue own
 				}
 			}

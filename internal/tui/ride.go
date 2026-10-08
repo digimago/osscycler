@@ -165,6 +165,7 @@ func (m Model) rideKey(key string) (Model, tea.Cmd, bool) {
 
 func (m Model) onCourses(msg coursesMsg) (Model, tea.Cmd) {
 	m.fetching = false
+	m.fetchedAt = m.now()
 	if msg.err != nil {
 		m.notice = "loading courses failed: " + friendlyErr(msg.err)
 		return m, nil
@@ -210,14 +211,25 @@ func (m Model) ridePos() float64 {
 	return d
 }
 
+// creditShowS is how long a ride shows the map credit.
+const creditShowS = 20.0
+
+// mapCredit is the OpenStreetMap credit for the start menu.
+const mapCredit = "map data © OpenStreetMap contributors, ODbL"
+
+// mapDataRecheck is how often the course list is fetched again while the
+// ride's course waits for its map data, so the scenery appears mid-ride.
+const mapDataRecheck = 15 * time.Second
+
 // needCourse fetches the course list if a ride references a course we
-// don't have yet, e.g. one started by another client.
+// don't have yet, e.g. one started by another client, or one whose map
+// data is still on its way.
 func (m Model) needCourse() (Model, tea.Cmd) {
 	id := m.ride().GetCourseId()
 	if id == "" || m.cmds == nil || m.fetching {
 		return m, nil
 	}
-	if _, ok := m.courses[id]; ok {
+	if c, ok := m.courses[id]; ok && (!c.GetMapDataPending() || m.now().Sub(m.fetchedAt) < mapDataRecheck) {
 		return m, nil
 	}
 	m.fetching = true
@@ -387,8 +399,10 @@ func (m Model) rideInfo(width int) string {
 		return center.Render(bigWarn.Render("start pedalling to start the clock") + dimStyle.Render("  ·  "+r.GetCourseName()+race))
 	}
 	ms := m.metrics()
+	// The map credit shows for the start of a ride (the TUI may have joined
+	// it without the start menu, where it lives otherwise).
 	credit := ""
-	if sc := m.roadScene(); sc != nil && !m.tiles && sc.attribution != "" {
+	if sc := m.roadScene(); sc != nil && !m.tiles && sc.attribution != "" && r.GetElapsedS() < creditShowS {
 		credit = dimStyle.Render(" · " + sc.attribution)
 	}
 	if r.GetLoop() {
@@ -404,9 +418,15 @@ func (m Model) rideInfo(width int) string {
 		}
 		return center.Render(strings.Join(parts, " · "))
 	}
+	where := truncate(r.GetCourseName(), 40)
+	if sc := m.roadScene(); sc != nil {
+		if p := sc.placeAt(r.GetDistanceM()); p != "" {
+			where = truncate(p, 30) + " · " + where // just past its sign
+		}
+	}
 	return center.Render(fmt.Sprintf("%s bpm · %s rpm · %.1f km/h · %.0f/%.0f m climbed · %s",
 		ms[1].value, ms[2].value, r.GetSpeedMps()*3.6, r.GetClimbedM(), r.GetCourseGainM(),
-		dimStyle.Render(truncate(r.GetCourseName(), 40))) + credit)
+		dimStyle.Render(where)) + credit)
 }
 
 func (m Model) rideResult(width, height int, finished bool) string {

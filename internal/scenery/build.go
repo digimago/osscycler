@@ -47,6 +47,11 @@ type Scenery struct {
 	// near, right far (FarM and NearM from the centre line).
 	Land      []Land
 	Buildings []Building
+	// The roads the route meets where it matters, car parks and the places
+	// it enters, by distance along the course.
+	Junctions []Junction
+	Parking   []Parking
+	Signs     []PlaceSign
 }
 
 const (
@@ -91,6 +96,17 @@ func Build(c *course.Course, d *Data) *Scenery {
 		}
 	}
 	sc.Buildings = buildings(c, d, east, north)
+
+	r := sampleRoute(c)
+	roads := roadsOf(c, d)
+	sc.Junctions = junctions(r, roads, ownRoads(r, roads))
+	var entrances []Junction
+	sc.Parking, entrances = parkings(c, d, r, roads, east, north)
+	for _, j := range entrances {
+		sc.Junctions = addJunction(sc.Junctions, j)
+	}
+	sortJunctions(sc.Junctions)
+	sc.Signs = placeSigns(c, d, r)
 	return sc
 }
 

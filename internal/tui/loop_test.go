@@ -252,3 +252,33 @@ func TestGhostCarriedForward(t *testing.T) {
 		t.Errorf("finished ghost drawn at %.2f", g)
 	}
 }
+
+func TestCoursesFetchedAgainWhileMapDataIsComing(t *testing.T) {
+	now := lapClock
+	m := loopModel(t, &stubCommands{})
+	m.now = func() time.Time { return now }
+	cs := trackCourses()
+	cs[0].MapDataPending = true // the oval, say
+	m = update(m, coursesMsg{courses: cs})
+	m = update(m, StateMsg{State: loopState(3)})
+
+	if _, cmd := m.needCourse(); cmd != nil {
+		t.Error("fetched again straight away")
+	}
+	now = now.Add(mapDataRecheck)
+	m2, cmd := m.needCourse()
+	if cmd == nil || !m2.fetching {
+		t.Fatal("not fetched again while the map data is coming")
+	}
+	if msg, ok := cmd().(coursesMsg); !ok || msg.err != nil {
+		t.Errorf("fetch gave %#v", msg)
+	}
+
+	// With the map data in, no more fetching.
+	cs[0].MapDataPending = false
+	m = update(m, coursesMsg{courses: cs})
+	now = now.Add(time.Hour)
+	if _, cmd := m.needCourse(); cmd != nil {
+		t.Error("fetched again with the map data in")
+	}
+}

@@ -22,8 +22,9 @@ type Fake struct {
 	level    float64   // last SetResistance; the fake rider works harder on a higher level
 }
 
-// SetGrade makes the fake rider push about 15 W more per percent of grade.
-// It leaves ERG mode, as a real trainer does on a grade page.
+// SetGrade makes the fake rider push fakeWattsPerPct more per percent of
+// the trainer's grade, so the course's grade and the difficulty show in
+// its power. It leaves ERG mode, as a real trainer does on a grade page.
 func (f *Fake) SetGrade(_ context.Context, gradePct float64) error {
 	f.mu.Lock()
 	f.grade, f.erg, f.level = gradePct, 0, 0
@@ -61,6 +62,10 @@ const (
 	fakeCoast       = 5 * time.Second
 	fakeSpinDownMS  = 2980
 )
+
+// fakeWattsPerPct is what a percent of trainer grade costs the fake rider:
+// m·g·v/100 for about 80 kg climbing at 4 m/s (14 km/h).
+const fakeWattsPerPct = 30
 
 // The fake's mutex is never held while calling into the hub: Run takes them
 // the other way round.
@@ -123,7 +128,7 @@ func (f *Fake) Run(ctx context.Context) error {
 		f.mu.Lock()
 		calStart, grade, erg, level := f.calStart, f.grade, f.erg, f.level
 		f.mu.Unlock()
-		power += 15*grade + 2*level
+		power = math.Max(0, power+fakeWattsPerPct*grade+2*level)
 		if erg > 0 {
 			power = erg + 4*math.Sin(t*1.7)
 		}

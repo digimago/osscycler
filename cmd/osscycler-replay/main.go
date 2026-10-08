@@ -12,10 +12,10 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/digimago/osscycler/course"
-	"github.com/digimago/osscycler/home"
-	"github.com/digimago/osscycler/record"
-	"github.com/digimago/osscycler/replay"
+	"github.com/digimago/osscycler/internal/course"
+	"github.com/digimago/osscycler/internal/home"
+	"github.com/digimago/osscycler/internal/record"
+	"github.com/digimago/osscycler/internal/replay"
 )
 
 func main() {

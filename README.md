@@ -10,9 +10,10 @@ cloud, no subscription.
 
 What it does today:
 
-- **Course rides** on any GPX route you've ridden or planned: the trainer
-  follows the grade, your speed comes from a physics simulation, and the
-  clock stops at the line.
+- **Course rides** on any GPX route you've ridden or planned, or on the
+  included Posbank Loop (32 km over the Veluwezoom in the Netherlands, up
+  to 7.9 %): the trainer follows the grade, your speed comes from a
+  physics simulation, and the clock stops at the line.
 - **A view of the road ahead**: its bends and hills come from your GPX,
   and fields, forests, water and buildings from OpenStreetMap.
 - **Ghosts**: every course ride races your personal best on it, with the
@@ -220,8 +221,11 @@ already in the folder, and the road view still works, without the
 scenery.
 
 Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright)
-contributors, available under the Open Database License. The road view
-shows this credit.
+contributors, available under the Open Database License. The start
+menu shows this credit, and so does every ride for its first 20 seconds. The included Posbank Loop follows OpenStreetMap roads
+too; its elevation comes from the
+[AHN](https://www.ahn.nl/) (Actueel Hoogtebestand Nederland), open data
+under CC0.
 
 ## A Raspberry Pi by the trainer
 

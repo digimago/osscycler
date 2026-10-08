@@ -211,6 +211,12 @@ func (m Model) ridePos() float64 {
 	return d
 }
 
+// creditShowS is how long a ride shows the map credit.
+const creditShowS = 20.0
+
+// mapCredit is the OpenStreetMap credit for the start menu.
+const mapCredit = "map data © OpenStreetMap contributors, ODbL"
+
 // mapDataRecheck is how often the course list is fetched again while the
 // ride's course waits for its map data, so the scenery appears mid-ride.
 const mapDataRecheck = 15 * time.Second
@@ -393,8 +399,10 @@ func (m Model) rideInfo(width int) string {
 		return center.Render(bigWarn.Render("start pedalling to start the clock") + dimStyle.Render("  ·  "+r.GetCourseName()+race))
 	}
 	ms := m.metrics()
+	// The map credit shows for the start of a ride (the TUI may have joined
+	// it without the start menu, where it lives otherwise).
 	credit := ""
-	if sc := m.roadScene(); sc != nil && !m.tiles && sc.attribution != "" {
+	if sc := m.roadScene(); sc != nil && !m.tiles && sc.attribution != "" && r.GetElapsedS() < creditShowS {
 		credit = dimStyle.Render(" · " + sc.attribution)
 	}
 	if r.GetLoop() {

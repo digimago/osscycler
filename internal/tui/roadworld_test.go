@@ -1,7 +1,12 @@
 package tui
 
 import (
+	"strings"
 	"testing"
+
+	tea "charm.land/bubbletea/v2"
+
+	pb "github.com/digimago/osscycler/gen/osscycler/v1"
 
 	"github.com/digimago/osscycler/internal/api"
 	"github.com/digimago/osscycler/internal/course"
@@ -60,6 +65,24 @@ func TestHumanTouchesStayOffTheRoad(t *testing.T) {
 			if a[y*w+x] != b[y*w+x] {
 				t.Fatalf("road pixel %d,%d changed", x, y)
 			}
+		}
+	}
+}
+
+func TestMapCreditAtTheStartOnly(t *testing.T) {
+	m := New("x:1", &stubCommands{}).WithMenu()
+	if out := plain(m.menuPanel(100, 30)); !strings.Contains(out, "OpenStreetMap") {
+		t.Errorf("the start menu lacks the map credit:\n%s", out)
+	}
+
+	m = update(New("x:1", &stubCommands{}), tea.WindowSizeMsg{Width: 200, Height: 40})
+	m.scenes = map[string]*roadScene{"n": straightScene(t, nil)}
+	for elapsed, want := range map[float64]bool{5: true, 60: false} {
+		st := sample()
+		st.Ride = &pb.Ride{Phase: pb.RidePhase_RIDE_PHASE_RIDING, CourseId: "n", CourseName: "N", CourseDistanceM: 2000, DistanceM: 300, ElapsedS: elapsed}
+		m = update(m, StateMsg{State: st})
+		if got := strings.Contains(plain(m.rideInfo(200)), "OpenStreetMap"); got != want {
+			t.Errorf("%v s into the ride: credit shown %v, want %v", elapsed, got, want)
 		}
 	}
 }

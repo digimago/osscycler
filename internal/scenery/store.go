@@ -37,8 +37,9 @@ type Store struct {
 	cfg    Config
 	client *http.Client
 
-	mu   sync.Mutex
-	byID map[string]*Scenery
+	mu      sync.Mutex
+	byID    map[string]*Scenery
+	pending map[string]bool // being fetched, or waiting to be retried
 }
 
 func NewStore(cfg Config) *Store {
@@ -61,6 +62,24 @@ func (s *Store) Get(id string) *Scenery {
 func (s *Store) set(id string, sc *Scenery) {
 	s.mu.Lock()
 	s.byID[id] = sc
+	delete(s.pending, id)
+	s.mu.Unlock()
+}
+
+// Pending tells whether the course's map data is still being fetched:
+// it may yet come, so renderers ask again.
+func (s *Store) Pending(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.pending[id]
+}
+
+func (s *Store) setPending(ids []string) {
+	s.mu.Lock()
+	s.pending = map[string]bool{}
+	for _, id := range ids {
+		s.pending[id] = true
+	}
 	s.mu.Unlock()
 }
 
@@ -96,6 +115,12 @@ func (s *Store) Run(ctx context.Context, courses []*course.Course) {
 		s.cfg.Log.Info("no map data for some courses, and fetching it is off", "courses", len(pending))
 		return
 	}
+	ids := make([]string, len(pending))
+	for i, j := range pending {
+		ids[i] = j.c.ID
+	}
+	s.setPending(ids)
+	defer s.setPending(nil) // nothing more will come once Run returns
 	for attempt := 0; ; attempt++ {
 		var failed []job
 		for _, j := range pending {

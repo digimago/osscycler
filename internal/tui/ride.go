@@ -165,6 +165,7 @@ func (m Model) rideKey(key string) (Model, tea.Cmd, bool) {
 
 func (m Model) onCourses(msg coursesMsg) (Model, tea.Cmd) {
 	m.fetching = false
+	m.fetchedAt = m.now()
 	if msg.err != nil {
 		m.notice = "loading courses failed: " + friendlyErr(msg.err)
 		return m, nil
@@ -210,14 +211,19 @@ func (m Model) ridePos() float64 {
 	return d
 }
 
+// mapDataRecheck is how often the course list is fetched again while the
+// ride's course waits for its map data, so the scenery appears mid-ride.
+const mapDataRecheck = 15 * time.Second
+
 // needCourse fetches the course list if a ride references a course we
-// don't have yet, e.g. one started by another client.
+// don't have yet, e.g. one started by another client, or one whose map
+// data is still on its way.
 func (m Model) needCourse() (Model, tea.Cmd) {
 	id := m.ride().GetCourseId()
 	if id == "" || m.cmds == nil || m.fetching {
 		return m, nil
 	}
-	if _, ok := m.courses[id]; ok {
+	if c, ok := m.courses[id]; ok && (!c.GetMapDataPending() || m.now().Sub(m.fetchedAt) < mapDataRecheck) {
 		return m, nil
 	}
 	m.fetching = true

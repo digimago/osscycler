@@ -131,9 +131,10 @@ type Services struct {
 }
 
 // Scenery is what lies along each course, from map data; nil while
-// unknown.
+// unknown. Pending tells whether it is still being fetched.
 type Scenery interface {
 	Get(courseID string) *scenery.Scenery
+	Pending(courseID string) bool
 }
 
 // NewServer returns a gRPC server exposing hub and svc. Calls without the
@@ -330,10 +331,14 @@ func (s *telemetryServer) ListCourses(context.Context, *pb.ListCoursesRequest) (
 	resp := &pb.ListCoursesResponse{}
 	for _, c := range s.rides.Courses() {
 		var sc *scenery.Scenery
+		pending := false
 		if s.scenery != nil {
 			sc = s.scenery.Get(c.ID)
+			pending = sc == nil && s.scenery.Pending(c.ID)
 		}
-		resp.Courses = append(resp.Courses, CourseToProto(c, sc))
+		pc := CourseToProto(c, sc)
+		pc.MapDataPending = pending
+		resp.Courses = append(resp.Courses, pc)
 	}
 	return resp, nil
 }

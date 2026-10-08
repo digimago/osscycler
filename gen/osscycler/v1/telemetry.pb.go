@@ -2739,9 +2739,13 @@ type Course struct {
 	Attribution string `protobuf:"bytes,15,opt,name=attribution,proto3" json:"attribution,omitempty"`
 	// The finish is the start: rides go round until the rider stops, lap
 	// after lap (osscycler's built-in test tracks).
-	Loop          bool `protobuf:"varint,16,opt,name=loop,proto3" json:"loop,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Loop bool `protobuf:"varint,16,opt,name=loop,proto3" json:"loop,omitempty"`
+	// The core is still fetching this course's map data: land_use and
+	// buildings will come. Renderers ask for the course again later (every
+	// 15 s or so) while it matters to them.
+	MapDataPending bool `protobuf:"varint,17,opt,name=map_data_pending,json=mapDataPending,proto3" json:"map_data_pending,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Course) Reset() {
@@ -2882,6 +2886,13 @@ func (x *Course) GetAttribution() string {
 func (x *Course) GetLoop() bool {
 	if x != nil {
 		return x.Loop
+	}
+	return false
+}
+
+func (x *Course) GetMapDataPending() bool {
+	if x != nil {
+		return x.MapDataPending
 	}
 	return false
 }
@@ -5010,7 +5021,7 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\x0edifficulty_pct\x18\x01 \x01(\x01R\rdifficultyPct\"\x14\n" +
 	"\x12ListCoursesRequest\"E\n" +
 	"\x13ListCoursesResponse\x12.\n" +
-	"\acourses\x18\x01 \x03(\v2\x14.osscycler.v1.CourseR\acourses\"\x98\x04\n" +
+	"\acourses\x18\x01 \x03(\v2\x14.osscycler.v1.CourseR\acourses\"\xc2\x04\n" +
 	"\x06Course\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1d\n" +
@@ -5029,7 +5040,8 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\bland_use\x18\r \x01(\fR\alandUse\x124\n" +
 	"\tbuildings\x18\x0e \x03(\v2\x16.osscycler.v1.BuildingR\tbuildings\x12 \n" +
 	"\vattribution\x18\x0f \x01(\tR\vattribution\x12\x12\n" +
-	"\x04loop\x18\x10 \x01(\bR\x04loop\"\xc3\x01\n" +
+	"\x04loop\x18\x10 \x01(\bR\x04loop\x12(\n" +
+	"\x10map_data_pending\x18\x11 \x01(\bR\x0emapDataPending\"\xc3\x01\n" +
 	"\bBuilding\x12\x1d\n" +
 	"\n" +
 	"distance_m\x18\x01 \x01(\x01R\tdistanceM\x12\x19\n" +

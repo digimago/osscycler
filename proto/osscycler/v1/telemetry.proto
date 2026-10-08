@@ -334,6 +334,10 @@ message Course {
   // The finish is the start: rides go round until the rider stops, lap
   // after lap (osscycler's built-in test tracks).
   bool loop = 16;
+  // The core is still fetching this course's map data: land_use and
+  // buildings will come. Renderers ask for the course again later (every
+  // 15 s or so) while it matters to them.
+  bool map_data_pending = 17;
 }
 
 enum LandUse {

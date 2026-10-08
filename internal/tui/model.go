@@ -38,6 +38,7 @@ type Model struct {
 	courses    map[string]*pb.Course // by ID, with profiles
 	courseList []*pb.Course
 	fetching   bool
+	fetchedAt  time.Time // when the course list last arrived
 	picking    bool
 	tab        int          // tabCourses, tabWorkouts or tabHistory
 	pickIdx    [numTabs]int // selection per tab

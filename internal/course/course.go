@@ -47,6 +47,11 @@ type Course struct {
 	// Builtin marks osscycler's own test tracks: no GPX file, and no map
 	// data to fetch for them.
 	Builtin bool
+	// Included marks the courses that come with osscycler (see Included).
+	Included bool
+	// Credit is the GPX file's copyright notice, e.g. for a route drawn
+	// along OpenStreetMap roads; empty when it has none.
+	Credit string
 
 	dist  []float64 // sample positions, 0 .. Distance
 	ele   []float64 // smoothed elevation at each sample
@@ -271,7 +276,11 @@ func haversine(a, b Point) float64 {
 // gpx covers the parts of GPX 1.1 we use: tracks, and routes as a fallback.
 type gpx struct {
 	Metadata struct {
-		Name string `xml:"name"`
+		Name      string `xml:"name"`
+		Copyright struct {
+			Author  string `xml:"author,attr"`
+			License string `xml:"license"`
+		} `xml:"copyright"`
 	} `xml:"metadata"`
 	Trk []struct {
 		Name string `xml:"name"`
@@ -324,7 +333,17 @@ func ParseGPX(id string, r io.Reader) (*Course, error) {
 		}
 		pts = append(pts, Point{Lat: p.Lat, Lon: p.Lon, Ele: *p.Ele})
 	}
-	return New(id, name, pts)
+	c, err := New(id, name, pts)
+	if err != nil {
+		return nil, err
+	}
+	if cr := g.Metadata.Copyright; cr.Author != "" {
+		c.Credit = "© " + strings.TrimSpace(cr.Author)
+		if l := strings.TrimSpace(cr.License); l != "" {
+			c.Credit += " (" + l + ")"
+		}
+	}
+	return c, nil
 }
 
 // LoadDir loads every .gpx file in dir, sorted by name; the file name

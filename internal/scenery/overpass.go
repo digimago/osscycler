@@ -29,14 +29,21 @@ const (
 	// chunkM splits the route into stretches with a box each, so the query
 	// covers a corridor rather than the whole box around a long route.
 	chunkM = 1000.0
-	// landMarginM and buildingMarginM widen each stretch's box.
+	// The margins widen each stretch's box: land use, buildings, roads the
+	// route meets, car parks beside it, signs along it, and the places
+	// whose limits it crosses.
 	landMarginM     = 300.0
 	buildingMarginM = 120.0
+	roadMarginM     = 30.0
+	parkingMarginM  = 80.0
+	signMarginM     = 25.0
+	placeMarginM    = 2000.0
 	// maxResponse guards against a runaway answer.
 	maxResponse = 256 << 20
 )
 
-// Query is the Overpass QL for the land use and buildings along c.
+// Query is the Overpass QL for what lies along c: land use, buildings,
+// the roads it meets, car parks, town limit signs and places.
 func Query(c *course.Course) string {
 	var b strings.Builder
 	b.WriteString("[out:json][timeout:180];\n(\n")
@@ -49,6 +56,11 @@ func Query(c *course.Course) string {
 			fmt.Fprintf(&b, "  %s[\"leisure\"~\"^(park|garden|golf_course)$\"](%s);\n", kind, land)
 		}
 		fmt.Fprintf(&b, "  way[\"building\"](%s);\n", build)
+		d1 := math.Min(start+chunkM, c.Distance)
+		fmt.Fprintf(&b, "  way[\"highway\"~\"%s\"](%s);\n", roadClasses, bbox(c, start, d1, roadMarginM))
+		fmt.Fprintf(&b, "  nwr[\"amenity\"=\"parking\"](%s);\n", bbox(c, start, d1, parkingMarginM))
+		fmt.Fprintf(&b, "  node[\"traffic_sign\"~\"city_limit\"](%s);\n", bbox(c, start, d1, signMarginM))
+		fmt.Fprintf(&b, "  node[\"place\"~\"^(city|town|village|hamlet|suburb)$\"](%s);\n", bbox(c, start, d1, placeMarginM))
 	}
 	b.WriteString(");\nout geom;\n")
 	return b.String()
@@ -118,11 +130,15 @@ type Data struct {
 	Elements []Element `json:"elements"`
 }
 
-// Element is a way or relation with its geometry (Overpass "out geom").
+// Element is a node, or a way or relation with its geometry (Overpass
+// "out geom").
 type Element struct {
 	Type     string            `json:"type"`
 	ID       int64             `json:"id"`
 	Tags     map[string]string `json:"tags"`
+	Lat      float64           `json:"lat"`      // nodes
+	Lon      float64           `json:"lon"`      // nodes
+	Nodes    []int64           `json:"nodes"`    // ways: node IDs, one per geometry point
 	Geometry []LatLon          `json:"geometry"` // ways
 	Members  []Member          `json:"members"`  // relations
 }

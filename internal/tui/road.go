@@ -76,6 +76,10 @@ type roadScene struct {
 	land        []byte
 	buildings   []*pb.Building
 	attribution string
+	// Roads meeting the route, car parks and place-name signs.
+	branches []worldBranch
+	parking  []*pb.ParkingArea
+	signs    []*pb.PlaceSign
 }
 
 // newRoadScene returns nil for a course without a track (an older core).
@@ -95,6 +99,8 @@ func newRoadScene(c *pb.Course) *roadScene {
 	if l := c.GetLandUse(); len(l) == 4*len(e) {
 		sc.land = l
 	}
+	sc.branches = sc.branchesOf(c.GetJunctions())
+	sc.parking, sc.signs = c.GetParking(), c.GetPlaceSigns()
 	return sc
 }
 
@@ -294,6 +300,8 @@ func (sc *roadScene) pixels(pos, ghost float64, w, h int) []rgb {
 
 	// The road, near to far. Each stretch fills the rows between its ends
 	// that nearer road hasn't covered, so crests hide what lies behind.
+	ex := sc.extras(pos)
+	onRoad := make([]bool, w*h)
 	clip := float64(h)
 	var segs []roadSeg
 	// The first point just ahead of the eye; the rest on a fixed grid along
@@ -308,7 +316,7 @@ func (sc *roadScene) pixels(pos, ghost float64, w, h int) []rgb {
 		}
 		cur := roadSeg{s: s, sx: sx, sy: sy, depth: depth, clip: clip}
 		if n := len(segs); n > 0 && cur.sy < clip {
-			sc.band(px, w, cam, segs[n-1], cur, clip)
+			sc.band(px, onRoad, w, cam, segs[n-1], cur, clip)
 			clip = math.Max(0, cur.sy)
 		}
 		segs = append(segs, cur)
@@ -355,6 +363,12 @@ func (sc *roadScene) pixels(pos, ghost float64, w, h int) []rgb {
 					off = roadHalfM + 3 + math.Round(off/rule.rowM)*rule.rowM
 				}
 				lateral := off * float64(2*side-1)
+				if ex.lotAt(s, lateral, 2) != nil {
+					continue
+				}
+				if cx, cy, rx, ry := sc.frameAt(s); ex.onBranch(cx+rx*lateral, cy+ry*lateral, 2) {
+					continue
+				}
 				height := rule.minH + float64(hash>>20%100)/100*rule.spanH
 				pine := hash>>28%4 < rule.pine4
 				sprites = append(sprites, sprite{s, func() { drawTree(cv, cam, g, lateral, height, pine) }})
@@ -377,6 +391,37 @@ func (sc *roadScene) pixels(pos, ghost float64, w, h int) []rgb {
 		}
 		front := s0 >= first
 		sprites = append(sprites, sprite{math.Max(s0, pos), func() { drawBuilding(cv, cam, b, near, far, front) }})
+	}
+	for _, b := range ex.branches {
+		if g, ok := segAt(b.d); ok {
+			sprites = append(sprites, sprite{b.d, func() { sc.drawBranch(cv, onRoad, cam, b, g.clip) }})
+		}
+	}
+	for _, p := range ex.lots {
+		near := math.Max(p.GetDistanceM()-p.GetLengthM()/2, pos+2)
+		if g, ok := segAt(near); ok {
+			// Drawn before the cars in it: placed at its far end.
+			sprites = append(sprites, sprite{p.GetDistanceM() + p.GetLengthM()/2, func() { sc.drawLot(cv, onRoad, cam, p, pos+2, g.clip) }})
+		}
+	}
+	for _, p := range ex.lots {
+		spots, colors := carSpots(p)
+		for k, sp := range spots {
+			if sp[0] < pos+3 {
+				continue
+			}
+			if g, ok := segAt(sp[0]); ok {
+				lateral, body := sp[1], colors[k]
+				sprites = append(sprites, sprite{sp[0], func() { drawCar(cv, cam, g, lateral, body) }})
+			}
+		}
+	}
+	for _, s := range sc.signs {
+		if d := s.GetDistanceM(); d > pos+3 {
+			if g, ok := segAt(d); ok {
+				sprites = append(sprites, sprite{d, func() { drawSign(cv, cam, g, roadHalfM+1.2) }})
+			}
+		}
 	}
 	if g, ok := segAt(ghost); ok && ghost > pos+2 {
 		sprites = append(sprites, sprite{ghost, func() { drawGhost(cv, cam, g) }})
@@ -427,7 +472,9 @@ func nextGrid(s, pos float64) float64 {
 }
 
 // band fills the rows between a nearer and a farther road point.
-func (sc *roadScene) band(px []rgb, w int, cam roadCamera, near, far roadSeg, clip float64) {
+// Road pixels are marked in onRoad, so flat things beside it (roads
+// meeting it, car parks) stay under it.
+func (sc *roadScene) band(px []rgb, onRoad []bool, w int, cam roadCamera, near, far roadSeg, clip float64) {
 	top, bottom := far.sy, math.Min(near.sy, clip)
 	if bottom-top < 1e-9 {
 		return
@@ -473,6 +520,9 @@ func (sc *roadScene) band(px []rgb, w int, cam roadCamera, near, far roadSeg, cl
 				c = lineColor
 			default:
 				c = asphalt
+			}
+			if ax <= roadHalfM {
+				onRoad[y*w+x] = true
 			}
 			row[x] = mix(c, fogColor, fog)
 		}

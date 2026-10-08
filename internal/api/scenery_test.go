@@ -32,7 +32,10 @@ func TestListCoursesSaysMapDataIsComing(t *testing.T) {
 		cs = append(cs, c)
 	}
 	sc := stubScenery{
-		have:    map[string]*scenery.Scenery{"fetched": {Land: make([]scenery.Land, 4*51)}},
+		have: map[string]*scenery.Scenery{"fetched": {Land: make([]scenery.Land, 4*51),
+			Junctions: []scenery.Junction{{DistanceM: 100, Kind: scenery.JunctionCrossing, Branches: []scenery.Branch{{BearingDeg: 90, WidthM: 7, LengthM: 80}}}},
+			Parking:   []scenery.Parking{{DistanceM: 200, OffsetM: 20, LengthM: 40, DepthM: 30, Name: "Bos"}},
+			Signs:     []scenery.PlaceSign{{DistanceM: 300, Name: "Dorp"}}}},
 		pending: map[string]bool{"fetching": true},
 	}
 	srv, err := NewServer(telemetry.NewHub(), Services{Rides: &stubRides{courses: cs}, Scenery: sc}, testToken)
@@ -50,6 +53,13 @@ func TestListCoursesSaysMapDataIsComing(t *testing.T) {
 		}
 		if (c.GetId() == "fetched") != (c.GetAttribution() != "") {
 			t.Errorf("%s: attribution %q", c.GetId(), c.GetAttribution())
+		}
+		if c.GetId() == "fetched" {
+			j, p, sg := c.GetJunctions(), c.GetParking(), c.GetPlaceSigns()
+			if len(j) != 1 || j[0].GetKind() != pb.JunctionKind_JUNCTION_KIND_CROSSING || j[0].GetBranches()[0].GetBearingDeg() != 90 ||
+				len(p) != 1 || p[0].GetName() != "Bos" || len(sg) != 1 || sg[0].GetName() != "Dorp" {
+				t.Errorf("junctions %v, parking %v, signs %v", j, p, sg)
+			}
 		}
 	}
 }

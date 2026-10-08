@@ -410,9 +410,15 @@ func (m Model) rideInfo(width int) string {
 		}
 		return center.Render(strings.Join(parts, " · "))
 	}
+	where := truncate(r.GetCourseName(), 40)
+	if sc := m.roadScene(); sc != nil {
+		if p := sc.placeAt(r.GetDistanceM()); p != "" {
+			where = truncate(p, 30) + " · " + where // just past its sign
+		}
+	}
 	return center.Render(fmt.Sprintf("%s bpm · %s rpm · %.1f km/h · %.0f/%.0f m climbed · %s",
 		ms[1].value, ms[2].value, r.GetSpeedMps()*3.6, r.GetClimbedM(), r.GetCourseGainM(),
-		dimStyle.Render(truncate(r.GetCourseName(), 40))) + credit)
+		dimStyle.Render(where)) + credit)
 }
 
 func (m Model) rideResult(width, height int, finished bool) string {

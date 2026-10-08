@@ -151,6 +151,19 @@ func CourseToProto(c *course.Course, sc *scenery.Scenery) *pb.Course {
 		for i, l := range sc.Land {
 			pc.LandUse[i] = byte(l)
 		}
+		for _, j := range sc.Junctions {
+			pj := &pb.Junction{DistanceM: j.DistanceM, Kind: pb.JunctionKind(j.Kind)}
+			for _, b := range j.Branches {
+				pj.Branches = append(pj.Branches, &pb.JunctionBranch{BearingDeg: b.BearingDeg, WidthM: b.WidthM, LengthM: b.LengthM})
+			}
+			pc.Junctions = append(pc.Junctions, pj)
+		}
+		for _, p := range sc.Parking {
+			pc.Parking = append(pc.Parking, &pb.ParkingArea{DistanceM: p.DistanceM, OffsetM: p.OffsetM, LengthM: p.LengthM, DepthM: p.DepthM, Name: p.Name})
+		}
+		for _, s := range sc.Signs {
+			pc.PlaceSigns = append(pc.PlaceSigns, &pb.PlaceSign{DistanceM: s.DistanceM, Name: s.Name})
+		}
 		for _, b := range sc.Buildings {
 			pc.Buildings = append(pc.Buildings, &pb.Building{
 				DistanceM: b.DistanceM, OffsetM: b.OffsetM, LengthM: b.LengthM, DepthM: b.DepthM,

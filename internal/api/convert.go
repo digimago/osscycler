@@ -97,6 +97,7 @@ func profileToProto(p telemetry.Profile) *pb.RiderProfile {
 		WeightForced: p.WeightForced, FtpForced: p.FTPForced, DifficultyForced: p.DifficultyForced,
 		Path: p.Path, SuggestedFtpW: p.SuggestedFTPW,
 		HeightCm: p.HeightCm, Cda: p.CdA, HeightForced: p.HeightForced, CdaForced: p.CdAForced,
+		View: p.View,
 	}
 	if p.NeedWeight {
 		out.Missing = append(out.Missing, "weight_kg")

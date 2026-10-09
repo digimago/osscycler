@@ -157,6 +157,9 @@ message SetProfileRequest {
   optional double ftp_w = 2;
   // Sizes the rider's drag on courses: 120-220 cm.
   optional double height_cm = 3;
+  // How a 3D renderer shows the ride: "chase" (behind and above the
+  // rider) or "eyes" (the rider's own view).
+  optional string view = 4;
 }
 
 message SetProfileResponse {
@@ -541,6 +544,8 @@ message RiderProfile {
   bool height_forced = 13;
   // Set by -cda on the core: the rider's size doesn't apply this run.
   bool cda_forced = 14;
+  // The rider's view in a 3D renderer: "chase" (the default) or "eyes".
+  string view = 15;
 }
 
 // The core records every ride to a FIT file on its own disk, whether or

@@ -141,3 +141,22 @@ func TestTurnAtATJunction(t *testing.T) {
 		t.Errorf("branches %+v, want the road going on north", b)
 	}
 }
+
+func TestRoadWidth(t *testing.T) {
+	for _, tc := range []struct {
+		class string
+		tags  map[string]string
+		want  float64
+	}{
+		{"secondary", nil, 7},
+		{"secondary", map[string]string{"oneway": "yes"}, 3.5}, // a dual carriageway's half
+		{"residential", map[string]string{"oneway": "-1"}, 3.5},
+		{"primary", map[string]string{"oneway": "yes", "lanes": "2"}, 6.4},
+		{"motorway", map[string]string{"oneway": "yes"}, 11},
+		{"secondary", map[string]string{"oneway": "yes", "width": "5"}, 5},
+	} {
+		if w := roadWidth(tc.class, tc.tags); w != tc.want {
+			t.Errorf("%s %v: %.1f m, want %.1f", tc.class, tc.tags, w, tc.want)
+		}
+	}
+}

@@ -194,6 +194,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m = m.followGhost(old)
+		m = m.others()
 		if m.needsOnboarding() {
 			m = m.startOnboarding(false)
 		}

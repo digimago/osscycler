@@ -19,6 +19,11 @@ WORKOUTS     ?= _workouts
 RIDES        ?= _rides
 
 STATICCHECK := honnef.co/go/tools/cmd/staticcheck@v0.8.1
+# staticcheck v0.8.1 can't read the export data of Go 1.27.2 ("export data
+# version 5 is greater than maximum supported version 4"), and there is no
+# newer release yet: lint runs under Go 1.27.1, which the go command fetches
+# itself. Drop this when staticcheck catches up.
+LINT_TOOLCHAIN ?= go1.27.1
 
 DIST      ?= _dist
 VERSION   ?= $(shell git describe --tags --always --dirty)
@@ -52,7 +57,7 @@ fmt: ## Fail if any file needs gofmt
 	if [ -n "$$out" ]; then echo "needs gofmt:"; echo "$$out"; exit 1; fi
 
 lint: ## staticcheck (pinned, via go run)
-	go run $(STATICCHECK) ./...
+	GOTOOLCHAIN=$(LINT_TOOLCHAIN) go run $(STATICCHECK) ./...
 
 check: fmt vet lint race ## Everything CI should run
 

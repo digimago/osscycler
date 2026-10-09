@@ -137,7 +137,11 @@ func roadsOf(c *course.Course, d *Data) []*road {
 	return out
 }
 
-// roadWidth is the tagged width, else a guess from the lanes and class.
+// roadWidth is the tagged width, else a guess from the lanes and class. A
+// one-way way (one carriageway of a dual one, where the map draws each
+// direction apart) is half its class's width, at least 3.5 m: at full
+// width the two carriageways of the Arnhemsestraatweg in Rheden overlapped
+// where they meet. Motorways' widths are already a carriageway's.
 func roadWidth(class string, t map[string]string) float64 {
 	if w, err := strconv.ParseFloat(strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(t["width"]), "m")), 64); err == nil && w >= 2 && w < 40 {
 		return w
@@ -145,6 +149,12 @@ func roadWidth(class string, t map[string]string) float64 {
 	w := map[string]float64{"motorway": 11, "trunk": 9, "primary": 7.5, "secondary": 7, "tertiary": 6.5, "service": 4}[class]
 	if w == 0 {
 		w = 5
+	}
+	switch t["oneway"] {
+	case "yes", "true", "1", "-1", "reverse":
+		if class != "motorway" {
+			w = math.Max(3.5, w/2)
+		}
 	}
 	if lanes, err := strconv.Atoi(t["lanes"]); err == nil && lanes >= 2 {
 		w = math.Max(w, 3.2*float64(lanes))

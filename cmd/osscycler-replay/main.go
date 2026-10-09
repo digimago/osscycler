@@ -12,10 +12,10 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/digimago/osscycler/course"
-	"github.com/digimago/osscycler/home"
-	"github.com/digimago/osscycler/record"
-	"github.com/digimago/osscycler/replay"
+	"github.com/digimago/osscycler/internal/course"
+	"github.com/digimago/osscycler/internal/home"
+	"github.com/digimago/osscycler/internal/record"
+	"github.com/digimago/osscycler/internal/replay"
 )
 
 func main() {
@@ -43,13 +43,21 @@ func run() error {
 		fmt.Println("no finished course rides in", filepath.Join(*rides, record.ResultsFile))
 		return nil
 	}
+	// The courses the core offers: the included ones (the test tracks,
+	// the routes that come with osscycler), then the folder's, which can't
+	// take an included one's name.
+	byID := map[string]*course.Course{}
+	for _, c := range course.Included() {
+		byID[c.ID] = c
+	}
 	cs, err := course.LoadDir(*courses)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "some courses didn't load:", err)
 	}
-	byID := map[string]*course.Course{}
 	for _, c := range cs {
-		byID[c.ID] = c
+		if byID[c.ID] == nil {
+			byID[c.ID] = c
+		}
 	}
 	whatIf := *mass > 0 || *cda > 0 || *crr > 0
 
@@ -64,7 +72,7 @@ func run() error {
 			fmt.Fprintf(w, "%s%s\t\t\t\n", head, r.Err)
 			continue
 		case c == nil:
-			fmt.Fprintf(w, "%scourse %q not in %s\t\t\t\n", head, r.CourseID, *courses)
+			fmt.Fprintf(w, "%scourse %q neither included nor in %s\t\t\t\n", head, r.CourseID, *courses)
 			continue
 		}
 		p := r.Params()

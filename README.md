@@ -10,9 +10,10 @@ cloud, no subscription.
 
 What it does today:
 
-- **Course rides** on any GPX route you've ridden or planned: the trainer
-  follows the grade, your speed comes from a physics simulation, and the
-  clock stops at the line.
+- **Course rides** on any GPX route you've ridden or planned, or on the
+  included Posbank Loop (32 km over the Veluwezoom in the Netherlands, up
+  to 7.9 %): the trainer follows the grade, your speed comes from a
+  physics simulation, and the clock stops at the line.
 - **A view of the road ahead**: its bends and hills come from your GPX,
   and fields, forests, water and buildings from OpenStreetMap.
 - **Ghosts**: every course ride races your personal best on it, with the
@@ -203,25 +204,29 @@ so mind your privacy settings if you share them, or start the core with
 ## Map data
 
 The road view shows fields, forests, water and buildings along your
-routes. To do that, the core downloads the map data around each course
+routes. To do that, the core downloads the map data around a course
 from OpenStreetMap, through the public Overpass server
-(overpass-api.de): once per course, in the background, while you can
-already ride. It keeps the data in `~/osscycler/courses/.osm/` and
-downloads it again only if you change the GPX file. That server is
-sometimes busy; the core then tries again a few times (after 1, 5, 15
-and 60 minutes). Until the data is there, the road runs through grass
-and trees.
+(overpass-api.de), when you first ride it: 5 km at a time, starting
+where you start, in the background while you already ride. It keeps the
+data in `~/osscycler/courses/.osm/` and downloads it again only if you
+change the GPX file. That server is sometimes busy; the core then tries
+again a few times (after 1, 5, 15 and 60 minutes), and again the next
+time you ride the course. Until the data is there, the road runs
+through grass and trees.
 
-To get the data, the core sends the server the area around each route,
-and nothing else: no account, no name. Routes you recorded yourself
+To get the data, the core sends the server the area around the routes
+you ride, and nothing else: no account, no name. Routes you recorded yourself
 often start at home, so that area includes your home. If you'd rather
 not share it, start the core with `-osm=false`: it then only uses data
 already in the folder, and the road view still works, without the
 scenery.
 
 Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright)
-contributors, available under the Open Database License. The road view
-shows this credit.
+contributors, available under the Open Database License. The start
+menu shows this credit, and so does every ride for its first 20 seconds. The included Posbank Loop follows OpenStreetMap roads
+too; its elevation comes from the
+[AHN](https://www.ahn.nl/) (Actueel Hoogtebestand Nederland), open data
+under CC0.
 
 ## A Raspberry Pi by the trainer
 

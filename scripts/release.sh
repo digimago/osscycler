@@ -57,7 +57,7 @@ build() {
 for arch in amd64 arm64; do
 	name=osscycler_${VERSION}_linux_${arch}
 	build linux "$arch" "$work/$name"
-	cp README.md deploy/udev/99-ant-usb.rules deploy/udev/install-udev.sh deploy/systemd/osscycler@.service "$work/$name/"
+	cp README.md LICENSE deploy/udev/99-ant-usb.rules deploy/udev/install-udev.sh deploy/systemd/osscycler@.service "$work/$name/"
 	tar --no-xattrs -C "$work" -czf "$DIST/$name.tar.gz" "$name"
 	# nfpm doesn't expand the environment in file paths: fill in the config.
 	sed -e "s|\${ARCH}|$arch|" -e "s|\${PKG_VERSION}|$pkg_version|" -e "s|\${BUILD_DIR}|$work/$name|" \
@@ -76,7 +76,7 @@ for bin in osscycler-core osscycler-tui; do
 	"${LIPO[@]}" -output "$work/$name/$bin" -create "$work/darwin_amd64/$bin" "$work/darwin_arm64/$bin"
 	chmod +x "$work/$name/$bin"
 done
-cp README.md "$work/$name/"
+cp README.md LICENSE "$work/$name/"
 tar --no-xattrs -C "$work" -czf "$DIST/$name.tar.gz" "$name"
 
 (cd "$DIST" && shasum -a 256 -- *.tar.gz *.deb *.rpm > SHA256SUMS)

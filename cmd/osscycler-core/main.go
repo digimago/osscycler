@@ -24,23 +24,23 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
-	"github.com/digimago/osscycler/ant"
-	"github.com/digimago/osscycler/api"
-	"github.com/digimago/osscycler/control"
-	"github.com/digimago/osscycler/course"
-	"github.com/digimago/osscycler/erg"
-	"github.com/digimago/osscycler/fec"
-	"github.com/digimago/osscycler/history"
-	"github.com/digimago/osscycler/home"
-	"github.com/digimago/osscycler/metrics"
-	"github.com/digimago/osscycler/profile"
-	"github.com/digimago/osscycler/record"
-	"github.com/digimago/osscycler/ride"
-	"github.com/digimago/osscycler/rider"
-	"github.com/digimago/osscycler/scenery"
-	"github.com/digimago/osscycler/sim"
-	"github.com/digimago/osscycler/telemetry"
-	"github.com/digimago/osscycler/workout"
+	"github.com/digimago/osscycler/internal/ant"
+	"github.com/digimago/osscycler/internal/api"
+	"github.com/digimago/osscycler/internal/control"
+	"github.com/digimago/osscycler/internal/course"
+	"github.com/digimago/osscycler/internal/erg"
+	"github.com/digimago/osscycler/internal/fec"
+	"github.com/digimago/osscycler/internal/history"
+	"github.com/digimago/osscycler/internal/home"
+	"github.com/digimago/osscycler/internal/metrics"
+	"github.com/digimago/osscycler/internal/profile"
+	"github.com/digimago/osscycler/internal/record"
+	"github.com/digimago/osscycler/internal/ride"
+	"github.com/digimago/osscycler/internal/rider"
+	"github.com/digimago/osscycler/internal/scenery"
+	"github.com/digimago/osscycler/internal/sim"
+	"github.com/digimago/osscycler/internal/telemetry"
+	"github.com/digimago/osscycler/internal/workout"
 )
 
 const keyEnv = "ANT_PLUS_NETWORK_KEY"
@@ -272,7 +272,7 @@ func run() error {
 		scenes = scenery.NewStore(scenery.Config{
 			CacheDir: filepath.Join(*courseDir, ".osm"), Fetch: *osmFetch, Endpoint: *osmURL,
 			UserAgent: "osscycler/" + version() + " (+https://github.com/digimago/osscycler)", Log: log,
-		})
+		}, rides.Courses())
 		svc.Scenery = scenes
 	}
 	if workouts != nil {
@@ -313,7 +313,7 @@ func run() error {
 	go telemetry.LogEvents(ctx, hub, log)
 	go rides.Run(ctx)
 	if scenes != nil {
-		go scenes.Run(ctx, rides.Courses())
+		go scenes.Run(ctx)
 	}
 	go manual.Run(ctx)
 	if workouts != nil {
@@ -365,24 +365,24 @@ func version() string {
 	return v
 }
 
-// newRides loads the courses, after the built-in test tracks, and sets up
+// newRides loads the courses, after the included ones, and sets up
 // the ride simulation.
 func newRides(hub *telemetry.Hub, trainer ride.Trainer, dir string, user fec.UserConfig,
 	difficulty, maxGrade, cda, crr, startM float64, ghosts ride.GhostSource, log *slog.Logger) *ride.Session {
-	courses := course.Tracks()
+	courses := course.Included()
 	if dir != "" {
 		own, err := course.LoadDir(dir)
 		if err != nil {
 			log.Warn("some courses failed to load", "err", err)
 		}
 		if len(own) == 0 && err == nil {
-			log.Warn("no courses yet: put .gpx files in the courses folder and restart", "dir", dir)
+			log.Info("no courses of your own yet: put .gpx files in the courses folder and restart", "dir", dir)
 		}
 	own:
 		for _, c := range own {
 			for _, t := range courses {
 				if t.ID == c.ID {
-					log.Warn("a course has the name of a built-in track: rename its file to ride it", "id", c.ID, "dir", dir)
+					log.Warn("a course has the name of an included one: rename its file to ride it", "id", c.ID, "dir", dir)
 					continue own
 				}
 			}

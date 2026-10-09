@@ -21,8 +21,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/digimago/osscycler/ant"
-	"github.com/digimago/osscycler/fec"
+	"github.com/digimago/osscycler/internal/ant"
+	"github.com/digimago/osscycler/internal/fec"
 )
 
 const keyEnv = "ANT_PLUS_NETWORK_KEY"

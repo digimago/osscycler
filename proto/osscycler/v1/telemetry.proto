@@ -334,6 +334,59 @@ message Course {
   // The finish is the start: rides go round until the rider stops, lap
   // after lap (osscycler's built-in test tracks).
   bool loop = 16;
+  // The core is still fetching this course's map data: land_use and
+  // buildings will come. Renderers ask for the course again later (every
+  // 15 s or so) while it matters to them.
+  bool map_data_pending = 17;
+  // From the map data too, by distance along the course: where other roads
+  // meet the route and are worth drawing (where it changes roads, crosses a
+  // major road, or passes the way into a car park), the public car parks
+  // beside it, and the place-name signs where it enters a built-up area.
+  repeated Junction junctions = 18;
+  repeated ParkingArea parking = 19;
+  repeated PlaceSign place_signs = 20;
+}
+
+message Junction {
+  double distance_m = 1;
+  JunctionKind kind = 2;
+  // The roads leaving the junction, other than the route itself.
+  repeated JunctionBranch branches = 3;
+}
+
+enum JunctionKind {
+  JUNCTION_KIND_UNSPECIFIED = 0;
+  // The route leaves one road for another.
+  JUNCTION_KIND_TURN = 1;
+  // The route crosses a major road.
+  JUNCTION_KIND_CROSSING = 2;
+  // The way into a car park beside the route.
+  JUNCTION_KIND_ENTRANCE = 3;
+}
+
+message JunctionBranch {
+  // Compass bearing from the junction, clockwise from north, in the frame
+  // of profile_east_m / profile_north_m.
+  double bearing_deg = 1;
+  double width_m = 2;
+  // How far it runs straight on from the junction (at most 80 m).
+  double length_m = 3;
+}
+
+// A car park as a box aligned with the road, like Building.
+message ParkingArea {
+  double distance_m = 1;
+  double offset_m = 2;
+  double length_m = 3;
+  double depth_m = 4;
+  string name = 5;
+}
+
+// A place-name sign (white on blue in the Netherlands) on the right of the
+// road, where the route enters the place.
+message PlaceSign {
+  double distance_m = 1;
+  string name = 2;
 }
 
 enum LandUse {

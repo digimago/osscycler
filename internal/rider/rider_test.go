@@ -83,7 +83,7 @@ func TestOnboarding(t *testing.T) {
 
 	// Weight first: rides may start; the trainer has the weight, and the
 	// ride is simulated with rider plus bike.
-	p, err := f.svc.SetProfile(context.Background(), ptr(87), nil, nil)
+	p, err := f.svc.SetProfile(context.Background(), ptr(87), nil, nil, nil)
 	if err != nil || p.NeedWeight || !p.NeedFTP || p.SuggestedFTPW != 220 {
 		t.Fatalf("after weight: %+v, %v", p, err)
 	}
@@ -99,7 +99,7 @@ func TestOnboarding(t *testing.T) {
 
 	// Then FTP: complete, and workouts pass the gate (this one isn't in
 	// the library).
-	p, _ = f.svc.SetProfile(context.Background(), nil, ptr(265), nil)
+	p, _ = f.svc.SetProfile(context.Background(), nil, ptr(265), nil, nil)
 	if !p.Complete || f.state() != p {
 		t.Errorf("after FTP: %+v (published %+v)", p, f.state())
 	}
@@ -127,25 +127,25 @@ func TestDragFromSize(t *testing.T) {
 		st, _ := f.hub.Latest()
 		return st.Ride.Sim.CdA
 	}
-	f.svc.SetProfile(context.Background(), ptr(75), ptr(200), nil)
+	f.svc.SetProfile(context.Background(), ptr(75), ptr(200), nil, nil)
 	if got := cda(); got != sim.DefaultCdA {
 		t.Errorf("without a height: %.4f, want the reference %.2f", got, sim.DefaultCdA)
 	}
-	p, err := f.svc.SetProfile(context.Background(), nil, nil, ptr(195))
+	p, err := f.svc.SetProfile(context.Background(), nil, nil, ptr(195), nil)
 	if err != nil || p.HeightCm != 195 || p.CdA != sim.CdAFor(1.95, 75) {
 		t.Fatalf("height 195: %+v, %v", p, err)
 	}
 	if got := cda(); got != sim.CdAFor(1.95, 75) {
 		t.Errorf("ride after height: %.4f, want %.4f", got, sim.CdAFor(1.95, 75))
 	}
-	f.svc.SetProfile(context.Background(), ptr(90), nil, nil)
+	f.svc.SetProfile(context.Background(), ptr(90), nil, nil, nil)
 	if got := cda(); got != sim.CdAFor(1.95, 90) {
 		t.Errorf("ride after weight: %.4f, want %.4f", got, sim.CdAFor(1.95, 90))
 	}
 	if m, _ := profile.Open(f.path); m.Get().HeightCm != 195 {
 		t.Error("height not saved")
 	}
-	if _, err := f.svc.SetProfile(context.Background(), nil, nil, ptr(300)); !errors.Is(err, profile.ErrOutOfRange) {
+	if _, err := f.svc.SetProfile(context.Background(), nil, nil, ptr(300), nil); !errors.Is(err, profile.ErrOutOfRange) {
 		t.Errorf("300 cm: %v", err)
 	}
 	f.svc.FixCdA(0.25)
@@ -156,7 +156,7 @@ func TestDragFromSize(t *testing.T) {
 
 func TestSetProfileChecksFirst(t *testing.T) {
 	f := setup(t, nil)
-	if _, err := f.svc.SetProfile(context.Background(), ptr(80), ptr(5000), nil); !errors.Is(err, profile.ErrOutOfRange) {
+	if _, err := f.svc.SetProfile(context.Background(), ptr(80), ptr(5000), nil, nil); !errors.Is(err, profile.ErrOutOfRange) {
 		t.Fatalf("FTP 5000 W: %v", err)
 	}
 	if p := f.state(); p.WeightKg != 0 || len(f.tr.users) != 0 {
@@ -185,5 +185,29 @@ func TestSuggestedFTP(t *testing.T) {
 		if got := SuggestedFTP(kg); got != want {
 			t.Errorf("SuggestedFTP(%v) = %v, want %v", kg, got, want)
 		}
+	}
+}
+
+// The view a 3D renderer shows is the rider's choice, saved with the
+// profile; chase until chosen.
+func TestViewPreference(t *testing.T) {
+	f := setup(t, nil)
+	if v := f.state().View; v != profile.ViewChase {
+		t.Fatalf("default view %q, want chase", v)
+	}
+	eyes := profile.ViewEyes
+	p, err := f.svc.SetProfile(context.Background(), nil, nil, nil, &eyes)
+	if err != nil || p.View != profile.ViewEyes || f.state().View != profile.ViewEyes {
+		t.Fatalf("eyes: %+v, %v", p, err)
+	}
+	if m, _ := profile.Open(f.path); m.Get().View != profile.ViewEyes {
+		t.Error("view not saved")
+	}
+	bad := "drone"
+	if _, err := f.svc.SetProfile(context.Background(), ptr(80), nil, nil, &bad); !errors.Is(err, profile.ErrOutOfRange) {
+		t.Fatalf("view drone: %v", err)
+	}
+	if p := f.state(); p.WeightKg != 0 || p.View != profile.ViewEyes {
+		t.Errorf("a bad view applied something: %+v", p)
 	}
 }

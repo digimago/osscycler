@@ -172,6 +172,7 @@ type Profile struct {
 	HeightForced     bool
 	CdAForced        bool   // -cda: the size of the rider doesn't apply
 	Path             string // where it is saved
+	View             string // a 3D renderer's view: "chase" or "eyes"
 }
 
 // Recording is the FIT recorder's status.

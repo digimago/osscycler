@@ -24,6 +24,48 @@ type Profile struct {
 	HeightCm      float64 `json:"height_cm,omitempty"`
 	DifficultyPct float64 `json:"difficulty_pct"`
 	BikeKg        float64 `json:"bike_kg"`
+	// View is how a 3D renderer shows the ride (ViewChase, ViewEyes; ""
+	// is the default, ViewChase).
+	View string `json:"view,omitempty"`
+}
+
+// Views a 3D renderer offers: behind and above the rider, or the rider's
+// own eyes.
+const (
+	ViewChase = "chase"
+	ViewEyes  = "eyes"
+)
+
+// ViewOrDefault is the view in effect.
+func (p Profile) ViewOrDefault() string {
+	if p.View == ViewEyes {
+		return ViewEyes
+	}
+	return ViewChase
+}
+
+// CheckView validates a view.
+func CheckView(v string) error {
+	if v != ViewChase && v != ViewEyes {
+		return rangeError(fmt.Sprintf("view %q: want %q or %q", v, ViewChase, ViewEyes))
+	}
+	return nil
+}
+
+// SetView changes the view and saves the profile; the profile in effect.
+func (m *Manager) SetView(v string) (Profile, error) {
+	if err := CheckView(v); err != nil {
+		return Profile{}, err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	next := m.saved
+	next.View = v
+	if err := m.save(next); err != nil {
+		return m.effective(), err
+	}
+	m.saved = next
+	return m.effective(), nil
 }
 
 // Defaults are a new rider's settings before onboarding: Zwift's trainer

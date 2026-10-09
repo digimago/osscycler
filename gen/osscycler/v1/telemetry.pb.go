@@ -1239,7 +1239,10 @@ type SetProfileRequest struct {
 	WeightKg *float64               `protobuf:"fixed64,1,opt,name=weight_kg,json=weightKg,proto3,oneof" json:"weight_kg,omitempty"`
 	FtpW     *float64               `protobuf:"fixed64,2,opt,name=ftp_w,json=ftpW,proto3,oneof" json:"ftp_w,omitempty"`
 	// Sizes the rider's drag on courses: 120-220 cm.
-	HeightCm      *float64 `protobuf:"fixed64,3,opt,name=height_cm,json=heightCm,proto3,oneof" json:"height_cm,omitempty"`
+	HeightCm *float64 `protobuf:"fixed64,3,opt,name=height_cm,json=heightCm,proto3,oneof" json:"height_cm,omitempty"`
+	// How a 3D renderer shows the ride: "chase" (behind and above the
+	// rider) or "eyes" (the rider's own view).
+	View          *string `protobuf:"bytes,4,opt,name=view,proto3,oneof" json:"view,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1293,6 +1296,13 @@ func (x *SetProfileRequest) GetHeightCm() float64 {
 		return *x.HeightCm
 	}
 	return 0
+}
+
+func (x *SetProfileRequest) GetView() string {
+	if x != nil && x.View != nil {
+		return *x.View
+	}
+	return ""
 }
 
 type SetProfileResponse struct {
@@ -3991,7 +4001,9 @@ type RiderProfile struct {
 	Cda          float64 `protobuf:"fixed64,12,opt,name=cda,proto3" json:"cda,omitempty"`
 	HeightForced bool    `protobuf:"varint,13,opt,name=height_forced,json=heightForced,proto3" json:"height_forced,omitempty"`
 	// Set by -cda on the core: the rider's size doesn't apply this run.
-	CdaForced     bool `protobuf:"varint,14,opt,name=cda_forced,json=cdaForced,proto3" json:"cda_forced,omitempty"`
+	CdaForced bool `protobuf:"varint,14,opt,name=cda_forced,json=cdaForced,proto3" json:"cda_forced,omitempty"`
+	// The rider's view in a 3D renderer: "chase" (the default) or "eyes".
+	View          string `protobuf:"bytes,15,opt,name=view,proto3" json:"view,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4122,6 +4134,13 @@ func (x *RiderProfile) GetCdaForced() bool {
 		return x.CdaForced
 	}
 	return false
+}
+
+func (x *RiderProfile) GetView() string {
+	if x != nil {
+		return x.View
+	}
+	return ""
 }
 
 // The core records every ride to a FIT file on its own disk, whether or
@@ -5256,16 +5275,18 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\x16ExportActivityResponse\x12\x1d\n" +
 	"\n" +
 	"size_bytes\x18\x01 \x01(\x03R\tsizeBytes\x12\x14\n" +
-	"\x05chunk\x18\x02 \x01(\fR\x05chunk\"\x97\x01\n" +
+	"\x05chunk\x18\x02 \x01(\fR\x05chunk\"\xb9\x01\n" +
 	"\x11SetProfileRequest\x12 \n" +
 	"\tweight_kg\x18\x01 \x01(\x01H\x00R\bweightKg\x88\x01\x01\x12\x18\n" +
 	"\x05ftp_w\x18\x02 \x01(\x01H\x01R\x04ftpW\x88\x01\x01\x12 \n" +
-	"\theight_cm\x18\x03 \x01(\x01H\x02R\bheightCm\x88\x01\x01B\f\n" +
+	"\theight_cm\x18\x03 \x01(\x01H\x02R\bheightCm\x88\x01\x01\x12\x17\n" +
+	"\x04view\x18\x04 \x01(\tH\x03R\x04view\x88\x01\x01B\f\n" +
 	"\n" +
 	"_weight_kgB\b\n" +
 	"\x06_ftp_wB\f\n" +
 	"\n" +
-	"_height_cm\"J\n" +
+	"_height_cmB\a\n" +
+	"\x05_view\"J\n" +
 	"\x12SetProfileResponse\x124\n" +
 	"\aprofile\x18\x01 \x01(\v2\x1a.osscycler.v1.RiderProfileR\aprofile\"\x14\n" +
 	"\x12ListResultsRequest\"I\n" +
@@ -5450,7 +5471,7 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\x04mode\x18\x01 \x01(\x0e2\x19.osscycler.v1.ControlModeR\x04mode\x12\x16\n" +
 	"\x06target\x18\x02 \x01(\x01R\x06target\x12\x1d\n" +
 	"\n" +
-	"changed_ns\x18\x03 \x01(\x03R\tchangedNs\"\xbd\x03\n" +
+	"changed_ns\x18\x03 \x01(\x03R\tchangedNs\"\xd1\x03\n" +
 	"\fRiderProfile\x12\x1a\n" +
 	"\bcomplete\x18\x01 \x01(\bR\bcomplete\x12\x1b\n" +
 	"\tweight_kg\x18\x02 \x01(\x01R\bweightKg\x12\x13\n" +
@@ -5468,7 +5489,8 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\x03cda\x18\f \x01(\x01R\x03cda\x12#\n" +
 	"\rheight_forced\x18\r \x01(\bR\fheightForced\x12\x1d\n" +
 	"\n" +
-	"cda_forced\x18\x0e \x01(\bR\tcdaForced\"\xbc\x01\n" +
+	"cda_forced\x18\x0e \x01(\bR\tcdaForced\x12\x12\n" +
+	"\x04view\x18\x0f \x01(\tR\x04view\"\xbc\x01\n" +
 	"\tRecording\x12\x16\n" +
 	"\x06active\x18\x01 \x01(\bR\x06active\x12\x16\n" +
 	"\x06paused\x18\x02 \x01(\bR\x06paused\x12\x12\n" +

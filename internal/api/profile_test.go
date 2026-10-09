@@ -13,10 +13,19 @@ import (
 	"github.com/digimago/osscycler/internal/telemetry"
 )
 
-type stubProfile struct{ weights, ftps, heights []*float64 }
+type stubProfile struct {
+	weights, ftps, heights []*float64
+	views                  []*string
+}
 
-func (s *stubProfile) SetProfile(_ context.Context, w, f, h *float64) (telemetry.Profile, error) {
-	s.weights, s.ftps, s.heights = append(s.weights, w), append(s.ftps, f), append(s.heights, h)
+func (s *stubProfile) SetProfile(_ context.Context, w, f, h *float64, v *string) (telemetry.Profile, error) {
+	s.weights, s.ftps, s.heights, s.views = append(s.weights, w), append(s.ftps, f), append(s.heights, h), append(s.views, v)
+	if v != nil {
+		if err := profile.CheckView(*v); err != nil {
+			return telemetry.Profile{}, err
+		}
+		return telemetry.Profile{Known: true, View: *v}, nil
+	}
 	if f != nil && *f > profile.MaxFTPW {
 		return telemetry.Profile{}, profile.Check(profile.FTP, *f)
 	}
@@ -56,6 +65,14 @@ func TestSetProfile(t *testing.T) {
 	f := 5000.0
 	if _, err := cl.SetProfile(ctx, &pb.SetProfileRequest{FtpW: &f}); status.Code(err) != codes.InvalidArgument {
 		t.Errorf("FTP 5000: %v", err)
+	}
+	v := "eyes"
+	if r, err := cl.SetProfile(ctx, &pb.SetProfileRequest{View: &v}); err != nil || r.GetProfile().GetView() != "eyes" {
+		t.Errorf("view eyes: %v, %v", r, err)
+	}
+	v = "drone"
+	if _, err := cl.SetProfile(ctx, &pb.SetProfileRequest{View: &v}); status.Code(err) != codes.InvalidArgument {
+		t.Errorf("view drone: %v", err)
 	}
 	// A refused start says why, as a precondition any renderer can show.
 	if _, err := cl.StartRide(ctx, &pb.StartRideRequest{CourseId: "x"}); status.Code(err) != codes.FailedPrecondition {

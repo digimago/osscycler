@@ -1,0 +1,5 @@
+# Godot's import cache and the C# build output
+.godot/
+bin/
+obj/
+*.user

@@ -59,6 +59,8 @@ type Course struct {
 	// The track as recorded (after merging standstills), for positions:
 	// distance along it and degrees.
 	trackDist, lat, lon []float64
+	// frame: Project's origin when not the start (InFrame).
+	frame *[2]float64
 }
 
 // New builds a course from track points, which need elevation.
@@ -191,11 +193,51 @@ func (c *Course) Track() (east, north []float64) {
 	return east, north
 }
 
-// Project maps a point to metres east and north of the start, as Track
-// does.
+// Vertices returns the GPX track's own points (after merging standstills)
+// with their distance along the course, in metres east and north of the
+// start: the line Position follows, for renderers that smooth its
+// corners.
+func (c *Course) Vertices() (dist, east, north []float64) {
+	dist = append([]float64(nil), c.trackDist...)
+	east, north = make([]float64, len(dist)), make([]float64, len(dist))
+	for i := range dist {
+		east[i], north[i] = c.Project(c.lat[i], c.lon[i])
+	}
+	return dist, east, north
+}
+
+// Origin is where Project's metres count from: the start, or the frame
+// InFrame gave.
+func (c *Course) Origin() (lat, lon float64) {
+	if c.frame != nil {
+		return c.frame[0], c.frame[1]
+	}
+	return c.lat[0], c.lon[0]
+}
+
+// InFrame is the course with Project, Unproject, Track and Vertices in
+// metres from (lat, lon) instead of its start: courses in one frame share
+// its grids (the world builder's regional frame). The rest is c's own.
+func (c *Course) InFrame(lat, lon float64) *Course {
+	cc := *c
+	cc.frame = &[2]float64{lat, lon}
+	return &cc
+}
+
+// Project maps a point to metres east and north of the origin (the start
+// unless InFrame), as Track does.
 func (c *Course) Project(lat, lon float64) (east, north float64) {
-	kx := metresPerDegree * math.Cos(c.lat[0]*math.Pi/180)
-	return (lon - c.lon[0]) * kx, (lat - c.lat[0]) * metresPerDegree
+	lat0, lon0 := c.Origin()
+	kx := metresPerDegree * math.Cos(lat0*math.Pi/180)
+	return (lon - lon0) * kx, (lat - lat0) * metresPerDegree
+}
+
+// Unproject is the inverse of Project: the point east and north metres
+// from the origin.
+func (c *Course) Unproject(east, north float64) (lat, lon float64) {
+	lat0, lon0 := c.Origin()
+	kx := metresPerDegree * math.Cos(lat0*math.Pi/180)
+	return lat0 + north/metresPerDegree, lon0 + east/kx
 }
 
 // despike applies a repeated running median: five points wide in the

@@ -1,5 +1,7 @@
 # nfpm config for the .deb and .rpm packages; scripts/release.sh fills in
-# ${ARCH}, ${PKG_VERSION} and ${BUILD_DIR} for each architecture.
+# ${ARCH}, ${PKG_VERSION}, ${BUILD_DIR}, ${WORK} and ${DATA_3D} for each
+# architecture, and removes the 3D view's lines (3d-begin .. 3d-end) when
+# the release has none.
 name: osscycler
 arch: ${ARCH}
 platform: linux
@@ -10,12 +12,34 @@ priority: optional
 maintainer: digimago
 description: |
   Self-hosted indoor cycling: a core that drives an ANT+ FE-C smart trainer
-  (course rides, ERG workouts, FIT recording) and a terminal renderer.
+  (course rides, ERG workouts, FIT recording), a 3D view of the ride and a
+  terminal view, and the builder of the 3D worlds.
 homepage: https://github.com/digimago/osscycler
 # The GPL goes with every copy of the binaries: where each system keeps a
 # package's license (Debian: the copyright file; RPM: %license).
 license: GPL-3.0-only
 contents:
+  - src: ${BUILD_DIR}/osscycler
+    dst: /usr/bin/osscycler
+  - src: ${BUILD_DIR}/osscycler-world
+    dst: /usr/bin/osscycler-world
+  - src: ${WORK}/worlds
+    dst: /usr/share/osscycler/worlds
+    type: tree
+  # A launcher in the desktop's app menu: osscycler, the 3D view with its core.
+  - src: deploy/packaging/osscycler.desktop
+    dst: /usr/share/applications/osscycler.desktop
+  - src: deploy/packaging/osscycler.svg
+    dst: /usr/share/icons/hicolor/scalable/apps/osscycler.svg
+  - src: ${WORK}/THIRD_PARTY_NOTICES.txt
+    dst: /usr/share/doc/osscycler/THIRD_PARTY_NOTICES.txt
+  # 3d-begin
+  - src: ${BUILD_DIR}/osscycler-3d
+    dst: /usr/lib/osscycler/osscycler-3d
+  - src: ${BUILD_DIR}/${DATA_3D}
+    dst: /usr/lib/osscycler/${DATA_3D}
+    type: tree
+  # 3d-end
   - src: ${BUILD_DIR}/osscycler-core
     dst: /usr/bin/osscycler-core
   - src: ${BUILD_DIR}/osscycler-tui

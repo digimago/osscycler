@@ -1,6 +1,7 @@
 package scenery
 
 import (
+	"fmt"
 	"math"
 	"testing"
 
@@ -119,6 +120,85 @@ func TestHumanTouches(t *testing.T) {
 	if len(sc.Signs) != 1 || sc.Signs[0].Name != "Dorp" || !near(sc.Signs[0].DistanceM, 1200, 10) {
 		t.Errorf("signs %+v", sc.Signs)
 	}
+
+	// For the 3D world: the branches' lines and the car park's outline.
+	for _, j := range sc.Junctions {
+		for _, b := range j.Branches {
+			l := b.Line
+			if len(l) < 2 {
+				t.Fatalf("branch at %.0f m without a line", j.DistanceM)
+			}
+			end := math.Hypot(l[len(l)-1][0]-l[0][0], l[len(l)-1][1]-l[0][1])
+			if !near(end, b.LengthM, 1) || !near(bearing(l[0][0], l[0][1], l[len(l)-1][0], l[len(l)-1][1]), b.BearingDeg, 3) {
+				t.Errorf("branch at %.0f m: line ends %.0f m out at %.0f°, want %.0f m at %.0f°", j.DistanceM, end,
+					bearing(l[0][0], l[0][1], l[len(l)-1][0], l[len(l)-1][1]), b.LengthM, b.BearingDeg)
+			}
+		}
+	}
+	if o := sc.Parking[0].Outline; len(o) != 4 || !near(o[0][0], 10, 0.5) || !near(o[2][1], 360, 0.5) || sc.Parking[0].Surface != SurfaceAsphalt {
+		t.Errorf("car park outline %v, surface %v", o, sc.Parking[0].Surface)
+	}
+}
+
+func TestRouteRoads(t *testing.T) {
+	c := lCourse(t)
+	d := &Data{Elements: []Element{
+		// North on klinkers, 6 m wide, a sidewalk on the right and a cycle
+		// lane on the left, drawn the way the route rides.
+		way(1, map[string]string{"highway": "residential", "name": "Noordweg", "surface": "paving_stones", "width": "6",
+			"sidewalk": "right", "cycleway:left": "lane"}, []int64{10, 11}, [2]float64{0, -50}, [2]float64{0, 1000}),
+		// Then east on a road drawn westwards: its "left" sidewalk is on
+		// the route's right; its embankment carries over.
+		way(2, map[string]string{"highway": "tertiary", "name": "Oostweg", "sidewalk": "left", "embankment": "yes"},
+			[]int64{21, 11}, [2]float64{1100, 1000}, [2]float64{0, 1000}),
+	}}
+	rs := Build(c, d).Roads
+	if len(rs) != 2 {
+		t.Fatalf("%d stretches, want 2: %+v", len(rs), rs)
+	}
+	n, o := rs[0], rs[1]
+	if n.Name != "Noordweg" || n.FromM != 0 || math.Abs(n.ToM-1000) > 10 || n.WidthM != 6 || n.Surface != SurfacePaving ||
+		n.Sidewalk != [2]bool{false, true} || n.CycleLane != [2]bool{true, false} || n.Embankment {
+		t.Errorf("Noordweg: %+v", n)
+	}
+	if o.Name != "Oostweg" || o.FromM != n.ToM || o.ToM != c.Distance || o.WidthM != 6.5 || o.Surface != SurfaceAsphalt ||
+		o.Sidewalk != [2]bool{false, true} || !o.Embankment {
+		t.Errorf("Oostweg: %+v", o)
+	}
+	// The same roads as the 3D world's ways, each by its own direction,
+	// and the route on them.
+	sc := Build(c, d)
+	if len(sc.Ways) != 2 || sc.Ways[1].Sidewalk != [2]bool{true, false} || sc.Ways[0].CycleLane != [2]bool{true, false} || len(sc.Ways[1].Line) != 2 {
+		t.Fatalf("ways %+v", sc.Ways)
+	}
+	on := func(d float64) int { return sc.RouteOn[int(math.Round(d/sc.RouteStepM))] }
+	if on(500) != 0 || on(1500) != 1 || on(1000) < 0 {
+		t.Errorf("the route on ways %d, %d, %d at 500, 1000, 1500 m; want 0, a road, 1", on(500), on(1000), on(1500))
+	}
+}
+
+func TestSidewalksFromLandUse(t *testing.T) {
+	// An untagged street, built up on the left from 300 to 600 m: a
+	// sidewalk there on the left only. Beyond the map's roads: a path.
+	c := straightCourse(t)
+	d := &Data{Elements: []Element{
+		way(1, map[string]string{"highway": "residential"}, []int64{1, 2}, [2]float64{0, -50}, [2]float64{0, 800}),
+		{Type: "way", ID: 9, Tags: map[string]string{"landuse": "residential"}, Geometry: rect(-120, 300, -4, 600)},
+	}}
+	rs := Build(c, d).Roads
+	var got []string
+	for _, r := range rs {
+		got = append(got, fmt.Sprintf("%.0f-%.0f %s %v", r.FromM, r.ToM, r.Class, r.Sidewalk))
+	}
+	want := "[0-300 residential [false false] 300-600 residential [true false] 600-800 residential [false false] 800-1000  [false false]]"
+	if g := fmt.Sprint(got); g != want {
+		// Boundaries may move a sample (5 m) with the smoothing.
+		t.Logf("stretches: %s", g)
+		if len(rs) != 4 || !rs[1].Sidewalk[0] || rs[1].Sidewalk[1] || rs[0].Sidewalk[0] || rs[2].Sidewalk[0] ||
+			math.Abs(rs[1].FromM-300) > 20 || math.Abs(rs[1].ToM-600) > 20 || rs[3].Class != "" || rs[3].WidthM != pathWidthM {
+			t.Errorf("want %s", want)
+		}
+	}
 }
 
 func TestTurnAtATJunction(t *testing.T) {
@@ -158,5 +238,28 @@ func TestRoadWidth(t *testing.T) {
 		if w := roadWidth(tc.class, tc.tags); w != tc.want {
 			t.Errorf("%s %v: %.1f m, want %.1f", tc.class, tc.tags, w, tc.want)
 		}
+	}
+}
+
+func TestNoSidewalkOnADivideOrWhereWalkersMayNot(t *testing.T) {
+	// All built up. A main road north (foot=no); 9 m east of it a service
+	// road, untagged; a lone street 100 m east.
+	built := func(x, y float64) bool { return true }
+	mk := func(x float64, class string, tags map[string]string) *road {
+		return &road{x: []float64{x, x}, y: []float64{0, 200}, class: class, widthM: roadWidth(class, tags), tags: tags}
+	}
+	main := mk(0, "secondary", map[string]string{"foot": "no"})
+	service := mk(9, "residential", map[string]string{})
+	street := mk(100, "residential", map[string]string{})
+	ws := ways([]*road{main, service, street}, built)
+	// Going north, left is west.
+	if ws[0].Sidewalk != [2]bool{false, false} {
+		t.Errorf("main road (foot=no) sidewalks %v, want none", ws[0].Sidewalk)
+	}
+	if ws[1].Sidewalk != [2]bool{false, true} {
+		t.Errorf("service road sidewalks %v, want only on the side away from the main road", ws[1].Sidewalk)
+	}
+	if ws[2].Sidewalk != [2]bool{true, true} {
+		t.Errorf("lone street sidewalks %v, want both", ws[2].Sidewalk)
 	}
 }

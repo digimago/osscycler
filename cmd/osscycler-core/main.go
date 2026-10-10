@@ -276,6 +276,9 @@ func run() error {
 		}, rides.Courses())
 		svc.Scenery = scenes
 	}
+	if *courseDir != "" {
+		svc.CourseFiles = courseFiles{dir: *courseDir, courses: rides.Courses()}
+	}
 	if workouts != nil {
 		svc.Workouts = riders.Workouts()
 	}

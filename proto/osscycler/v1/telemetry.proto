@@ -90,6 +90,12 @@ service TelemetryService {
   // then chunks follow in order. Unknown names are NOT_FOUND.
   rpc ExportActivity(ExportActivityRequest) returns (stream ExportActivityResponse);
 
+  // GetCourseFile returns a course's GPX file, so a client can build the
+  // course's 3D world where it draws it (the core, perhaps a Pi by the
+  // trainer, builds none). Built-in tracks and included routes have no
+  // file to send (clients have them): NOT_FOUND, as unknown courses.
+  rpc GetCourseFile(GetCourseFileRequest) returns (GetCourseFileResponse);
+
   // SetTrainerControl takes manual control of the trainer outside course
   // rides and workouts, or changes its target: ERG watts (25-1000), a
   // grade (-10 % to the trainer's maximum) or a brake level (0-100 %).
@@ -388,6 +394,19 @@ message Course {
   repeated Junction junctions = 18;
   repeated ParkingArea parking = 19;
   repeated PlaceSign place_signs = 20;
+  // 21 was the world's build status, from when the core built worlds.
+  reserved 21;
+  reserved "world";
+}
+
+message GetCourseFileRequest {
+  string course_id = 1;
+}
+
+message GetCourseFileResponse {
+  // The file's name in the core's courses directory (<course id>.gpx).
+  string name = 1;
+  bytes data = 2;
 }
 
 message Junction {

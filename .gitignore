@@ -10,8 +10,9 @@ local.mk
 # Editor settings
 .vscode/
 
-# OpenStreetMap data cached next to the courses
+# OpenStreetMap data and elevation tiles cached next to the courses
 .osm/
+.dem/
 # A rider profile written in the repo root by a local run
 /profile.json
 # osscycler's own folder layout (see home): if a core or TUI ever runs with
@@ -21,3 +22,9 @@ local.mk
 /workouts/
 /api-token
 /tui.json
+
+# Claude Code: personal, per-machine settings
+.claude/settings.local.json
+
+# Python bytecode (the world-faults skill's scripts)
+__pycache__/

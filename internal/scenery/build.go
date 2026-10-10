@@ -52,6 +52,15 @@ type Scenery struct {
 	Junctions []Junction
 	Parking   []Parking
 	Signs     []PlaceSign
+	// Roads is what the route rides on, stretch by stretch, from start to
+	// finish (for the 3D world; the TUI draws its own road).
+	Roads []RoadStretch
+	// Ways are the roads of the map near the route, as the 3D world draws
+	// them; RouteOn says which one the route rides on every RouteStepM
+	// (an index into Ways, -1 where it rides on none of them).
+	Ways       []Way
+	RouteOn    []int
+	RouteStepM float64
 }
 
 const (
@@ -86,7 +95,14 @@ func Build(c *course.Course, d *Data) *Scenery {
 
 	r := sampleRoute(c)
 	roads := roadsOf(c, d)
-	sc.Junctions = junctions(r, roads, ownRoads(r, roads))
+	own := ownRoads(r, roads)
+	sc.Junctions = junctions(r, roads, own)
+	sc.Ways = ways(roads, func(x, y float64) bool { land, _ := lm.Area(x, y); return land == LandBuilt })
+	sc.RouteOn, sc.RouteStepM = bridgeCorners(own), r[len(r)-1].d/float64(len(r)-1)
+	sc.Roads = routeRoads(r, roads, own, func(d float64, side int) bool {
+		i := max(0, min(int(math.Round(d/c.Spacing)), n-1))
+		return sc.Land[4*i+1+side] == LandBuilt // left near, right near
+	})
 	var entrances []Junction
 	sc.Parking, entrances = parkings(c, d, r, roads, east, north)
 	for _, j := range entrances {
@@ -144,15 +160,46 @@ func (m *LandMap) Area(x, y float64) (Land, int) {
 	return best, id
 }
 
+// LeafType is area id's leaf_type tag ("needleleaved", "broadleaved",
+// "mixed"), "" when the map doesn't say.
+func (m *LandMap) LeafType(id int) string {
+	if id < 0 || id >= len(m.polys) {
+		return ""
+	}
+	return m.polys[id].leaf
+}
+
 // Edges are the outline of area id, as x0, y0, x1, y1 segments (rings of
 // a multipolygon, inner ones too, possibly in pieces).
 func (m *LandMap) Edges(id int) [][4]float64 { return m.polys[id].edges }
+
+// Waters lists the ids of the water areas.
+func (m *LandMap) Waters() []int {
+	var out []int
+	for i, p := range m.polys {
+		if p.land == LandWater {
+			out = append(out, i)
+		}
+	}
+	return out
+}
+
+// Size is area id's area in m² and its outline's length in m (rings of a
+// multipolygon counted alike: holes add to the area).
+func (m *LandMap) Size(id int) (area, outline float64) {
+	for _, e := range m.polys[id].edges {
+		area += e[0]*e[3] - e[2]*e[1]
+		outline += math.Hypot(e[2]-e[0], e[3]-e[1])
+	}
+	return math.Abs(area) / 2, outline
+}
 
 // polygon is an area in metres around the start, as edges: rings of a
 // multipolygon may come in pieces, and even-odd counting over all of them
 // still tells inside from outside.
 type polygon struct {
 	land                   Land
+	leaf                   string // OpenStreetMap's leaf_type (forests)
 	edges                  [][4]float64
 	minX, minY, maxX, maxY float64
 	area                   float64 // of the bounding box; smaller wins
@@ -195,7 +242,7 @@ func polygons(c *course.Course, d *Data) []*polygon {
 		if land == LandNone {
 			continue
 		}
-		p := &polygon{land: land, minX: math.Inf(1), minY: math.Inf(1), maxX: math.Inf(-1), maxY: math.Inf(-1)}
+		p := &polygon{land: land, leaf: el.Tags["leaf_type"], minX: math.Inf(1), minY: math.Inf(1), maxX: math.Inf(-1), maxY: math.Inf(-1)}
 		add := func(ring []LatLon) {
 			for j := 1; j < len(ring); j++ {
 				x0, y0 := c.Project(ring[j-1].Lat, ring[j-1].Lon)

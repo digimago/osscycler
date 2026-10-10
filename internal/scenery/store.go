@@ -350,6 +350,13 @@ func (s *Store) readCached(e *entry) (*Data, []bool, []error) {
 // after the other when fetching is on. Stretches that couldn't be had are
 // left out, and the error says which.
 func (s *Store) Load(ctx context.Context, c *course.Course) (*Data, error) {
+	return s.LoadProgress(ctx, c, nil)
+}
+
+// LoadProgress is Load telling progress how many stretches are there of
+// how many as it goes (fetch: how many of those it had to fetch so far,
+// and how many are left to fetch).
+func (s *Store) LoadProgress(ctx context.Context, c *course.Course, progress func(done, total, toFetch int)) (*Data, error) {
 	e := s.entryFor(c)
 	d, have, errs := s.readCached(e)
 	if !s.cfg.Fetch {
@@ -361,11 +368,28 @@ func (s *Store) Load(ctx context.Context, c *course.Course) (*Data, error) {
 		return orEmpty(d), errors.Join(errs...)
 	}
 	fetched := false
+	done, toFetch := 0, 0
+	for _, ok := range have {
+		if ok {
+			done++
+		} else {
+			toFetch++
+		}
+	}
+	if progress != nil {
+		progress(done, len(have), toFetch)
+	}
 	for k, ok := range have {
 		if ok {
 			continue
 		}
-		if _, err := s.fetchStretch(ctx, e, k); err != nil {
+		_, err := s.fetchStretch(ctx, e, k)
+		done++
+		toFetch--
+		if progress != nil {
+			progress(done, len(have), toFetch)
+		}
+		if err != nil {
 			errs = append(errs, fmt.Errorf("stretch %d: %w", k, err))
 			continue
 		}
@@ -375,6 +399,18 @@ func (s *Store) Load(ctx context.Context, c *course.Course) (*Data, error) {
 		d, _, _ = s.readCached(e)
 	}
 	return orEmpty(d), errors.Join(errs...)
+}
+
+// Missing is how many of c's stretches aren't cached (to be fetched):
+// for a build's estimate of the time left.
+func (s *Store) Missing(c *course.Course) int {
+	n := 0
+	for _, p := range s.entryFor(c).parts {
+		if _, err := os.Stat(p.path); err != nil {
+			n++
+		}
+	}
+	return n
 }
 
 func orEmpty(d *Data) *Data {

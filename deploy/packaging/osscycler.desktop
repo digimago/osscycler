@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=osscycler
+GenericName=Indoor cycling
+Comment=Ride your smart trainer: courses, workouts and 3D worlds
+Exec=osscycler
+Icon=osscycler
+Terminal=false
+Categories=Game;SportsGame;
+Keywords=cycling;trainer;ANT+;indoor;bike;

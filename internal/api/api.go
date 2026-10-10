@@ -129,6 +129,15 @@ type Services struct {
 	Activities Activities
 	Control    Control
 	Scenery    Scenery
+	// CourseFiles reads a course's GPX file (for clients that build its
+	// world); nil: none to give.
+	CourseFiles CourseFiles
+}
+
+// CourseFiles reads courses' files: the GPX of course id, or an error
+// matching os.ErrNotExist for a course without one.
+type CourseFiles interface {
+	File(courseID string) (name string, data []byte, err error)
 }
 
 // Scenery is what lies along each course, from map data; nil while
@@ -162,7 +171,7 @@ func NewServer(hub *telemetry.Hub, svc Services, token string, opts ...grpc.Serv
 		}),
 	)
 	s := grpc.NewServer(opts...)
-	pb.RegisterTelemetryServiceServer(s, &telemetryServer{hub: hub, cal: svc.Calibrator, rides: svc.Rides, workouts: svc.Workouts, recorder: svc.Recorder, history: svc.History, profile: svc.Profile, activities: svc.Activities, control: svc.Control, scenery: svc.Scenery, maxHz: DefaultRateHz})
+	pb.RegisterTelemetryServiceServer(s, &telemetryServer{hub: hub, cal: svc.Calibrator, rides: svc.Rides, workouts: svc.Workouts, recorder: svc.Recorder, history: svc.History, profile: svc.Profile, activities: svc.Activities, control: svc.Control, scenery: svc.Scenery, courseFiles: svc.CourseFiles, maxHz: DefaultRateHz})
 	return s, nil
 }
 
@@ -178,17 +187,18 @@ func authorize(ctx context.Context, token string) error {
 
 type telemetryServer struct {
 	pb.UnimplementedTelemetryServiceServer
-	hub        *telemetry.Hub
-	cal        telemetry.Calibrator // nil: calibration unavailable
-	rides      Rides                // nil: no course rides
-	workouts   Workouts             // nil: no workout library
-	recorder   Recorder             // nil: rides aren't recorded
-	history    History              // nil: no history
-	profile    Profile              // nil: no rider profile
-	activities Activities           // nil: nothing recorded
-	control    Control              // nil: no manual control
-	scenery    Scenery              // nil: no map data
-	maxHz      uint32
+	hub         *telemetry.Hub
+	cal         telemetry.Calibrator // nil: calibration unavailable
+	rides       Rides                // nil: no course rides
+	workouts    Workouts             // nil: no workout library
+	recorder    Recorder             // nil: rides aren't recorded
+	history     History              // nil: no history
+	profile     Profile              // nil: no rider profile
+	activities  Activities           // nil: nothing recorded
+	control     Control              // nil: no manual control
+	scenery     Scenery              // nil: no map data
+	courseFiles CourseFiles          // nil: no course files to give
+	maxHz       uint32
 }
 
 func (s *telemetryServer) SetTrainerControl(_ context.Context, req *pb.SetTrainerControlRequest) (*pb.SetTrainerControlResponse, error) {
@@ -407,6 +417,21 @@ func (s *telemetryServer) StartRide(_ context.Context, req *pb.StartRideRequest)
 		s.scenery.Want(req.GetCourseId(), from)
 	}
 	return &pb.StartRideResponse{}, nil
+}
+
+func (s *telemetryServer) GetCourseFile(_ context.Context, req *pb.GetCourseFileRequest) (*pb.GetCourseFileResponse, error) {
+	id := req.GetCourseId()
+	if s.courseFiles == nil {
+		return nil, status.Errorf(codes.NotFound, "no file for course %q", id)
+	}
+	name, data, err := s.courseFiles.File(id)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return nil, status.Errorf(codes.NotFound, "no file for course %q", id)
+	case err != nil:
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return &pb.GetCourseFileResponse{Name: name, Data: data}, nil
 }
 
 func (s *telemetryServer) SetDifficulty(_ context.Context, req *pb.SetDifficultyRequest) (*pb.SetDifficultyResponse, error) {

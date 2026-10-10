@@ -179,3 +179,49 @@ func TestPosition(t *testing.T) {
 		}
 	}
 }
+
+func TestVerticesArePositions(t *testing.T) {
+	c := Tracks()[1] // the figure of eight: many points, a loop
+	dist, east, north := c.Vertices()
+	if len(dist) < 10 || dist[0] != 0 {
+		t.Fatalf("%d vertices from %v", len(dist), dist[:1])
+	}
+	for i := range dist {
+		e, n := c.Project(c.Position(dist[i]))
+		if math.Abs(e-east[i]) > 1e-6 || math.Abs(n-north[i]) > 1e-6 {
+			t.Fatalf("vertex %d at %.2f, %.2f; Position puts it at %.2f, %.2f", i, east[i], north[i], e, n)
+		}
+	}
+}
+
+// InFrame moves only where Project's metres count from: the same point
+// maps to the same lat, lon either way, and two courses in one frame put
+// a point at the same metres.
+func TestInFrame(t *testing.T) {
+	mk := func(lat0 float64) *Course {
+		var pts []Point
+		for i := range 50 {
+			pts = append(pts, Point{Lat: lat0 + float64(i)*0.0001, Lon: 5.01, Ele: 10})
+		}
+		c, err := New("c", "C", pts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	a, b := mk(52.01).InFrame(52, 5), mk(52.02).InFrame(52, 5)
+	if lat, lon := a.Origin(); lat != 52 || lon != 5 {
+		t.Errorf("origin %v, %v", lat, lon)
+	}
+	ea, na := a.Project(52.015, 5.012)
+	eb, nb := b.Project(52.015, 5.012)
+	if math.Abs(ea-eb) > 1e-9 || math.Abs(na-nb) > 1e-9 {
+		t.Errorf("one point, two places: %.3f, %.3f and %.3f, %.3f", ea, na, eb, nb)
+	}
+	if lat, lon := a.Unproject(ea, na); math.Abs(lat-52.015) > 1e-12 || math.Abs(lon-5.012) > 1e-12 {
+		t.Errorf("round trip: %v, %v", lat, lon)
+	}
+	if e, n := mk(52.01).Project(52.01, 5.01); e != 0 || n != 0 {
+		t.Errorf("without a frame the start is 0, 0: %v, %v", e, n)
+	}
+}

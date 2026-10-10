@@ -38,6 +38,7 @@ const (
 	TelemetryService_SetProfile_FullMethodName            = "/osscycler.v1.TelemetryService/SetProfile"
 	TelemetryService_ListActivities_FullMethodName        = "/osscycler.v1.TelemetryService/ListActivities"
 	TelemetryService_ExportActivity_FullMethodName        = "/osscycler.v1.TelemetryService/ExportActivity"
+	TelemetryService_GetCourseFile_FullMethodName         = "/osscycler.v1.TelemetryService/GetCourseFile"
 	TelemetryService_SetTrainerControl_FullMethodName     = "/osscycler.v1.TelemetryService/SetTrainerControl"
 	TelemetryService_ReleaseTrainerControl_FullMethodName = "/osscycler.v1.TelemetryService/ReleaseTrainerControl"
 	TelemetryService_SetPaused_FullMethodName             = "/osscycler.v1.TelemetryService/SetPaused"
@@ -115,6 +116,11 @@ type TelemetryServiceClient interface {
 	// another machine can save it: the first message carries the size,
 	// then chunks follow in order. Unknown names are NOT_FOUND.
 	ExportActivity(ctx context.Context, in *ExportActivityRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ExportActivityResponse], error)
+	// GetCourseFile returns a course's GPX file, so a client can build the
+	// course's 3D world where it draws it (the core, perhaps a Pi by the
+	// trainer, builds none). Built-in tracks and included routes have no
+	// file to send (clients have them): NOT_FOUND, as unknown courses.
+	GetCourseFile(ctx context.Context, in *GetCourseFileRequest, opts ...grpc.CallOption) (*GetCourseFileResponse, error)
 	// SetTrainerControl takes manual control of the trainer outside course
 	// rides and workouts, or changes its target: ERG watts (25-1000), a
 	// grade (-10 % to the trainer's maximum) or a brake level (0-100 %).
@@ -353,6 +359,16 @@ func (c *telemetryServiceClient) ExportActivity(ctx context.Context, in *ExportA
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type TelemetryService_ExportActivityClient = grpc.ServerStreamingClient[ExportActivityResponse]
 
+func (c *telemetryServiceClient) GetCourseFile(ctx context.Context, in *GetCourseFileRequest, opts ...grpc.CallOption) (*GetCourseFileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetCourseFileResponse)
+	err := c.cc.Invoke(ctx, TelemetryService_GetCourseFile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *telemetryServiceClient) SetTrainerControl(ctx context.Context, in *SetTrainerControlRequest, opts ...grpc.CallOption) (*SetTrainerControlResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SetTrainerControlResponse)
@@ -464,6 +480,11 @@ type TelemetryServiceServer interface {
 	// another machine can save it: the first message carries the size,
 	// then chunks follow in order. Unknown names are NOT_FOUND.
 	ExportActivity(*ExportActivityRequest, grpc.ServerStreamingServer[ExportActivityResponse]) error
+	// GetCourseFile returns a course's GPX file, so a client can build the
+	// course's 3D world where it draws it (the core, perhaps a Pi by the
+	// trainer, builds none). Built-in tracks and included routes have no
+	// file to send (clients have them): NOT_FOUND, as unknown courses.
+	GetCourseFile(context.Context, *GetCourseFileRequest) (*GetCourseFileResponse, error)
 	// SetTrainerControl takes manual control of the trainer outside course
 	// rides and workouts, or changes its target: ERG watts (25-1000), a
 	// grade (-10 % to the trainer's maximum) or a brake level (0-100 %).
@@ -550,6 +571,9 @@ func (UnimplementedTelemetryServiceServer) ListActivities(context.Context, *List
 }
 func (UnimplementedTelemetryServiceServer) ExportActivity(*ExportActivityRequest, grpc.ServerStreamingServer[ExportActivityResponse]) error {
 	return status.Error(codes.Unimplemented, "method ExportActivity not implemented")
+}
+func (UnimplementedTelemetryServiceServer) GetCourseFile(context.Context, *GetCourseFileRequest) (*GetCourseFileResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetCourseFile not implemented")
 }
 func (UnimplementedTelemetryServiceServer) SetTrainerControl(context.Context, *SetTrainerControlRequest) (*SetTrainerControlResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetTrainerControl not implemented")
@@ -912,6 +936,24 @@ func _TelemetryService_ExportActivity_Handler(srv interface{}, stream grpc.Serve
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type TelemetryService_ExportActivityServer = grpc.ServerStreamingServer[ExportActivityResponse]
 
+func _TelemetryService_GetCourseFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetCourseFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TelemetryServiceServer).GetCourseFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TelemetryService_GetCourseFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TelemetryServiceServer).GetCourseFile(ctx, req.(*GetCourseFileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _TelemetryService_SetTrainerControl_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SetTrainerControlRequest)
 	if err := dec(in); err != nil {
@@ -1058,6 +1100,10 @@ var TelemetryService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListActivities",
 			Handler:    _TelemetryService_ListActivities_Handler,
+		},
+		{
+			MethodName: "GetCourseFile",
+			Handler:    _TelemetryService_GetCourseFile_Handler,
 		},
 		{
 			MethodName: "SetTrainerControl",

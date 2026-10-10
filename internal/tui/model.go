@@ -504,7 +504,7 @@ func (m Model) footer() string {
 	// Flux asks after every power-up, and a warning hid the other hints.
 	var warnings []string
 	if tr.GetUserConfigRequired() {
-		warnings = append(warnings, "trainer wants your weight: press p")
+		warnings = append(warnings, "trainer wants your weight: m, then p (Profile)")
 	}
 	switch tr.GetTargetPowerLimit() {
 	case pb.TargetPowerLimit_TARGET_POWER_LIMIT_SPEED_TOO_LOW:
@@ -620,9 +620,7 @@ func (m Model) keyHints() string {
 	default:
 		h = append(h, "m menu", "r ride", "w workout", "g/l trainer")
 		if need := missingText(m.profile()); need != "" {
-			h = append(h, "p add "+need)
-		} else if m.profile() != nil {
-			h = append(h, "p profile")
+			h = append(h, "m add "+need) // the menu's Profile
 		}
 		if m.canEnd() {
 			h = append(h, "e end ride")

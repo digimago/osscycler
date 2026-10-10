@@ -65,9 +65,6 @@ func (m Model) startOnboarding(edit bool) Model {
 
 func (m Model) onboardKey(key string) (Model, tea.Cmd, bool) {
 	if m.onboarding == nil {
-		if key == "p" && m.profile() != nil && !m.rideActive() && !m.workoutActive() && !m.picking && m.draft == nil && m.input == nil {
-			return m.startOnboarding(true), nil, true
-		}
 		return m, nil, false
 	}
 	o := *m.onboarding
@@ -82,7 +79,7 @@ func (m Model) onboardKey(key string) (Model, tea.Cmd, bool) {
 		m.onboarding = nil
 		if !o.edit {
 			m.onboardLater = true
-			m.notice = "rides and workouts wait for your profile: press p when ready"
+			m.notice = "rides and workouts wait for your profile: m, then p (Profile), when ready"
 		}
 	case key == "backspace":
 		if len(o.value) > 0 {

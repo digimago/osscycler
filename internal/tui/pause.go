@@ -8,10 +8,10 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
-// Pausing (owner, 2026-10-10: park the core for a coffee): P or space
-// pauses and carries on, and p too during a ride, a workout or manual
-// control or while paused (owner, 2026-10-10: p, the profile, did nothing
-// on a paused ride, where riders reach for it); esc during a ride, a workout or manual control
+// Pausing (owner, 2026-10-10: park the core for a coffee): p, P or space
+// pauses and carries on (owner, 2026-10-10: p, then the profile, did
+// nothing on a paused ride, where riders reach for it; the profile is the
+// menu's now); esc during a ride, a workout or manual control
 // opens the menu with the core paused, and leaving the menu with esc
 // carries on. The core holds everything while paused (SetPaused); the TUI
 // only asks and shows it.
@@ -35,12 +35,8 @@ func (m Model) pauseKey(key string) (Model, tea.Cmd, bool) {
 		return m, nil, false
 	}
 	switch key {
-	case "P", "space", " ":
+	case "p", "P", "space", " ":
 		return m, m.setPaused(!m.paused()), true
-	case "p":
-		if m.underWay() || m.paused() {
-			return m, m.setPaused(!m.paused()), true
-		}
 	case "esc":
 		if m.underWay() && !m.paused() {
 			m.menu, m.menuPaused, m.notice = &menuState{}, true, ""
@@ -65,10 +61,10 @@ var pauseStyle = lipgloss.NewStyle().Background(lipgloss.Color("#3f7fff")).Foreg
 
 // pauseBanner is the line shown on top while the core is paused.
 func (m Model) pauseBanner() string {
-	text := " ⏸ PAUSED   the trainer is flat, the clocks stand   P or space carries on"
+	text := " ⏸ PAUSED   the trainer is flat, the clocks stand   p or space carries on"
 	if ms := m.st.GetPausedSinceUnixMs(); ms > 0 {
 		if d := time.Since(time.UnixMilli(ms)).Round(time.Second); d > 0 {
-			text = " ⏸ PAUSED " + d.String() + "   the trainer is flat, the clocks stand   P or space carries on"
+			text = " ⏸ PAUSED " + d.String() + "   the trainer is flat, the clocks stand   p or space carries on"
 		}
 	}
 	return pauseStyle.Width(m.width).Render(truncate(text, m.width))

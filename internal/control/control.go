@@ -154,6 +154,17 @@ func (s *Session) Run(ctx context.Context) {
 			sentMode = Off
 			continue
 		}
+		if st, _ := s.hub.Latest(); st.Paused && m != Off {
+			// The core is parked: the trainer flat, once; the target is
+			// sent again when it carries on (sentMode no longer matches).
+			if sentMode == Off && !sentAt.IsZero() && time.Since(sentAt) < resend {
+				continue
+			}
+			if err := s.trainer.SetGrade(ctx, 0); err == nil {
+				sentMode, sentAt = Off, time.Now()
+			}
+			continue
+		}
 		if m == sentMode && v == sentVal && time.Since(sentAt) < resend {
 			continue
 		}

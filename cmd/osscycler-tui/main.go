@@ -221,6 +221,11 @@ func (c commands) SetTrainerControl(ctx context.Context, mode pb.ControlMode, v 
 	return resp.GetTarget(), err
 }
 
+func (c commands) SetPaused(ctx context.Context, paused bool) (bool, error) {
+	resp, err := c.c.SetPaused(ctx, &pb.SetPausedRequest{Paused: paused})
+	return resp.GetPaused(), err
+}
+
 func (c commands) ReleaseTrainerControl(ctx context.Context) error {
 	_, err := c.c.ReleaseTrainerControl(ctx, &pb.ReleaseTrainerControlRequest{})
 	return err

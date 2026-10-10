@@ -36,6 +36,8 @@ type Commands interface {
 	ExportActivity(ctx context.Context, name string, w io.Writer) (int64, error)
 	SetTrainerControl(ctx context.Context, mode pb.ControlMode, v float64) (float64, error)
 	ReleaseTrainerControl(ctx context.Context) error
+	// SetPaused parks the core or carries on; whether it is paused now.
+	SetPaused(ctx context.Context, paused bool) (bool, error)
 }
 
 const (

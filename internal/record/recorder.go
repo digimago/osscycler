@@ -53,6 +53,9 @@ type Result struct {
 	StartSpeedMPS float64 `json:"start_speed_mps,omitempty"`
 	// Sim is what the ride was simulated with, for replays.
 	Sim SimParams `json:"sim"`
+	// Paused: the core was paused during the ride (or the lap): its time
+	// is riding time, and it is never a personal best or a ghost.
+	Paused bool `json:"paused,omitempty"`
 }
 
 // SimParams mirror sim.Params in the results file.
@@ -220,7 +223,9 @@ func speedOf(st telemetry.State) float64 {
 
 func (r *Recorder) step(st telemetry.State, now time.Time) {
 	speed := speedOf(st)
-	mov := moving(st, speed)
+	// Parked (State.Paused): still, whatever the trainer says, so the timer
+	// stops; and never ended for it (below).
+	mov := moving(st, speed) && !st.Paused
 	dt := time.Duration(0)
 	if !r.lastStep.IsZero() {
 		dt = min(now.Sub(r.lastStep), 2*time.Second)
@@ -272,7 +277,7 @@ func (r *Recorder) step(st telemetry.State, now time.Time) {
 	switch {
 	case mov && !a.running:
 		a.resume(now)
-	case !mov && a.running && now.Sub(r.stillSince) >= r.cfg.PauseAfter:
+	case !mov && a.running && (st.Paused || now.Sub(r.stillSince) >= r.cfg.PauseAfter): // a pause stops it at once
 		a.pause(now, typeStop)
 	}
 	if a.running {
@@ -284,6 +289,9 @@ func (r *Recorder) step(st telemetry.State, now time.Time) {
 	if err := a.flush(now); err != nil {
 		r.fail(err)
 		return
+	}
+	if st.Paused {
+		r.lastMoving = now // the idle time counts from the end of the pause
 	}
 	if !mov && now.Sub(r.lastMoving) >= r.cfg.EndAfter {
 		r.end()
@@ -388,7 +396,7 @@ func (r *Recorder) result(rd telemetry.Ride, now time.Time, lap int) {
 		Finished: now.UTC().Truncate(time.Second), CourseID: rd.CourseID, CourseName: rd.CourseName,
 		StartM: rd.StartDistanceM, DistanceM: rd.CourseDistanceM - rd.StartDistanceM,
 		ElapsedS: rd.Elapsed.Seconds(), AvgPowerW: rd.AvgPowerW, ClimbedM: rd.ClimbedM,
-		DifficultyPct: rd.DifficultyPct, Lap: lap, Sim: SimParams(rd.Sim),
+		DifficultyPct: rd.DifficultyPct, Lap: lap, Sim: SimParams(rd.Sim), Paused: rd.Paused,
 	}
 	r.appendResult(res)
 }
@@ -418,6 +426,7 @@ func (r *Recorder) lapResult(rd telemetry.Ride, lap int) {
 		Finished: l.Finished.UTC().Truncate(time.Second), CourseID: rd.CourseID, CourseName: rd.CourseName,
 		DistanceM: rd.CourseDistanceM, ElapsedS: l.Elapsed.Seconds(), AvgPowerW: l.AvgPowerW, ClimbedM: l.ClimbedM,
 		DifficultyPct: rd.DifficultyPct, Lap: lap, Sim: SimParams(rd.Sim), StartSpeedMPS: l.StartSpeedMPS,
+		Paused: l.Paused,
 	})
 }
 

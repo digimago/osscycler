@@ -136,6 +136,7 @@ type stubCommands struct {
 	exports            []string
 	fitBytes           []byte
 	profileCalls       [][2]*float64
+	pauses             []bool
 }
 
 func (s *stubCommands) SetProfile(_ context.Context, w, f, h *float64) (*pb.RiderProfile, error) {
@@ -161,6 +162,11 @@ func (s *stubCommands) SetProfile(_ context.Context, w, f, h *float64) (*pb.Ride
 func (s *stubCommands) SetTrainerControl(_ context.Context, mode pb.ControlMode, v float64) (float64, error) {
 	s.controls = append(s.controls, fmt.Sprintf("%v %g", mode, v))
 	return v, nil
+}
+
+func (s *stubCommands) SetPaused(_ context.Context, on bool) (bool, error) {
+	s.pauses = append(s.pauses, on)
+	return on, nil
 }
 
 func (s *stubCommands) ReleaseTrainerControl(context.Context) error {

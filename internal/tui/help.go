@@ -107,6 +107,8 @@ func (m Model) helpContext() (string, []helpEntry) {
 			{"+ / -", fmt.Sprintf("intensity in 1 %% steps (now %.0f %%)", m.wk().GetIntensityPct())},
 			{"n", "skip to the next part"},
 			{"x x", "abort the workout"},
+			{"P  space", "pause: the trainer goes flat and the clocks stand (a paused ride never counts as a PB)"},
+			{"esc", "pause and open the menu (esc again carries on)"},
 			layout[0], layout[1],
 			{"q", "quit the screen (the workout goes on in the core)"},
 		}, always...)
@@ -118,6 +120,8 @@ func (m Model) helpContext() (string, []helpEntry) {
 			{"g / l", "a fixed grade / brake level instead of the track's"},
 			layout[0], layout[1],
 			{"x x", "end the ride (each lap is kept; your best lap is the ghost)"},
+			{"P  space", "pause: the trainer goes flat and the clocks stand (a paused ride never counts as a PB)"},
+			{"esc", "pause and open the menu (esc again carries on)"},
 			{"q", "quit the screen (the ride goes on in the core)"},
 		}, always...)
 	case m.showRide() && m.rideActive():
@@ -126,6 +130,8 @@ func (m Model) helpContext() (string, []helpEntry) {
 			{"v", "road view or big numbers"},
 			layout[0], layout[1],
 			{"x x", "abort the ride (still recorded; only a finished ride counts as a ghost)"},
+			{"P  space", "pause: the trainer goes flat and the clocks stand (a paused ride never counts as a PB)"},
+			{"esc", "pause and open the menu (esc again carries on)"},
 			{"q", "quit the screen (the ride goes on in the core)"},
 		}, always...)
 	case m.showRide() || m.showWorkout():
@@ -136,11 +142,14 @@ func (m Model) helpContext() (string, []helpEntry) {
 			{"w", "a new power, or a workout"},
 			{"g / l", "a fixed grade / brake level instead"},
 			{"x  0", "back to free riding (the trainer is set flat)"},
+			{"P  space", "pause: the trainer goes flat until you carry on"},
+			{"esc", "pause and open the menu (esc again carries on)"},
 			{"q", "quit the screen"},
 		}, always...)
 	}
 	return "DASHBOARD", append([]helpEntry{
 		{"m", "the menu: everything you can do from here"},
+		{"P  space", "pause the recording (and anything you start carries on)"},
 		{"r", "rides: courses, your history, recordings"},
 		{"w", "workouts, or a fixed power (ERG)"},
 		{"g", "ride at a fixed grade"},

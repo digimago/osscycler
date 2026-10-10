@@ -40,6 +40,7 @@ const (
 	TelemetryService_ExportActivity_FullMethodName        = "/osscycler.v1.TelemetryService/ExportActivity"
 	TelemetryService_SetTrainerControl_FullMethodName     = "/osscycler.v1.TelemetryService/SetTrainerControl"
 	TelemetryService_ReleaseTrainerControl_FullMethodName = "/osscycler.v1.TelemetryService/ReleaseTrainerControl"
+	TelemetryService_SetPaused_FullMethodName             = "/osscycler.v1.TelemetryService/SetPaused"
 )
 
 // TelemetryServiceClient is the client API for TelemetryService service.
@@ -122,6 +123,13 @@ type TelemetryServiceClient interface {
 	SetTrainerControl(ctx context.Context, in *SetTrainerControlRequest, opts ...grpc.CallOption) (*SetTrainerControlResponse, error)
 	// ReleaseTrainerControl ends manual control; the trainer is set flat.
 	ReleaseTrainerControl(ctx context.Context, in *ReleaseTrainerControlRequest, opts ...grpc.CallOption) (*ReleaseTrainerControlResponse, error)
+	// SetPaused parks the core (a coffee, the door) or carries on. While
+	// paused, a course ride and a workout hold still with their clocks
+	// stopped, the trainer goes flat (manual control too), the recording's
+	// timer stops and the activity is never ended for being still. A ride
+	// that was paused keeps its riding time but is never a personal best or
+	// a ghost. Starting a ride, a workout or manual control carries on.
+	SetPaused(ctx context.Context, in *SetPausedRequest, opts ...grpc.CallOption) (*SetPausedResponse, error)
 }
 
 type telemetryServiceClient struct {
@@ -360,6 +368,16 @@ func (c *telemetryServiceClient) ReleaseTrainerControl(ctx context.Context, in *
 	return out, nil
 }
 
+func (c *telemetryServiceClient) SetPaused(ctx context.Context, in *SetPausedRequest, opts ...grpc.CallOption) (*SetPausedResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetPausedResponse)
+	err := c.cc.Invoke(ctx, TelemetryService_SetPaused_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // TelemetryServiceServer is the server API for TelemetryService service.
 // All implementations must embed UnimplementedTelemetryServiceServer
 // for forward compatibility.
@@ -440,6 +458,13 @@ type TelemetryServiceServer interface {
 	SetTrainerControl(context.Context, *SetTrainerControlRequest) (*SetTrainerControlResponse, error)
 	// ReleaseTrainerControl ends manual control; the trainer is set flat.
 	ReleaseTrainerControl(context.Context, *ReleaseTrainerControlRequest) (*ReleaseTrainerControlResponse, error)
+	// SetPaused parks the core (a coffee, the door) or carries on. While
+	// paused, a course ride and a workout hold still with their clocks
+	// stopped, the trainer goes flat (manual control too), the recording's
+	// timer stops and the activity is never ended for being still. A ride
+	// that was paused keeps its riding time but is never a personal best or
+	// a ghost. Starting a ride, a workout or manual control carries on.
+	SetPaused(context.Context, *SetPausedRequest) (*SetPausedResponse, error)
 	mustEmbedUnimplementedTelemetryServiceServer()
 }
 
@@ -512,6 +537,9 @@ func (UnimplementedTelemetryServiceServer) SetTrainerControl(context.Context, *S
 }
 func (UnimplementedTelemetryServiceServer) ReleaseTrainerControl(context.Context, *ReleaseTrainerControlRequest) (*ReleaseTrainerControlResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReleaseTrainerControl not implemented")
+}
+func (UnimplementedTelemetryServiceServer) SetPaused(context.Context, *SetPausedRequest) (*SetPausedResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetPaused not implemented")
 }
 func (UnimplementedTelemetryServiceServer) mustEmbedUnimplementedTelemetryServiceServer() {}
 func (UnimplementedTelemetryServiceServer) testEmbeddedByValue()                          {}
@@ -898,6 +926,24 @@ func _TelemetryService_ReleaseTrainerControl_Handler(srv interface{}, ctx contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _TelemetryService_SetPaused_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetPausedRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TelemetryServiceServer).SetPaused(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TelemetryService_SetPaused_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TelemetryServiceServer).SetPaused(ctx, req.(*SetPausedRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // TelemetryService_ServiceDesc is the grpc.ServiceDesc for TelemetryService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -980,6 +1026,10 @@ var TelemetryService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReleaseTrainerControl",
 			Handler:    _TelemetryService_ReleaseTrainerControl_Handler,
+		},
+		{
+			MethodName: "SetPaused",
+			Handler:    _TelemetryService_SetPaused_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

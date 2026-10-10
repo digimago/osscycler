@@ -82,6 +82,10 @@ func (m Model) menuKey(key string) (Model, tea.Cmd, bool) {
 		s.sel = (s.sel + 1) % len(menuItems)
 	case "esc", "m":
 		m.menu = nil
+		if m.menuPaused {
+			m.menuPaused = false
+			return m, m.setPaused(false), true
+		}
 	case "enter", "space", " ":
 		return m.choose(menuItems[s.sel].key)
 	default:
@@ -97,6 +101,7 @@ func (m Model) menuKey(key string) (Model, tea.Cmd, bool) {
 // choose closes the menu and does what the item stands for.
 func (m Model) choose(item string) (Model, tea.Cmd, bool) {
 	m.menu = nil
+	m.menuPaused = false // whatever comes next, the pause stays as it is (starting something carries on)
 	switch item {
 	case "q":
 		return m, tea.Quit, true

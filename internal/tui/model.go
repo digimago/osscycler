@@ -24,6 +24,9 @@ type StateMsg struct{ State *pb.State }
 type ConnMsg struct{ Err error }
 
 type Model struct {
+	// menuPaused: esc opened the menu during a ride, workout or manual
+	// control and paused the core; leaving the menu with esc carries on.
+	menuPaused    bool
 	addr          string
 	cmds          Commands // nil: read-only
 	width, height int
@@ -180,7 +183,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.animating = false
 	case StateMsg:
-		shown, old := m.ridePos(), m.ride()
+		shown, old, wasPaused := m.ridePos(), m.ride(), m.paused()
 		m.st, m.connected, m.connErr = msg.State, true, nil
 		m = m.withCadence(m.now())
 		if r := m.ride(); r.GetDistanceM() != old.GetDistanceM() || r.GetPhase() != old.GetPhase() {
@@ -198,7 +201,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.needsOnboarding() {
 			m = m.startOnboarding(false)
 		}
-		if m.menu != nil && m.busy() {
+		if m.menuPaused && wasPaused && !m.paused() {
+			m.menu, m.menuPaused = nil, false // another screen carried on: back to the ride
+		}
+		if m.menu != nil && m.busy() && !m.menuPaused {
 			m.menu = nil // joined something already running: show it
 		}
 		m, c1 := m.needCourse()
@@ -292,6 +298,9 @@ func (m Model) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	if m.cmds != nil {
+		if next, cmd, ok := m.pauseKey(key); ok {
+			return next, cmd
+		}
 		if next, cmd, ok := m.menuKey(key); ok {
 			return next, cmd
 		}
@@ -319,12 +328,18 @@ func (m Model) handleKey(key string) (tea.Model, tea.Cmd) {
 
 // render draws the screen, with the tour banner on top when there is one.
 func (m Model) render() string {
-	if m.tourCaption == "" || m.width == 0 {
+	var banners []string
+	if m.paused() && m.width > 0 {
+		banners = append(banners, m.pauseBanner())
+	}
+	if m.tourCaption != "" && m.width > 0 {
+		banners = append(banners, tourStyle.Width(m.width).Render(" "+truncate(m.tourCaption, m.width-2)))
+	}
+	if len(banners) == 0 {
 		return m.renderScreen()
 	}
-	banner := tourStyle.Width(m.width).Render(" " + truncate(m.tourCaption, m.width-2))
-	m.height--
-	return lipgloss.JoinVertical(lipgloss.Left, banner, m.renderScreen())
+	m.height -= len(banners)
+	return lipgloss.JoinVertical(lipgloss.Left, append(banners, m.renderScreen())...)
 }
 
 func (m Model) renderScreen() string {

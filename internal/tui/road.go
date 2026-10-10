@@ -73,9 +73,8 @@ type roadScene struct {
 	east, north, ele []float64
 	// From map data, when the core has it: four land uses per sample (left
 	// far, left near, right near, right far) and the buildings by distance.
-	land        []byte
-	buildings   []*pb.Building
-	attribution string
+	land      []byte
+	buildings []*pb.Building
 	// Roads meeting the route, car parks and place-name signs.
 	branches []worldBranch
 	parking  []*pb.ParkingArea
@@ -92,7 +91,7 @@ func newRoadScene(c *pb.Course) *roadScene {
 	k := int(math.Round(roadSmoothM / step / 2))
 	sc := &roadScene{step: step, finish: c.GetDistanceM(), loop: c.GetLoop(),
 		east: movingAverage(e, k), north: movingAverage(n, k), ele: movingAverage(ele, 0),
-		buildings: c.GetBuildings(), attribution: c.GetAttribution()}
+		buildings: c.GetBuildings()}
 	if sc.loop {
 		sc.east, sc.north = loopAverage(e, k), loopAverage(n, k)
 	}

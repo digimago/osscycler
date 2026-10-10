@@ -237,9 +237,9 @@ func (m Model) menuPanel(width, height int) string {
 		}
 		lines = append(lines, label+"  "+dimStyle.Render(truncate(does, max(10, width-labelW-12)))+extra)
 	}
-	// The map data's credit lives here, at startup, rather than on the ride
-	// screen all the time (the OSMF attribution guidelines allow a start or
-	// menu screen for games and simulations); rides show it at their start.
+	// The map data's credit lives here, at startup, and not on rides
+	// (owner, 2026-10-10; the OSMF attribution guidelines allow a start or
+	// menu screen for games and simulations).
 	lines = append(lines, "", dimStyle.Render(truncate(mapCredit, width)))
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center,
 		lipgloss.JoinVertical(lipgloss.Left, lines...))

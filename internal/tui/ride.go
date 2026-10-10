@@ -211,9 +211,6 @@ func (m Model) ridePos() float64 {
 	return d
 }
 
-// creditShowS is how long a ride shows the map credit.
-const creditShowS = 20.0
-
 // mapCredit is the OpenStreetMap credit for the start menu.
 const mapCredit = "map data © OpenStreetMap contributors, ODbL"
 
@@ -399,12 +396,6 @@ func (m Model) rideInfo(width int) string {
 		return center.Render(bigWarn.Render("start pedalling to start the clock") + dimStyle.Render("  ·  "+r.GetCourseName()+race))
 	}
 	ms := m.metrics()
-	// The map credit shows for the start of a ride (the TUI may have joined
-	// it without the start menu, where it lives otherwise).
-	credit := ""
-	if sc := m.roadScene(); sc != nil && !m.tiles && sc.attribution != "" && r.GetElapsedS() < creditShowS {
-		credit = dimStyle.Render(" · " + sc.attribution)
-	}
 	if r.GetLoop() {
 		parts := []string{ms[1].value + " bpm", ms[2].value + " rpm", fmt.Sprintf("%.1f km/h", r.GetSpeedMps()*3.6),
 			"ride " + clock(r.GetElapsedS()), fmt.Sprintf("%.0f m climbed", r.GetClimbedM())}
@@ -426,7 +417,7 @@ func (m Model) rideInfo(width int) string {
 	}
 	return center.Render(fmt.Sprintf("%s bpm · %s rpm · %.1f km/h · %.0f/%.0f m climbed · %s",
 		ms[1].value, ms[2].value, r.GetSpeedMps()*3.6, r.GetClimbedM(), r.GetCourseGainM(),
-		dimStyle.Render(where)) + credit)
+		dimStyle.Render(where)))
 }
 
 func (m Model) rideResult(width, height int, finished bool) string {

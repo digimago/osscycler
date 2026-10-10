@@ -1224,16 +1224,17 @@ func TestOnboarding(t *testing.T) {
 		t.Errorf("after FTP: calls %d, onboarding %v, notice %q", len(cmds.profileCalls), m.onboarding, m.notice)
 	}
 
-	// The core says it's complete: nothing more to ask; p edits.
+	// The core says it's complete: nothing more to ask; the menu's Profile
+	// edits.
 	st.Profile = &pb.RiderProfile{Complete: true, WeightKg: 87, FtpW: 220}
 	st.Trainer.ResistanceCalibrationRequired = false
 	next, _ = m.Update(StateMsg{State: st})
 	m = next.(Model)
 	m.notice = "" // a notice takes the hints' place
-	if m.onboarding != nil || !strings.Contains(plain(m.render()), "p profile") {
+	if m.onboarding != nil {
 		t.Errorf("complete profile:\n%s", plain(m.render()))
 	}
-	m = pressAll(m, "p")
+	m = pressAll(m, "m", "p")
 	if out := plain(m.render()); !strings.Contains(out, "RIDER PROFILE") || !strings.Contains(out, "Your weight: 87") {
 		t.Errorf("edit:\n%s", out)
 	}
@@ -1273,11 +1274,11 @@ func TestOnboardingLater(t *testing.T) {
 	m = pressAll(m, "esc")
 	next, _ = m.Update(StateMsg{State: st})
 	m = next.(Model)
-	if m.onboarding != nil || !strings.Contains(m.notice, "press p") {
+	if m.onboarding != nil || !strings.Contains(m.notice, "m, then p") {
 		t.Fatalf("put off: onboarding %v notice %q", m.onboarding, m.notice)
 	}
 	m.notice = ""
-	if !strings.Contains(plain(m.render()), "p add your FTP") {
+	if !strings.Contains(plain(m.render()), "m add your FTP") {
 		t.Errorf("hint:\n%s", plain(m.render()))
 	}
 }

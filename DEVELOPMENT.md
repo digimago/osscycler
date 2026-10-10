@@ -117,12 +117,13 @@ key from `ANT_PLUS_NETWORK_KEY` or the key file built in:
 - macOS: a universal `.tar.gz` (Intel and Apple Silicon)
 - `SHA256SUMS`
 
-Every push and pull request runs `make check` and actionlint in GitHub
-Actions (the `check` workflow), without secrets: the network key test
-skips there.
+Every pull request, and every push to `develop` and `main`, runs `make
+check`, the 3D view's tests and actionlint in GitHub Actions (the `check`
+workflow), without secrets: the network key test skips there.
 
-Pushing a `v*` tag runs `make check` and `make release` in GitHub Actions
-with the repository secret `ANT_PLUS_NETWORK_KEY` and makes a draft
+Pushing a `v*` tag runs the network key test and `make release` in
+GitHub Actions with the repository secret `ANT_PLUS_NETWORK_KEY` (the
+rest of the checks ran on that commit when it reached `main`) and makes a draft
 release with every file attached. Check it (files, notes), then publish
 it on GitHub: published releases are immutable, so a fix after that is a
 new version. Running the workflow by hand builds the same files as

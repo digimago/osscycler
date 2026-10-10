@@ -225,7 +225,7 @@ public sealed partial class Controller
         {
             if (done.Exception != null)
                 Failed(what, done.Exception.GetBaseException());
-        });
+        }, TaskContinuationOptions.ExecuteSynchronously);
     }
 
     void Failed(string what, Exception e) => Say($"{what} failed: {e.Message}");

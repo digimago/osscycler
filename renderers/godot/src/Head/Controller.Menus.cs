@@ -143,7 +143,7 @@ public sealed partial class Controller
             else
                 lock (_mu)
                     set(done.Result);
-        });
+        }, TaskContinuationOptions.ExecuteSynchronously);
     }
 
     IList<Course> Tracks()
@@ -382,7 +382,7 @@ public sealed partial class Controller
         Say("saving " + name + " ...");
         _cmds.SaveActivity(name).ContinueWith(done => Say(done.Exception != null
             ? "saving " + name + " failed: " + done.Exception.GetBaseException().Message
-            : "saved " + done.Result));
+            : "saved " + done.Result), TaskContinuationOptions.ExecuteSynchronously);
     }
 
     // Ask opens a prompt for a number; enter hands it to set.

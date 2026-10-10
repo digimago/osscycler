@@ -53,13 +53,15 @@ sealed class Calls : ICommands
     public Task<RiderProfile> SetView(string view)
     {
         View = view;
-        return Add("view " + view).ContinueWith(t => { t.Wait(); return new RiderProfile { View = view }; });
+        var t = Add("view " + view); // answered at once, as the other calls: no thread in between
+        return t.IsFaulted ? Task.FromException<RiderProfile>(t.Exception!.GetBaseException()) : Task.FromResult(new RiderProfile { View = view });
     }
     public WorkoutDef? SavedWorkout;
     public Task<string> SaveWorkout(string id, WorkoutDef w)
     {
         SavedWorkout = w;
-        return Add("save workout " + id).ContinueWith(t => { t.Wait(); return id == "" ? "my-workout" : id; });
+        var t = Add("save workout " + id);
+        return t.IsFaulted ? Task.FromException<string>(t.Exception!.GetBaseException()) : Task.FromResult(id == "" ? "my-workout" : id);
     }
     public Task StartRide(string courseId) => Add("ride " + courseId);
     public Task StartRideAgainst(string courseId, long finishedUnixMs) => Add($"race {courseId} {finishedUnixMs}");

@@ -79,7 +79,7 @@ public sealed partial class Controller
                         _formSaved = done.Exception == null ? done.Result : "";
                     if (done.Exception != null)
                         Failed("saving", done.Exception.GetBaseException());
-                });
+                }, TaskContinuationOptions.ExecuteSynchronously);
                 return;
         }
     }

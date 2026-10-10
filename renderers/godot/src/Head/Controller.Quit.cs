@@ -80,7 +80,11 @@ public sealed partial class Controller
 
     // Then makes calls to the core in order, then quits (a call that fails,
     // with the core gone say, is no reason to stay).
-    void Then(params Func<Task>[] calls) => _ = Task.Run(async () =>
+    // An async method rather than Task.Run: calls that complete at once
+    // (the tests' fake core) finish here and now.
+    void Then(params Func<Task>[] calls) => _ = ThenAsync(calls);
+
+    async Task ThenAsync(Func<Task>[] calls)
     {
         foreach (var call in calls)
         {
@@ -93,7 +97,7 @@ public sealed partial class Controller
             }
         }
         Quit = true;
-    });
+    }
 
     // QuitDialog is the question, when it is on.
     DialogView? QuitDialog(State? st)

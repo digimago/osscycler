@@ -299,7 +299,7 @@ public sealed partial class Controller
                             _onboard = null;
                             Say("profile saved");
                         }
-                });
+                }, TaskContinuationOptions.ExecuteSynchronously);
                 return;
             }
             case "backspace":
@@ -351,7 +351,7 @@ public sealed partial class Controller
                                 ? "profile set; what flags on the core force applies to this run only" : "profile saved");
                         }
                     }
-                });
+                }, TaskContinuationOptions.ExecuteSynchronously);
                 return;
             }
         }
@@ -362,7 +362,7 @@ public sealed partial class Controller
     void End(bool discard) =>
         _cmds.EndActivity(discard).ContinueWith(done => Say(done.Exception != null
             ? "ending the ride failed: " + done.Exception.GetBaseException().Message
-            : discard ? "ride discarded" : "ride saved: " + done.Result));
+            : discard ? "ride discarded" : "ride saved: " + done.Result), TaskContinuationOptions.ExecuteSynchronously);
 
     // Dialog is the setup panel to show (null: none).
     public DialogView? Dialog(State? st, double now)

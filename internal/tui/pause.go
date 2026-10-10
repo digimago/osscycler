@@ -18,7 +18,7 @@ import (
 // prompt, editors, onboarding, the end-ride question, a countdown).
 func (m Model) keysFree() bool {
 	return m.menu == nil && !m.picking && m.draft == nil && m.input == nil && m.ending == nil &&
-		m.onboarding == nil && m.arranging == nil && m.countdown == 0
+		m.onboarding == nil && m.arranging == nil && m.countdown == 0 && !m.quitting
 }
 
 // underWay is whether something drives the trainer: a ride, a workout or

@@ -28,7 +28,7 @@ var menuItems = []menuItem{
 	{"a", "Activities", "your recorded rides: save FIT files, race past rides"},
 	{"p", "Profile", "weight, height and FTP"},
 	{"c", "Calibrate", "spin-down calibration of the trainer"},
-	{"q", "Quit", "close the screen (the core keeps running)"},
+	{"q", "Quit", "close the screen (asks first if a ride is under way)"},
 }
 
 // WithMenu opens the start menu.
@@ -101,10 +101,12 @@ func (m Model) menuKey(key string) (Model, tea.Cmd, bool) {
 // choose closes the menu and does what the item stands for.
 func (m Model) choose(item string) (Model, tea.Cmd, bool) {
 	m.menu = nil
+	if item == "q" {
+		next, cmd := m.askQuit() // the menu's pause stays with the question
+		return next, cmd, true
+	}
 	m.menuPaused = false // whatever comes next, the pause stays as it is (starting something carries on)
 	switch item {
-	case "q":
-		return m, tea.Quit, true
 	case "r", "w", "a":
 		key := map[string]string{"a": "r"}[item]
 		if key == "" {

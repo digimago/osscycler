@@ -100,6 +100,17 @@ func main() {
 	if len(d.Elements) > 0 {
 		o.Land, o.Scenery, o.Buildings = scenery.NewLandMap(cc, d), scenery.Build(cc, d), scenery.Footprints(cc, d)
 	}
+	// The sea from the cached coastline basemap, as worlds.Builder: trees
+	// lower by it, dunes along it.
+	if !c.Builtin {
+		st := scenery.NewStore(scenery.Config{CacheDir: filepath.Join(*courses, ".osm")}, nil)
+		co, err := st.Coast(context.Background(), cc, false)
+		if err != nil {
+			log.Printf("coastline: %v", err)
+		}
+		o.SeaDistance = co.Distance
+		o.Land.ByTheSea(cc, co.Distance)
+	}
 	if *demDir != "" {
 		a := &dem.AHN{CacheDir: *demDir, CellM: 5}
 		var ll []dem.LatLon

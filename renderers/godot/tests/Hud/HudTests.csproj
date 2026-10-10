@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The HUD's model (src/Hud: formatting, colours, cadence, tiles),
+       tested without Godot: dotnet test renderers/godot/tests/Hud -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Osscycler.Hud.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../src/Hud/Format.cs" />
+    <Compile Include="../../src/Hud/Cadence.cs" />
+    <Compile Include="../../src/Hud/Tiles.cs" />
+    <Compile Include="../../src/Hud/Layout.cs" />
+    <Compile Include="../../src/Hud/Strips.cs" />
+    <Compile Include="../../src/Hud/Moments.cs" />
+    <Compile Include="../../src/Head/Controller.cs" />
+    <Compile Include="../../src/Head/Controller.Menus.cs" />
+    <Compile Include="../../src/Head/Controller.Setup.cs" />
+    <Compile Include="../../src/Head/Controller.Layout.cs" />
+    <Compile Include="../../src/Head/Controller.Form.cs" />
+    <Compile Include="../../src/Head/Controller.Pause.cs" />
+    <Compile Include="../../src/Head/Controller.Quit.cs" />
+    <Compile Include="../../src/Head/WorkoutForm.cs" />
+    <Compile Include="../../src/Head/Marks.cs" />
+    <Compile Include="../../src/Head/Cover.cs" />
+    <Compile Include="../../src/Head/BuildStatus.cs" />
+    <Compile Include="../../src/Head/GhostTrack.cs" />
+    <Compile Include="../../src/Avatar/Pose.cs" />
+    <Compile Include="../../src/Plants/Bleed.cs" />
+    <Protobuf Include="../../../../proto/osscycler/v1/telemetry.proto" ProtoRoot="../../../../proto" GrpcServices="None" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Google.Protobuf" Version="3.36.2" />
+    <PackageReference Include="Grpc.Tools" Version="2.84.0">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+</Project>

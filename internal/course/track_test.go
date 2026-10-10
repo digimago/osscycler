@@ -39,3 +39,14 @@ func TestTrackInMetres(t *testing.T) {
 		t.Errorf("finish at %.1f E %.1f N, want 1000 E 1000 N", east[last], north[last])
 	}
 }
+
+func TestUnprojectInvertsProject(t *testing.T) {
+	c := Tracks()[1]
+	for _, p := range [][2]float64{{0, 0}, {1234.5, -678.9}, {-2500, 2500}} {
+		lat, lon := c.Unproject(p[0], p[1])
+		e, n := c.Project(lat, lon)
+		if math.Abs(e-p[0]) > 1e-6 || math.Abs(n-p[1]) > 1e-6 {
+			t.Errorf("Project(Unproject(%v)) = %.6f %.6f", p, e, n)
+		}
+	}
+}

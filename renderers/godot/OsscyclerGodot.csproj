@@ -1,0 +1,27 @@
+<Project Sdk="Godot.NET.Sdk/4.7.2">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Osscycler</RootNamespace>
+    <!-- No ICU needed (a slim Debian has none, and .NET then crashes at
+         start): everything is formatted with the invariant culture. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Google.Protobuf" Version="3.36.2" />
+    <PackageReference Include="Grpc.Net.Client" Version="2.84.0" />
+    <PackageReference Include="Grpc.Tools" Version="2.84.0">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The HUD's tests are a project of their own (tests/). -->
+    <Compile Remove="tests/**" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The core's API, generated from the same .proto as the Go side. -->
+    <Protobuf Include="../../proto/osscycler/v1/telemetry.proto" ProtoRoot="../../proto" GrpcServices="Client" />
+  </ItemGroup>
+</Project>

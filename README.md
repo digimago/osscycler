@@ -6,7 +6,7 @@ gradient, race your best time as a ghost, or do structured ERG workouts.
 Every ride is recorded as a FIT file on your own disk. No account, no
 cloud, no subscription.
 
-![Climbing the built-in figure-8 track in the terminal: power, cadence, grade, lap time and distance to go above a pixel-art road with the ghost of the best lap ahead, the lap times on the left, and the track's profile and the grade ahead below](docs/screenshots/figure-8.png)
+![Riding the included Posbank Loop in the 3D view: power, cadence, grade, time and distance to go above a road between heather in flower and a pine wood on the Veluwe, the grade of the next 250 m and the course's profile below](docs/screenshots/posbank-3d.jpg)
 
 What it does today:
 
@@ -14,8 +14,11 @@ What it does today:
   included Posbank Loop (32 km over the Veluwezoom in the Netherlands, up
   to 7.9 %): the trainer follows the grade, your speed comes from a
   physics simulation, and the clock stops at the line.
-- **A view of the road ahead**: its bends and hills come from your GPX,
-  and fields, forests, water and buildings from OpenStreetMap.
+- **A 3D world of every course**: its roads, junctions, fields, woods,
+  water and buildings from OpenStreetMap, its hills (in the Netherlands)
+  from the national height model, built on your own computer the first
+  time you ride a course. The Posbank Loop and the test tracks come
+  ready-built.
 - **Ghosts**: every course ride races your personal best on it, with the
   gap shown live.
 - **ERG workouts**: the trainer holds each target power. Write workouts
@@ -25,9 +28,13 @@ What it does today:
 - **Recording**: every ride is saved as a FIT file, ready to upload by
   hand to intervals.icu, Garmin Connect or anywhere else.
 
-The screen is a terminal app (the TUI), with big numbers you can read
-from the bike and, on a course, an animated view of the road. A full 3D
-view is planned.
+There are two screens to ride with: the **3D view**, for a Linux PC with
+a graphics card (a TV driven by a PC works well), and the **terminal
+view** (the TUI), with big numbers you can read from the bike and, on a
+course, an animated pixel-art road; it runs anywhere, also over SSH on a
+Raspberry Pi.
+
+![Climbing the built-in figure-8 track in the terminal: power, cadence, grade, lap time and distance to go above a pixel-art road with the ghost of the best lap ahead, the lap times on the left, and the track's profile and the grade ahead below](docs/screenshots/figure-8.png)
 
 ## What you need
 
@@ -55,8 +62,9 @@ sudo apt install ./osscycler_*_arm64.deb    # or _amd64.deb on a PC
 sudo dnf install ./osscycler-*.aarch64.rpm  # or .x86_64.rpm on a PC
 ```
 
-The package installs `osscycler-core` and `osscycler-tui`, and sets up
-access to the ANT+ stick. If you'll run osscycler from a desktop session,
+The package installs the `osscycler` command and its programs (the core,
+the 3D view, the terminal view and the world builder), the ready-built
+worlds, and sets up access to the ANT+ stick. If you'll run osscycler from a desktop session,
 that's all. Over SSH (a Raspberry Pi, say), also join the `ant` group,
 then log out and in again:
 
@@ -64,9 +72,10 @@ then log out and in again:
 sudo usermod -aG ant $USER
 ```
 
-**Other Linux:** unpack the `_linux_amd64.tar.gz` or `_linux_arm64.tar.gz`,
-put both programs on your `PATH` (e.g. `/usr/local/bin`), and set up the
-stick from the unpacked folder:
+**Other Linux:** unpack the `_linux_amd64.tar.gz` or `_linux_arm64.tar.gz`
+and keep the folder together (the 3D view, its `data_…` folder and the
+`worlds` folder sit beside the programs); run `osscycler` from it, or put
+the folder on your `PATH`. Set up the stick from the unpacked folder:
 
 ```sh
 sudo ./install-udev.sh
@@ -75,29 +84,32 @@ sudo ./install-udev.sh
 Then log out and in again, and replug the stick.
 
 **macOS:** the `_darwin_universal.tar.gz` runs on Intel and Apple
-Silicon. On a Mac, osscycler can't drive the ANT+ stick yet: use it to
-connect to osscycler on a Linux machine, or to try it out without a
-trainer (see below). The programs aren't signed yet, so after unpacking
+Silicon, with the terminal view only (no 3D view on a Mac yet). On a
+Mac, osscycler can't drive the ANT+ stick yet: use it to connect to
+osscycler on a Linux machine, or to try it out without a trainer (see
+below). The programs aren't signed yet, so after unpacking
 run `xattr -d com.apple.quarantine osscycler-*`.
 
 ## First ride
 
-osscycler is two programs: the **core** talks to the trainer, records
-your rides and keeps your settings; the **TUI** is the screen. Start the
-core:
+osscycler has a **core**, which talks to the trainer, records your
+rides and keeps your settings, and a **screen** on it. One command
+starts both:
 
 ```sh
-osscycler-core
+osscycler
 ```
 
-The first time, it makes the `osscycler` folder in your home directory.
-Put your GPX routes in `~/osscycler/courses` (and any `.zwo` workouts in
-`~/osscycler/workouts`), then restart the core. In a second terminal,
-start the screen:
+or pick **osscycler** in your desktop's app menu. It opens the 3D view
+(or, without one, the terminal view) and runs the core along with it
+for as long as the screen is open: there is nothing else to start.
+`osscycler tui` and `osscycler 3d` pick the screen; `osscycler -core
+pi.local:7420` uses the core on another machine instead of running one;
+`osscycler --headless` runs just the core, for screens elsewhere.
 
-```sh
-osscycler-tui
-```
+The first time, osscycler makes the `osscycler` folder in your home
+directory. Put your GPX routes in `~/osscycler/courses` (and any `.zwo`
+workouts in `~/osscycler/workouts`), and start osscycler again.
 
 The first time, osscycler asks for your weight, your height and your
 FTP. Your weight sets how climbs feel and how fast you go on a course;
@@ -110,8 +122,8 @@ the screen). Some trainers ask for one again after every power-up; the
 screen then shows `c calibrate` among its keys, and you can ride without
 it.
 
-**No trainer at hand?** Start the core with `-fake` instead: a simulated
-rider pedals for you, so you can try everything.
+**No trainer at hand?** Run `osscycler -fake`: a simulated rider pedals
+for you, so you can try everything.
 
 ## Riding
 
@@ -133,7 +145,10 @@ The tracks lie in open sea, so they need no map data.
 
 ![An interval workout on the 400 m oval: target power, power, cadence, time left in the interval and heart rate above the road, and the workout's profile in power-zone colours at the bottom](docs/screenshots/workout-on-the-oval.png)
 
-On the dashboard you see power, heart rate, cadence and speed.
+On the dashboard you see power, heart rate, cadence and speed. The keys
+are the same in both screens; your profile (weight, height, FTP and, for
+the 3D view, riding behind the rider or through their eyes) is in the
+menu.
 
 | Key | Does |
 | --- | --- |
@@ -142,13 +157,13 @@ On the dashboard you see power, heart rate, cadence and speed.
 | `w` | Workouts, with a fixed power (ERG) at the top (also on a track) |
 | `+` / `-` | Trainer difficulty on courses, in 10 % steps (50 % is Zwift's default) |
 | `g` / `l` | Free riding at a fixed grade (%) or resistance level (%) |
-| `p` | Your profile: weight, height and FTP |
+| `p` / `P` / space | Pause, and carry on: the trainer goes flat and the clocks stand |
 | `c` / `C` | Spin-down calibration: when the trainer asks / any time |
 | `e` | End the ride, outside a course ride or workout: save it (`enter`) or discard it (`d d`) |
 | `o` | Arrange the tiles on this screen: order, show, hide (dashboard, course ride, workout) |
 | `z` | Digit size: large or medium (medium fits more tiles) |
 | `?` / `h` / F1 | Every key for the screen you're on |
-| `q` | Quit the screen (the core keeps running) |
+| `q` | The menu; its Quit closes the screen (with a ride under way and no other screen on it, it asks whether to end and save the ride or leave it paused) |
 
 **Course rides.** Pick a course and press `enter`; the clock starts when
 you start pedalling. Above the road you see power, cadence (averaged
@@ -178,6 +193,26 @@ more are there to pick), and `z` to switch between large and medium
 digits. The screen uses the largest digits that fit. Your choice is
 kept in `~/osscycler/tui.json` on the machine running the screen.
 
+## The 3D worlds
+
+Every course gets a 3D world of its own: the roads it rides and the
+roads around it, with junctions and roundabouts, the land along it
+(fields, meadows, woods, heath, water, built-up areas) with its trees,
+bushes, hedges and grass, and the buildings, all from OpenStreetMap. In
+the Netherlands the land's shape comes from the national height model
+(AHN); elsewhere it follows your GPX's elevation. Woods by the sea grow
+low, as they do.
+
+The Posbank Loop and the test tracks come ready-built. Any other course
+is built on your computer the first time you ride it: you ride a
+preview (the route through made-up countryside) right away, the screen
+says what's being built and about how long it will take, and the world
+fades in when it's done. That takes from half a minute to several
+minutes for a long course, most of it downloading the map data and
+heights once; the next time the world is just there. A changed GPX file
+gets a new world. Worlds are kept in `~/osscycler/worlds`, the downloads
+they're built from in `~/osscycler/courses/.osm` and `.dem`.
+
 ## Your rides and settings
 
 Everything lives in one folder, `~/osscycler`, easy to back up:
@@ -189,6 +224,8 @@ Everything lives in one folder, `~/osscycler`, easy to back up:
 | Recorded rides (FIT) and course results | `~/osscycler/rides/` |
 | Your profile (weight, FTP, difficulty) | `~/osscycler/profile.json` |
 | Map data around your routes | `~/osscycler/courses/.osm/` |
+| Heights (AHN tiles) for the 3D worlds | `~/osscycler/courses/.dem/` |
+| The 3D worlds of your courses | `~/osscycler/worlds/` |
 | The key the screen uses to talk to the core | `~/osscycler/api-token` (keep it private) |
 
 To keep it somewhere else, set `OSSCYCLER_HOME` to another folder.
@@ -203,9 +240,9 @@ so mind your privacy settings if you share them, or start the core with
 
 ## Map data
 
-The road view shows fields, forests, water and buildings along your
-routes. To do that, the core downloads the map data around a course
-from OpenStreetMap, through the public Overpass server
+The road view and the 3D worlds show fields, forests, water and
+buildings along your routes. To do that, osscycler downloads the map data
+around a course from OpenStreetMap, through the public Overpass server
 (overpass-api.de), when you first ride it: 5 km at a time, starting
 where you start, in the background while you already ride. It keeps the
 data in `~/osscycler/courses/.osm/` and downloads it again only if you
@@ -223,15 +260,18 @@ scenery.
 
 Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright)
 contributors, available under the Open Database License. The start
-menu shows this credit, and so does every ride for its first 20 seconds. The included Posbank Loop follows OpenStreetMap roads
-too; its elevation comes from the
+menu shows this credit. For the 3D worlds osscycler also downloads, once
+per area, the coastline (to know how far the sea is) and, in the
+Netherlands, the heights from PDOK. The included Posbank Loop follows
+OpenStreetMap roads too; its elevation comes from the
 [AHN](https://www.ahn.nl/) (Actueel Hoogtebestand Nederland), open data
 under CC0.
 
 ## A Raspberry Pi by the trainer
 
-A Pi with the ANT+ stick can run the core on its own, from boot, without
-anyone logged in. With the package installed:
+A Pi with the ANT+ stick can run just the core: `osscycler --headless`.
+To have it running from boot, without anyone logged in, with the package
+installed:
 
 ```sh
 sudo systemctl enable --now osscycler@$USER
@@ -245,7 +285,7 @@ it's plugged in, also after you've pulled it out. Its log:
 in `/usr/bin`.)
 
 The simplest way to see the screen is over SSH: log in to the Pi and run
-`osscycler-tui` there.
+`osscycler tui` there (it uses the core already running).
 
 To run the TUI on another machine instead, the core must listen on the
 network with TLS (it can change your trainer's resistance, so it refuses
@@ -258,6 +298,8 @@ to do that unencrypted): start it with
 
 - Zwift is a trademark of Zwift, Inc. osscycler reads and writes Zwift's
   `.zwo` workout files; it is not affiliated with Zwift.
+- The 3D view needs a graphics card with Vulkan (most from the last ten
+  years); it holds 60 frames a second on a mid-range one.
 - osscycler is young. On a Tacx Flux 2, calibration, the trainer
   following a grade or an ERG target, laps of a test track and a heart
   rate strap alongside have been checked; a full course ride and a full
@@ -282,6 +324,9 @@ Want to build osscycler yourself or work on it? See
 osscycler is free software under the GNU General Public License,
 version 3 ([LICENSE](LICENSE)): you may use, study, change and share it;
 if you share a changed version, share its source under the same terms.
+The releases also contain other people's free software (the Godot
+engine, the .NET runtime and the libraries the programs use) and data;
+their licences are in `THIRD_PARTY_NOTICES.txt` in every download.
 
 The ANT+ network key is not part of the source. Release builds carry it
 under the ANT+ adopter agreement; to build from source, get the key from

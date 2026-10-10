@@ -1,0 +1,17 @@
+; Godot 4 project: osscycler's 3D view (osscycler-3d).
+config_version=5
+
+[application]
+config/name="osscycler"
+run/main_scene="res://main.tscn"
+config/features=PackedStringArray("4.7", "C#", "Forward Plus")
+
+[display]
+window/size/viewport_width=1600
+window/size/viewport_height=900
+
+[dotnet]
+project/assembly_name="OsscyclerGodot"
+
+[rendering]
+anti_aliasing/quality/msaa_3d=2

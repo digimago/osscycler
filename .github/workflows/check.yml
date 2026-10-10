@@ -1,8 +1,13 @@
 # Checks every push and pull request: make check (gofmt, vet, staticcheck,
-# race tests) and actionlint on the workflows. No secrets: the test that
+# race tests), the 3D view's tests (dotnet test) and actionlint on the
+# workflows. No secrets: the test that
 # looks for the ANT+ network key in the source skips here (the release
 # workflow runs it with the key), so pull requests from forks are safe to
 # check. The job name "check" is what a branch ruleset can require.
+#
+# Copies of the repository elsewhere (a private one for work not yet
+# public) check pull requests and manual runs only, not every push: their
+# Actions minutes are limited.
 #
 # The actions are pinned to commits, as in release.yml.
 name: check
@@ -22,6 +27,7 @@ concurrency:
 
 jobs:
   check:
+    if: github.event_name != 'push' || github.repository == 'digimago/osscycler'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -34,6 +40,13 @@ jobs:
 
       - name: make check
         run: make check
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: The 3D view's tests
+        run: dotnet test renderers/godot/tests/Hud
 
       - name: actionlint
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7

@@ -159,9 +159,9 @@ func (c *cover) findBanks(t *terrain, id int) *banks {
 // landColors are the terrain's vertex colours per land use, linear RGB
 // (glTF's COLOR_0), multiplied by the white terrain material: the TUI's
 // palette, which renderers may replace with textures by class later.
-var landColors = func() [8][3]float32 {
+var landColors = func() [12][3]float32 {
 	srgb := srgbLinear
-	var p [8][3]float32
+	var p [12][3]float32
 	p[scenery.LandNone] = srgb(0x5a9e3a)     // grass
 	p[scenery.LandMeadow] = srgb(0x6aa848)   // a lighter green
 	p[scenery.LandFarmland] = srgb(0x8fa03c) // crops
@@ -170,6 +170,12 @@ var landColors = func() [8][3]float32 {
 	p[scenery.LandWater] = srgb(0x4a5038)    // the bed, under the water
 	p[scenery.LandOrchard] = srgb(0x66a644)
 	p[scenery.LandHeath] = srgb(0x866a78) // heather
+	// Dunes: pale sand, the grey dune's grey-green turf and moss, the
+	// thickets' darker floor; the beach paler still, dry sand.
+	p[scenery.LandDuneSand] = srgb(0xcdbd94)
+	p[scenery.LandDuneGrass] = srgb(0x8a9064)
+	p[scenery.LandDuneScrub] = srgb(0x6c7248)
+	p[scenery.LandBeach] = srgb(0xddd0ae)
 	return p
 }()
 

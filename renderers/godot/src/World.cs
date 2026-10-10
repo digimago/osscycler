@@ -245,7 +245,7 @@ public sealed class World
                 VisibilityRangeEnd = g.DrawM,
                 VisibilityRangeEndMargin = g.DrawM * 0.1f,
                 VisibilityRangeFadeMode = GeometryInstance3D.VisibilityRangeFadeModeEnum.Self,
-                CastShadow = g.Kind == "heather" || g.Kind.StartsWith("bush ") ? GeometryInstance3D.ShadowCastingSetting.Off : GeometryInstance3D.ShadowCastingSetting.On,
+                CastShadow = g.Kind == "heather" || g.Kind == "marram" || g.Kind.StartsWith("bush ") ? GeometryInstance3D.ShadowCastingSetting.Off : GeometryInstance3D.ShadowCastingSetting.On,
                 MaterialOverride = g.Kind == "heather" ? heather : null,
             });
         }

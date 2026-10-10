@@ -45,7 +45,8 @@ const (
 const GroundLayout = "land, clearance_0.1m, height_cm_delta"
 
 // GroundClasses names the ground map's land values, by value.
-var GroundClasses = []string{"none", "grass", "meadow", "farmland", "forest", "built", "water", "orchard", "heath"}
+var GroundClasses = []string{"none", "grass", "meadow", "farmland", "forest", "built", "water", "orchard", "heath",
+	"dune sand", "dune grass", "dune scrub", "beach"}
 
 // groundChunk is where one chunk's map is in GroundFile.
 type groundChunk struct {

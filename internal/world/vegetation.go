@@ -29,17 +29,19 @@ const (
 )
 
 // Categories of plant: broadleaved and coniferous trees (their species
-// chosen in trees.go), bushes, heather.
+// chosen in trees.go), bushes, heather, marram grass.
 const (
 	catBroad = iota
 	catConifer
 	catBush
 	catHeather
+	catMarram
 )
 
 // plantRule is what grows on a land use: per category, the ground area
-// each plant takes (m², 0: none) near the route.
-type plantRule [4]float64
+// each plant takes (m², 0: none) near the route; a candidate spot is one
+// per plantCellM², so no category can take less.
+type plantRule [5]float64
 
 // A grown wood has 150-250 trees a hectare (owner, 2026-10-10: thin them
 // at least a bit; they had about 370 in a mixed wood of average stand):
@@ -58,7 +60,16 @@ var plantRules = map[scenery.Land]plantRule{
 	scenery.LandMeadow:  {catBroad: 2500, catBush: 1200},
 	scenery.LandNone:    {catBroad: 3000, catBush: 1500},
 	scenery.LandOrchard: {catBroad: 30},
+	// Dunes (scenery/dunes.go): marram on the sand, sea buckthorn and
+	// brambles in thickets, low turf between; trees few and low (the
+	// sea keeps them so: seaFactor).
+	scenery.LandDuneSand:  {catConifer: 8000, catBush: 400, catMarram: 12},
+	scenery.LandDuneGrass: {catConifer: 5000, catBroad: 5000, catBush: 160, catMarram: 45},
+	scenery.LandDuneScrub: {catConifer: 3000, catBroad: 900, catBush: 13, catMarram: 90},
 }
+
+// poorGround: on these lands trees stay mostly small (heathSolitary).
+var poorGround = map[scenery.Land]bool{scenery.LandHeath: true, scenery.LandDuneSand: true, scenery.LandDuneGrass: true, scenery.LandDuneScrub: true}
 
 // heathSolitary: on heath (poor ground, owner 2026-10-09) this share of
 // the trees stay small, bush-like; the rest grow full, solitary.
@@ -219,6 +230,8 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 					}
 				case catHeather:
 					kind = kHeather
+				case catMarram:
+					kind = kMarram
 				default:
 					// A species: of this land, or now and then near a border
 					// of the land next to it; an orchard's are small.
@@ -253,8 +266,8 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 						form = formForest
 						scale *= standAge(e, n)
 					}
-					if l == scenery.LandHeath && unit(hb>>48) < heathSolitary {
-						// Heath is poor ground: trees stay small, bush-like;
+					if poorGround[l] && unit(hb>>48) < heathSolitary {
+						// Heath and dunes are poor ground: trees stay small, bush-like;
 						// only now and then a solitary one grows full.
 						scale *= 0.35 + 0.25*unit(hb>>32)
 					}
@@ -536,6 +549,8 @@ func (w *World) addTemplates() error {
 			reedTemplate(&p)
 		case k == kLily:
 			lilyTemplate(&p)
+		case k == kMarram:
+			marramTemplate(&p)
 		case k >= kHedge:
 			hedgeTemplate(&p, hedgeKinds[k-kHedge])
 		}

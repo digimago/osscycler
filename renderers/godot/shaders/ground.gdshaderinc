@@ -7,7 +7,8 @@
 // goes; their texel centres lie on the ground map's cell middles.
 
 // The land (Grass.cs's codes: 1 grass, 2 meadow, 3 forest, 4 built-up,
-// 5 farmland, 6 orchard, 7 heath), a byte per texel.
+// 5 farmland, 6 orchard, 7 heath, 8 grey dune, 9 dune thicket), a byte
+// per texel.
 uniform sampler2D ground_map : filter_nearest, repeat_disable;
 // How far the nearest road edge, wall or car park is (0.1 m steps, so
 // 25.5 m at 1.0): interpolated, it puts the edge of the grass where the
@@ -160,6 +161,10 @@ void look(int ground, float r, out float dense, out float tall, out int tile, ou
 		} else {
 			tall = 0.3; col = vec3(1.15, 1.0, 0.6);
 		}
+	} else if (ground == 8) { // grey dune: short, dry grey-green turf
+		dense = 0.75; tall = 0.18; tile = 1; col = vec3(1.7, 0.95, 2.4);
+	} else if (ground == 9) { // under the dune thicket: sparser turf
+		dense = 0.45; tall = 0.22; tile = r < 0.7 ? 1 : 0; col = vec3(1.5, 0.95, 2.0);
 	}
 }
 

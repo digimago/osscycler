@@ -89,7 +89,8 @@ var (
 	kHeather     = kBush + len(allBushes)
 	kReed        = kHeather + 1
 	kLily        = kHeather + 2
-	kHedge       = kHeather + 3 // then one per hedgeKinds
+	kMarram      = kHeather + 3
+	kHedge       = kHeather + 4 // then one per hedgeKinds
 )
 
 // treeKind is the kind for species sp: its variant v (0..treeVariants-1),
@@ -113,7 +114,7 @@ var plantKinds = func() []plantKind {
 	for _, b := range allBushes {
 		out = append(out, plantKind{"bush " + b.name, b.drawM})
 	}
-	out = append(out, plantKind{"heather", 150}, plantKind{"reed", 150}, plantKind{"lily", 100})
+	out = append(out, plantKind{"heather", 150}, plantKind{"reed", 150}, plantKind{"lily", 100}, plantKind{"marram", 150})
 	for _, h := range hedgeKinds {
 		out = append(out, plantKind{h.name, h.drawM})
 	}
@@ -138,6 +139,17 @@ var speciesByLand = map[scenery.Land]speciesMix{
 		broad:   map[string]float64{"birch": 85, "oak": 15},
 		conifer: map[string]float64{"pine": 100},
 	},
+	// Dunes: birch and pedunculate oak stay low, wind-shorn; pines are
+	// the Austrian and Corsican pines planted to hold the sand.
+	scenery.LandDuneScrub: {
+		broad:   map[string]float64{"birch": 55, "oak": 45},
+		conifer: map[string]float64{"pine": 100},
+	},
+	scenery.LandDuneGrass: {
+		broad:   map[string]float64{"birch": 60, "oak": 40},
+		conifer: map[string]float64{"pine": 100},
+	},
+	scenery.LandDuneSand: {conifer: map[string]float64{"pine": 100}},
 	// Gardens: whatever people planted.
 	scenery.LandBuilt: {
 		broad:   map[string]float64{"birch": 30, "oak": 15, "ash": 15, "beech": 15},

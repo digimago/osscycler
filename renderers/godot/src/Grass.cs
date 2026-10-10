@@ -68,7 +68,8 @@ public sealed class Grass
         _relief = relief;
         _groundCell = map.CellM;
         // The shaders' codes: 1 grass, 2 meadow, 3 forest, 4 built-up,
-        // 5 farmland, 6 orchard, 7 heath; anything else grows nothing.
+        // 5 farmland, 6 orchard, 7 heath, 8 grey dune, 9 dune thicket;
+        // anything else (bare dune sand, the beach) grows nothing here.
         _codes = new byte[256];
         for (int i = 0; i < map.Classes.Length && i < 256; i++)
             _codes[i] = map.Classes[i] switch
@@ -80,6 +81,8 @@ public sealed class Grass
                 "farmland" => 5,
                 "orchard" => 6,
                 "heath" => 7,
+                "dune grass" => 8,
+                "dune scrub" => 9,
                 _ => 0,
             };
         int gn = (int)(WindowM / _groundCell), hn = (int)(WindowM / HeightCellM);

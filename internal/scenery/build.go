@@ -8,7 +8,9 @@ import (
 	"github.com/digimago/osscycler/internal/course"
 )
 
-// Land is a kind of land use; the values match the API's LandUse.
+// Land is a kind of land use; the values up to LandHeath match the API's
+// LandUse. The dune classes after it are the 3D world's own (ByTheSea),
+// never in a Scenery the API sends.
 type Land uint8
 
 const (
@@ -20,6 +22,10 @@ const (
 	LandWater
 	LandOrchard
 	LandHeath
+	LandDuneSand  // dunes.go
+	LandDuneGrass //
+	LandDuneScrub //
+	LandBeach     //
 )
 
 // BuildingKind matches the API's BuildingKind.
@@ -200,6 +206,7 @@ func (m *LandMap) Size(id int) (area, outline float64) {
 type polygon struct {
 	land                   Land
 	leaf                   string // OpenStreetMap's leaf_type (forests)
+	natural                string // its natural tag (ByTheSea tells dunes by it)
 	edges                  [][4]float64
 	minX, minY, maxX, maxY float64
 	area                   float64 // of the bounding box; smaller wins
@@ -242,7 +249,7 @@ func polygons(c *course.Course, d *Data) []*polygon {
 		if land == LandNone {
 			continue
 		}
-		p := &polygon{land: land, leaf: el.Tags["leaf_type"], minX: math.Inf(1), minY: math.Inf(1), maxX: math.Inf(-1), maxY: math.Inf(-1)}
+		p := &polygon{land: land, leaf: el.Tags["leaf_type"], natural: el.Tags["natural"], minX: math.Inf(1), minY: math.Inf(1), maxX: math.Inf(-1), maxY: math.Inf(-1)}
 		add := func(ring []LatLon) {
 			for j := 1; j < len(ring); j++ {
 				x0, y0 := c.Project(ring[j-1].Lat, ring[j-1].Lon)

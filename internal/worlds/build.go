@@ -180,6 +180,8 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 			log.Warn("coastline incomplete", "course", c.ID, "err", err)
 		}
 		o.SeaDistance = co.Distance
+		// Sand, scrub and heath by the sea are dunes (scenery/dunes.go).
+		o.Land.ByTheSea(c, o.SeaDistance)
 	}
 	if t := scenery.TrackScenery(c); t != nil {
 		// A test track's own made-up surroundings.

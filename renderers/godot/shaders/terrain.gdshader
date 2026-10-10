@@ -47,9 +47,11 @@ void fragment() {
 			int g = int(round(texture(ground_map, uv).r * 255.0));
 			float room = smoothstep(0.05, 0.5, texture(clear_map, uv).r * 25.5);
 			float share = g == 1 ? 0.9 : g == 2 ? 0.95 : g == 4 ? 0.5 : g == 6 ? 0.8
-				: g == 3 ? 0.6 : g == 7 ? 0.9 : g == 5 ? 0.15 : 0.0;
+				: g == 3 ? 0.6 : g == 7 ? 0.9 : g == 5 ? 0.15 : g == 8 ? 0.75 : g == 9 ? 0.45 : 0.0;
 			if (g == 3) {
 				under = vec3(0.06, 0.15, 0.02); // ferns
+			} else if (g == 8 || g == 9) {
+				under = vec3(0.2, 0.23, 0.1); // grey dune turf and moss
 			} else if (g == 7) {
 				// heather: dark green twigs, purple in flower
 				under = mix(vec3(0.07, 0.075, 0.035), vec3(0.24, 0.09, 0.2), 0.7 * bloom);

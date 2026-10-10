@@ -30,6 +30,9 @@ import (
 //   - juniper (Juniperus communis): heath, grey-green columns, 1-4 m.
 //   - rhododendron: estates and gardens, a broad dark dome, 1.5-3 m.
 //   - box (Buxus): gardens, small clipped balls, 0.4-0.9 m.
+//
+// and the dunes' (dunes.go): sea buckthorn, bramble, wild privet,
+// creeping willow, elder.
 type bushSpecies struct {
 	name       string
 	drawM      float64
@@ -49,6 +52,11 @@ var allBushes = []bushSpecies{
 	{name: "juniper", drawM: 250, minS: 0.4, maxS: 1.4, leaf: 0x4c614e, wood: 0x5a4a3a, build: juniperTemplate},
 	{name: "rhododendron", drawM: 250, minS: 0.7, maxS: 1.3, leaf: 0x2a4628, wood: 0x5a4a3a, build: rhododendronTemplate},
 	{name: "box", drawM: 120, minS: 0.6, maxS: 1.3, leaf: 0x3a5c28, wood: 0x3a5c28, build: boxTemplate},
+	{name: "sea buckthorn", drawM: 300, minS: 0.5, maxS: 1.3, leaf: 0x6f7f5e, wood: 0x4e4234, build: seaBuckthornTemplate},
+	{name: "bramble", drawM: 150, minS: 0.6, maxS: 1.2, leaf: 0x34522a, wood: 0x6a3c38, build: brambleTemplate},
+	{name: "privet", drawM: 250, minS: 0.7, maxS: 1.2, leaf: 0x2e4c24, wood: 0x5a4a3a, build: privetTemplate},
+	{name: "creeping willow", drawM: 150, minS: 0.6, maxS: 1.4, leaf: 0x74845c, wood: 0x6a5a48, build: creepingWillowTemplate},
+	{name: "elder", drawM: 300, minS: 0.7, maxS: 1.2, leaf: 0x4e7a34, wood: 0x7a7060, build: elderTemplate},
 }
 
 // bushesByLand: the species of each land use (weights).
@@ -57,7 +65,12 @@ var bushesByLand = map[scenery.Land]map[string]float64{
 	scenery.LandHeath:  {"broom": 45, "juniper": 40, "bird cherry": 10, "hawthorn": 5},
 	scenery.LandBuilt:  {"laurel": 24, "box": 20, "rhododendron": 14, "currant": 12, "holly": 10, "hazel": 10, "hawthorn": 10},
 	scenery.LandMeadow: {"hawthorn": 55, "hazel": 30, "bird cherry": 15},
-	scenery.LandNone:   {"hawthorn": 55, "hazel": 30, "bird cherry": 15},
+	// Dunes: thickets of sea buckthorn with brambles and privet, creeping
+	// willow on the grey dune, the odd elder and hawthorn.
+	scenery.LandDuneScrub: {"sea buckthorn": 42, "bramble": 20, "privet": 14, "creeping willow": 10, "hawthorn": 10, "elder": 4},
+	scenery.LandDuneGrass: {"creeping willow": 37, "bramble": 26, "sea buckthorn": 25, "hawthorn": 10, "elder": 2},
+	scenery.LandDuneSand:  {"sea buckthorn": 60, "creeping willow": 25, "bramble": 15},
+	scenery.LandNone:      {"hawthorn": 55, "hazel": 30, "bird cherry": 15},
 }
 
 // pickBush picks a bush for land l with seed h: its kind and size (× the

@@ -108,6 +108,26 @@ service TelemetryService {
   // that was paused keeps its riding time but is never a personal best or
   // a ghost. Starting a ride, a workout or manual control carries on.
   rpc SetPaused(SetPausedRequest) returns (SetPausedResponse);
+  // Announce puts a short message on every screen for a while (State.
+  // announcement): a script running a session, a coach on another screen.
+  // Empty text takes the current one off.
+  rpc Announce(AnnounceRequest) returns (AnnounceResponse);
+}
+
+message AnnounceRequest {
+  // At most 200 characters; empty clears.
+  string text = 1;
+  // How long screens show it: 1 to 600 s (0: 10 s).
+  double seconds = 2;
+}
+
+message AnnounceResponse {}
+
+// Announcement is a message for every screen until until_unix_ms
+// (Announce).
+message Announcement {
+  string text = 1;
+  int64 until_unix_ms = 2;
 }
 
 message SetPausedRequest {
@@ -520,6 +540,8 @@ message State {
   int64 paused_since_unix_ms = 12;
   // How many heads (StreamStateRequest.head) are connected.
   uint32 heads = 13;
+  // A message for every screen (Announce), while until_unix_ms is ahead.
+  Announcement announcement = 14;
 }
 
 message Radio {

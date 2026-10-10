@@ -135,6 +135,10 @@ type State struct {
 	// head). Without one, internal/unattended pauses and later ends what
 	// is under way.
 	Heads int
+	// Announcement is a message for every screen until AnnouncedUntil
+	// (Announce): a script running a session, a coach.
+	Announcement   string
+	AnnouncedUntil time.Time
 }
 
 // SetPaused parks the core or carries on; whether that changed anything.
@@ -152,6 +156,17 @@ func (h *Hub) SetPaused(on bool) bool {
 		return true
 	})
 	return changed
+}
+
+// Announce puts text on every screen until until; empty text clears.
+func (h *Hub) Announce(text string, until time.Time) {
+	h.Update(func(st *State) bool {
+		st.Announcement, st.AnnouncedUntil = text, until
+		if text == "" {
+			st.AnnouncedUntil = time.Time{}
+		}
+		return true
+	})
 }
 
 // Radio is the ANT+ stick. Known is false without one to look for (-fake).

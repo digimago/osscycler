@@ -41,6 +41,7 @@ const (
 	TelemetryService_SetTrainerControl_FullMethodName     = "/osscycler.v1.TelemetryService/SetTrainerControl"
 	TelemetryService_ReleaseTrainerControl_FullMethodName = "/osscycler.v1.TelemetryService/ReleaseTrainerControl"
 	TelemetryService_SetPaused_FullMethodName             = "/osscycler.v1.TelemetryService/SetPaused"
+	TelemetryService_Announce_FullMethodName              = "/osscycler.v1.TelemetryService/Announce"
 )
 
 // TelemetryServiceClient is the client API for TelemetryService service.
@@ -130,6 +131,10 @@ type TelemetryServiceClient interface {
 	// that was paused keeps its riding time but is never a personal best or
 	// a ghost. Starting a ride, a workout or manual control carries on.
 	SetPaused(ctx context.Context, in *SetPausedRequest, opts ...grpc.CallOption) (*SetPausedResponse, error)
+	// Announce puts a short message on every screen for a while (State.
+	// announcement): a script running a session, a coach on another screen.
+	// Empty text takes the current one off.
+	Announce(ctx context.Context, in *AnnounceRequest, opts ...grpc.CallOption) (*AnnounceResponse, error)
 }
 
 type telemetryServiceClient struct {
@@ -378,6 +383,16 @@ func (c *telemetryServiceClient) SetPaused(ctx context.Context, in *SetPausedReq
 	return out, nil
 }
 
+func (c *telemetryServiceClient) Announce(ctx context.Context, in *AnnounceRequest, opts ...grpc.CallOption) (*AnnounceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AnnounceResponse)
+	err := c.cc.Invoke(ctx, TelemetryService_Announce_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // TelemetryServiceServer is the server API for TelemetryService service.
 // All implementations must embed UnimplementedTelemetryServiceServer
 // for forward compatibility.
@@ -465,6 +480,10 @@ type TelemetryServiceServer interface {
 	// that was paused keeps its riding time but is never a personal best or
 	// a ghost. Starting a ride, a workout or manual control carries on.
 	SetPaused(context.Context, *SetPausedRequest) (*SetPausedResponse, error)
+	// Announce puts a short message on every screen for a while (State.
+	// announcement): a script running a session, a coach on another screen.
+	// Empty text takes the current one off.
+	Announce(context.Context, *AnnounceRequest) (*AnnounceResponse, error)
 	mustEmbedUnimplementedTelemetryServiceServer()
 }
 
@@ -540,6 +559,9 @@ func (UnimplementedTelemetryServiceServer) ReleaseTrainerControl(context.Context
 }
 func (UnimplementedTelemetryServiceServer) SetPaused(context.Context, *SetPausedRequest) (*SetPausedResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetPaused not implemented")
+}
+func (UnimplementedTelemetryServiceServer) Announce(context.Context, *AnnounceRequest) (*AnnounceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Announce not implemented")
 }
 func (UnimplementedTelemetryServiceServer) mustEmbedUnimplementedTelemetryServiceServer() {}
 func (UnimplementedTelemetryServiceServer) testEmbeddedByValue()                          {}
@@ -944,6 +966,24 @@ func _TelemetryService_SetPaused_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _TelemetryService_Announce_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AnnounceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TelemetryServiceServer).Announce(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TelemetryService_Announce_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TelemetryServiceServer).Announce(ctx, req.(*AnnounceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // TelemetryService_ServiceDesc is the grpc.ServiceDesc for TelemetryService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1030,6 +1070,10 @@ var TelemetryService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetPaused",
 			Handler:    _TelemetryService_SetPaused_Handler,
+		},
+		{
+			MethodName: "Announce",
+			Handler:    _TelemetryService_Announce_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

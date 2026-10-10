@@ -9,7 +9,9 @@ import (
 )
 
 // Pausing (owner, 2026-10-10: park the core for a coffee): P or space
-// pauses and carries on; esc during a ride, a workout or manual control
+// pauses and carries on, and p too during a ride, a workout or manual
+// control or while paused (owner, 2026-10-10: p, the profile, did nothing
+// on a paused ride, where riders reach for it); esc during a ride, a workout or manual control
 // opens the menu with the core paused, and leaving the menu with esc
 // carries on. The core holds everything while paused (SetPaused); the TUI
 // only asks and shows it.
@@ -35,6 +37,10 @@ func (m Model) pauseKey(key string) (Model, tea.Cmd, bool) {
 	switch key {
 	case "P", "space", " ":
 		return m, m.setPaused(!m.paused()), true
+	case "p":
+		if m.underWay() || m.paused() {
+			return m, m.setPaused(!m.paused()), true
+		}
 	case "esc":
 		if m.underWay() && !m.paused() {
 			m.menu, m.menuPaused, m.notice = &menuState{}, true, ""

@@ -32,7 +32,7 @@ func paused(m Model, on bool) Model {
 }
 
 func TestPauseKeys(t *testing.T) {
-	for _, key := range []string{"P", "space"} {
+	for _, key := range []string{"P", "space", "p"} {
 		m, cmds := pausing(t)
 		m, cmd := press(m, key)
 		m = run(m, cmd)

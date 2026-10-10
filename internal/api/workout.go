@@ -76,6 +76,7 @@ func (s *telemetryServer) StartWorkout(_ context.Context, req *pb.StartWorkoutRe
 	if err := s.workouts.Start(req.GetId()); err != nil {
 		return nil, workoutError(err)
 	}
+	s.carryOn()
 	return &pb.StartWorkoutResponse{}, nil
 }
 

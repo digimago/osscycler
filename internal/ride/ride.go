@@ -114,6 +114,10 @@ type run struct {
 	lastLap, bestLap      telemetry.Lap
 	// yielded: a workout or manual control has the trainer.
 	yielded bool
+	// The core paused (State.Paused): since when (zero: not paused), and
+	// whether the ride and the lap under way were ever paused.
+	pausedAt          time.Time
+	paused, lapPaused bool
 }
 
 // drivenElsewhere reports whether a workout or manual control has the
@@ -334,6 +338,13 @@ func (s *Session) tick(now time.Time) {
 	if r == nil || !r.phase.Active() {
 		return
 	}
+	if st.Paused {
+		s.hold(r, now)
+		return
+	}
+	if !r.pausedAt.IsZero() {
+		s.carryOn(r, now)
+	}
 	if r.phase == telemetry.RideArmed {
 		if power <= 0 {
 			return
@@ -388,6 +399,44 @@ func (s *Session) tick(now time.Time) {
 	s.publish(r, finish)
 }
 
+// hold keeps a ride still while the core is paused: the rider stopped,
+// the clock (and the ghost with it) standing, the trainer flat.
+func (s *Session) hold(r *run, now time.Time) {
+	if r.pausedAt.IsZero() {
+		r.pausedAt = now
+		r.rider.SpeedMPS = 0
+		if r.phase == telemetry.RideRiding {
+			r.paused, r.lapPaused = true, true
+		}
+		s.log.Info("ride paused", "course", r.c.Name, "distance_km", round(r.rider.DistanceM/1000, 2))
+	}
+	if !r.yielded {
+		flat := 0.0
+		s.target = &flat
+	}
+	clock := time.Time{}
+	if r.phase == telemetry.RideRiding {
+		clock = r.pausedAt
+	}
+	s.publish(r, clock)
+}
+
+// carryOn resumes a ride after a pause: its clocks move on by the time it
+// stood, so the ride's time is riding time; the trainer gets the grade
+// again.
+func (s *Session) carryOn(r *run, now time.Time) {
+	held := now.Sub(r.pausedAt)
+	if r.phase == telemetry.RideRiding {
+		r.start, r.lapStart = r.start.Add(held), r.lapStart.Add(held)
+	}
+	r.last, r.pausedAt = now, time.Time{}
+	if !r.yielded {
+		g := s.trainerGrade(r.c, r.rider.DistanceM, r.rider.SpeedMPS)
+		s.target = &g
+	}
+	s.log.Info("ride resumed", "course", r.c.Name, "after", held.Round(time.Second))
+}
+
 // laps completes the laps the rider has gone round (on a loop), and
 // keeps the current lap's trace for the ghost.
 func (s *Session) laps(r *run, now time.Time) {
@@ -402,16 +451,17 @@ func (s *Session) laps(r *run, now time.Time) {
 			cross = r.lapStart
 		}
 		t := cross.Sub(r.lapStart)
-		done := telemetry.Lap{N: r.lap, Elapsed: t, ClimbedM: r.lapClimbed, StartSpeedMPS: r.lapSpeed0, Finished: cross}
+		done := telemetry.Lap{N: r.lap, Elapsed: t, ClimbedM: r.lapClimbed, StartSpeedMPS: r.lapSpeed0, Finished: cross, Paused: r.lapPaused}
 		if t > 0 {
 			done.AvgPowerW = r.lapEnergy / t.Seconds()
 		}
 		r.lastLap = done
-		if r.bestLap.N == 0 || t < r.bestLap.Elapsed {
+		// A paused lap is neither the best nor the one to race.
+		if !done.Paused && (r.bestLap.N == 0 || t < r.bestLap.Elapsed) {
 			r.bestLap = done
 		}
 		// A lap faster than the ghost is the one to race from now on.
-		if !r.chosen && t > 0 && (r.ghost == nil || t < r.ghost.Elapsed) {
+		if !r.chosen && !done.Paused && t > 0 && (r.ghost == nil || t < r.ghost.Elapsed) {
 			trace := append(r.lapTrace, TracePoint{t, r.c.Distance})
 			r.ghost = &Ghost{Label: fmt.Sprintf("PB lap %d", r.lap), Elapsed: t, Trace: trace}
 		}
@@ -421,6 +471,7 @@ func (s *Session) laps(r *run, now time.Time) {
 		r.lapStart, r.rider.DistanceM = cross, over
 		r.lapEnergy, r.lapClimbed, r.lapSpeed0 = 0, 0, r.rider.SpeedMPS
 		r.lapTrace = []TracePoint{{0, 0}}
+		r.lapPaused = false
 	}
 	if at := now.Sub(r.lapStart); at > r.lapTrace[len(r.lapTrace)-1].At {
 		r.lapTrace = append(r.lapTrace, TracePoint{at, r.rider.DistanceM})
@@ -492,6 +543,8 @@ func (s *Session) publish(r *run, now time.Time) {
 			LastLap:         r.lastLap,
 			BestLap:         r.bestLap,
 			Yielded:         r.yielded,
+			Paused:          r.paused,
+			LapPaused:       r.lapPaused,
 		}
 		if r.c.Loop {
 			st.Ride.Lap, st.Ride.LapElapsed = r.lap, lapElapsed

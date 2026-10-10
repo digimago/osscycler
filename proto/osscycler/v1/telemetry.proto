@@ -100,6 +100,23 @@ service TelemetryService {
 
   // ReleaseTrainerControl ends manual control; the trainer is set flat.
   rpc ReleaseTrainerControl(ReleaseTrainerControlRequest) returns (ReleaseTrainerControlResponse);
+
+  // SetPaused parks the core (a coffee, the door) or carries on. While
+  // paused, a course ride and a workout hold still with their clocks
+  // stopped, the trainer goes flat (manual control too), the recording's
+  // timer stops and the activity is never ended for being still. A ride
+  // that was paused keeps its riding time but is never a personal best or
+  // a ghost. Starting a ride, a workout or manual control carries on.
+  rpc SetPaused(SetPausedRequest) returns (SetPausedResponse);
+}
+
+message SetPausedRequest {
+  bool paused = 1;
+}
+
+message SetPausedResponse {
+  // As it is now.
+  bool paused = 1;
 }
 
 message SetTrainerControlRequest {
@@ -188,6 +205,9 @@ message RideResult {
   bool personal_best = 10;
   // The recording (an Activity name) the ride is in.
   string file = 11;
+  // The core was paused during the ride: never a personal best, and it
+  // can't be raced.
+  bool paused = 12;
 }
 
 message EndActivityRequest {
@@ -489,6 +509,9 @@ message State {
   TrainerControl control = 9;
   // The ANT+ stick; absent for a core without one (-fake).
   Radio radio = 10;
+  // The core is paused (SetPaused), since paused_since_unix_ms.
+  bool paused = 11;
+  int64 paused_since_unix_ms = 12;
 }
 
 message Radio {
@@ -659,6 +682,11 @@ message Ride {
   // A workout or manual control drives the trainer; the loop only moves
   // the rider round (and leads in a workout's free segments).
   bool trainer_yielded = 25;
+  // The core was paused during this ride (its clock stopped meanwhile):
+  // it can't be a personal best or a ghost; on a loop, lap_paused for the
+  // lap under way.
+  bool paused = 26;
+  bool lap_paused = 27;
 }
 
 message RideLap {
@@ -669,6 +697,8 @@ message RideLap {
   double climbed_m = 4;
   // When the lap was completed.
   int64 finished_unix_ms = 5;
+  // The core was paused during the lap.
+  bool paused = 6;
 }
 
 message RideGhost {

@@ -46,8 +46,13 @@ func (s *Store) Results() ([]Entry, error) {
 	}
 	es := make([]Entry, len(rs))
 	for i, r := range rs {
-		es[i] = Entry{Result: r, PB: true}
+		// A paused ride (its time is riding time, with a rest in it) is
+		// never the PB, and no ride has to beat it to be one.
+		es[i] = Entry{Result: r, PB: !r.Paused}
 		for _, o := range rs {
+			if r.Paused || o.Paused {
+				continue
+			}
 			// Strictly faster, or as fast and earlier: one PB per stretch.
 			if SameStretch(r, o) && (o.ElapsedS < r.ElapsedS || (o.ElapsedS == r.ElapsedS && o.Finished.Before(r.Finished))) {
 				es[i].PB = false
@@ -98,6 +103,10 @@ func (s *Store) Race(c *course.Course, finished time.Time) (*ride.Ghost, float64
 		}
 		if !SameStretch(e.Result, record.Result{CourseID: c.ID, StartM: e.StartM, DistanceM: c.Distance - e.StartM}) {
 			return nil, 0, ride.ErrCourseChanged
+		}
+		if e.Paused {
+			// Its recording holds the stop, its time doesn't: no ghost.
+			return nil, 0, ride.ErrPausedRide
 		}
 		g, err := s.ghost(c, e)
 		return g, e.StartM, err

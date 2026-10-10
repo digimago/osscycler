@@ -123,6 +123,30 @@ type State struct {
 	Profile   Profile
 	Control   Control
 	Radio     Radio
+	// Paused: the rider parked the core (a coffee, the door). Rides and
+	// workouts hold still with their clocks stopped, the trainer goes
+	// flat, the recording's timer stops and the activity is never ended
+	// for being still; resuming carries on. PausedSince is when (wall
+	// clock, for showing how long).
+	Paused      bool
+	PausedSince time.Time
+}
+
+// SetPaused parks the core or carries on; whether that changed anything.
+func (h *Hub) SetPaused(on bool) bool {
+	changed := false
+	h.Update(func(st *State) bool {
+		if st.Paused == on {
+			return false
+		}
+		st.Paused, changed = on, true
+		st.PausedSince = time.Time{}
+		if on {
+			st.PausedSince = time.Now()
+		}
+		return true
+	})
+	return changed
 }
 
 // Radio is the ANT+ stick. Known is false without one to look for (-fake).
@@ -291,6 +315,11 @@ type Ride struct {
 	// Yielded: a workout or manual control drives the trainer, and the
 	// ride only moves the rider along the loop.
 	Yielded bool
+	// Paused: the ride was paused at some point (its clock stopped
+	// meanwhile), so it can't be a personal best or a ghost (a rest halfway
+	// up a climb would make an unbeatable time). On a loop, per lap: the
+	// lap under way (LapPaused) and the completed ones (Lap.Paused).
+	Paused, LapPaused bool
 }
 
 // OnLoop reports whether a loop ride is under way: it moves the rider
@@ -307,6 +336,8 @@ type Lap struct {
 	// the first lap, from a standstill), so the lap can be replayed.
 	StartSpeedMPS float64
 	Finished      time.Time
+	// Paused: the core was paused during the lap.
+	Paused bool
 }
 
 // RideGhost is an earlier ride on the same stretch, raced alongside.

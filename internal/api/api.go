@@ -213,8 +213,21 @@ func (s *telemetryServer) SetTrainerControl(_ context.Context, req *pb.SetTraine
 	case err != nil:
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
+	s.carryOn()
 	return &pb.SetTrainerControlResponse{Mode: pb.ControlMode(m) + 1, Target: got}, nil
 }
+
+// SetPaused parks the core or carries on (telemetry.Hub.SetPaused); the
+// rides, workouts, manual control and recorder each hold while paused.
+func (s *telemetryServer) SetPaused(_ context.Context, req *pb.SetPausedRequest) (*pb.SetPausedResponse, error) {
+	s.hub.SetPaused(req.GetPaused())
+	st, _ := s.hub.Latest()
+	return &pb.SetPausedResponse{Paused: st.Paused}, nil
+}
+
+// carryOn ends a pause before something new starts: starting it means
+// riding again.
+func (s *telemetryServer) carryOn() { s.hub.SetPaused(false) }
 
 func (s *telemetryServer) ReleaseTrainerControl(context.Context, *pb.ReleaseTrainerControlRequest) (*pb.ReleaseTrainerControlResponse, error) {
 	if s.control != nil {
@@ -304,7 +317,7 @@ func (s *telemetryServer) ListResults(context.Context, *pb.ListResultsRequest) (
 		resp.Results = append(resp.Results, &pb.RideResult{
 			FinishedUnixMs: e.Finished.UnixMilli(), CourseId: e.CourseID, CourseName: e.CourseName,
 			StartM: e.StartM, DistanceM: e.DistanceM, ElapsedS: e.ElapsedS, AvgPowerW: e.AvgPowerW,
-			ClimbedM: e.ClimbedM, DifficultyPct: e.DifficultyPct, PersonalBest: e.PB, File: e.File,
+			ClimbedM: e.ClimbedM, DifficultyPct: e.DifficultyPct, PersonalBest: e.PB, File: e.File, Paused: e.Paused,
 		})
 	}
 	return resp, nil
@@ -358,11 +371,12 @@ func (s *telemetryServer) StartRide(_ context.Context, req *pb.StartRideRequest)
 	switch {
 	case errors.Is(err, ride.ErrUnknownCourse), errors.Is(err, ride.ErrUnknownRide):
 		return nil, status.Error(codes.NotFound, err.Error())
-	case errors.Is(err, ride.ErrRideActive), errors.Is(err, profile.ErrIncomplete), errors.Is(err, ride.ErrCourseChanged):
+	case errors.Is(err, ride.ErrRideActive), errors.Is(err, profile.ErrIncomplete), errors.Is(err, ride.ErrCourseChanged), errors.Is(err, ride.ErrPausedRide):
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	case err != nil:
 		return nil, status.Error(codes.Internal, err.Error())
 	}
+	s.carryOn()
 	if s.scenery != nil {
 		from := 0.0
 		if st, _ := s.hub.Latest(); st.Ride.CourseID == req.GetCourseId() {

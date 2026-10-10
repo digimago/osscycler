@@ -6,6 +6,7 @@ import (
 	"github.com/digimago/osscycler/internal/fec"
 	"github.com/digimago/osscycler/internal/scenery"
 	"github.com/digimago/osscycler/internal/telemetry"
+	"time"
 )
 
 // ToProto converts a telemetry snapshot to its wire form.
@@ -37,6 +38,9 @@ func ToProto(s telemetry.State) *pb.State {
 		Workout: workoutProgressToProto(s.Workout),
 		Profile: profileToProto(s.Profile),
 		Radio:   radioToProto(s.Radio),
+		Paused:  s.Paused,
+		// Zero while not paused.
+		PausedSinceUnixMs: unixMs(s.PausedSince),
 		Control: &pb.TrainerControl{
 			Mode:   pb.ControlMode(s.Control.Mode) + 1, // proto reserves 0 for unspecified
 			Target: s.Control.Target, ChangedNs: int64(s.Control.Changed),
@@ -76,7 +80,17 @@ func rideToProto(r telemetry.Ride) *pb.Ride {
 		LastLap:         lapToProto(r.LastLap),
 		BestLap:         lapToProto(r.BestLap),
 		TrainerYielded:  r.Yielded,
+		Paused:          r.Paused,
+		LapPaused:       r.LapPaused,
 	}
+}
+
+// unixMs is t in milliseconds since 1970; 0 for the zero time.
+func unixMs(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
+	return t.UnixMilli()
 }
 
 func lapToProto(l telemetry.Lap) *pb.RideLap {
@@ -84,7 +98,7 @@ func lapToProto(l telemetry.Lap) *pb.RideLap {
 		return nil
 	}
 	return &pb.RideLap{Number: uint32(l.N), TimeS: l.Elapsed.Seconds(), AvgPowerW: l.AvgPowerW,
-		ClimbedM: l.ClimbedM, FinishedUnixMs: l.Finished.UnixMilli()}
+		ClimbedM: l.ClimbedM, FinishedUnixMs: l.Finished.UnixMilli(), Paused: l.Paused}
 }
 
 // profileToProto converts the rider profile; nil for a core without one.

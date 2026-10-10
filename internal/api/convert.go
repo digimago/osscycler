@@ -41,6 +41,7 @@ func ToProto(s telemetry.State) *pb.State {
 		Paused:  s.Paused,
 		// Zero while not paused.
 		PausedSinceUnixMs: unixMs(s.PausedSince),
+		Announcement:      announcement(s),
 		Heads:             uint32(s.Heads),
 		Control: &pb.TrainerControl{
 			Mode:   pb.ControlMode(s.Control.Mode) + 1, // proto reserves 0 for unspecified
@@ -270,4 +271,12 @@ func optFloat(o telemetry.Opt[float64]) *float64 {
 		return nil
 	}
 	return &o.V
+}
+
+// announcement is the state's announcement, nil without one.
+func announcement(s telemetry.State) *pb.Announcement {
+	if s.Announcement == "" {
+		return nil
+	}
+	return &pb.Announcement{Text: s.Announcement, UntilUnixMs: s.AnnouncedUntil.UnixMilli()}
 }

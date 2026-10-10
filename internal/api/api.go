@@ -15,6 +15,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -228,6 +229,27 @@ func (s *telemetryServer) SetPaused(_ context.Context, req *pb.SetPausedRequest)
 // carryOn ends a pause before something new starts: starting it means
 // riding again.
 func (s *telemetryServer) carryOn() { s.hub.SetPaused(false) }
+
+// Announce puts a message on every screen for a while (State.announcement).
+func (s *telemetryServer) Announce(_ context.Context, req *pb.AnnounceRequest) (*pb.AnnounceResponse, error) {
+	text := strings.TrimSpace(req.GetText())
+	if utf8.RuneCountInString(text) > maxAnnouncement {
+		return nil, status.Errorf(codes.InvalidArgument, "an announcement is at most %d characters", maxAnnouncement)
+	}
+	secs := req.GetSeconds()
+	if secs == 0 {
+		secs = 10
+	}
+	if secs < 1 || secs > 600 {
+		return nil, status.Error(codes.InvalidArgument, "an announcement shows 1 to 600 s")
+	}
+	s.hub.Announce(text, time.Now().Add(time.Duration(secs*float64(time.Second))))
+	return &pb.AnnounceResponse{}, nil
+}
+
+// maxAnnouncement: an announcement's length, in characters (a line on a
+// TV, two in a terminal).
+const maxAnnouncement = 200
 
 func (s *telemetryServer) ReleaseTrainerControl(context.Context, *pb.ReleaseTrainerControlRequest) (*pb.ReleaseTrainerControlResponse, error) {
 	if s.control != nil {

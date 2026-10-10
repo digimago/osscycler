@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"google.golang.org/protobuf/proto"
@@ -88,5 +89,23 @@ func TestAnotherScreenCarryingOnClosesTheMenu(t *testing.T) {
 	m = paused(m, false) // the renderer carried on
 	if m.menu != nil || m.menuPaused {
 		t.Errorf("carried on elsewhere: menu %v, menuPaused %v", m.menu != nil, m.menuPaused)
+	}
+}
+
+// An announcement shows on top until it expires (Announce).
+func TestAnnouncement(t *testing.T) {
+	m, _ := pausing(t)
+	st := proto.Clone(m.st).(*pb.State)
+	st.Announcement = &pb.Announcement{Text: "GRADE -5 %: lighter than flat?", UntilUnixMs: time.Now().Add(time.Minute).UnixMilli()}
+	next, _ := m.Update(StateMsg{State: st})
+	m = next.(Model)
+	if out := plain(m.render()); !strings.Contains(out, "GRADE -5 %: lighter than flat?") {
+		t.Errorf("no announcement:\n%s", out)
+	}
+	st = proto.Clone(st).(*pb.State)
+	st.Announcement.UntilUnixMs = time.Now().Add(-time.Second).UnixMilli()
+	next, _ = m.Update(StateMsg{State: st})
+	if out := plain(next.(Model).render()); strings.Contains(out, "lighter than flat") {
+		t.Errorf("an expired announcement still shows:\n%s", out)
 	}
 }

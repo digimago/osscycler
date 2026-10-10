@@ -339,6 +339,9 @@ func (m Model) handleKey(key string) (tea.Model, tea.Cmd) {
 // render draws the screen, with the tour banner on top when there is one.
 func (m Model) render() string {
 	var banners []string
+	if a := m.announcement(); a != "" && m.width > 0 {
+		banners = append(banners, m.announceBanner(a))
+	}
 	if m.paused() && m.width > 0 {
 		banners = append(banners, m.pauseBanner())
 	}

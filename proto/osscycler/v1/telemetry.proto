@@ -487,6 +487,12 @@ message CancelCalibrationResponse {}
 message StreamStateRequest {
   // Upper bound on the update rate. 0 means the server default (60 Hz).
   uint32 max_rate_hz = 1;
+  // A screen the rider rides with (the TUI, a 3D view): counted in
+  // State.heads while the stream is open. With none for 30 s while a ride,
+  // a workout or manual control is under way, the core pauses it, and
+  // after 30 minutes ends it and saves the activity. A renderer in debug
+  // mode or a script watching the state leaves it out.
+  bool head = 2;
 }
 
 message StreamStateResponse {
@@ -512,6 +518,8 @@ message State {
   // The core is paused (SetPaused), since paused_since_unix_ms.
   bool paused = 11;
   int64 paused_since_unix_ms = 12;
+  // How many heads (StreamStateRequest.head) are connected.
+  uint32 heads = 13;
 }
 
 message Radio {

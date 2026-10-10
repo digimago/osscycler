@@ -26,7 +26,10 @@ type ConnMsg struct{ Err error }
 type Model struct {
 	// menuPaused: esc opened the menu during a ride, workout or manual
 	// control and paused the core; leaving the menu with esc carries on.
-	menuPaused    bool
+	menuPaused bool
+	// quitting: Quit was chosen with something under way and no other
+	// screen connected; the question is on screen.
+	quitting      bool
 	addr          string
 	cmds          Commands // nil: read-only
 	width, height int
@@ -207,6 +210,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.menu != nil && m.busy() && !m.menuPaused {
 			m.menu = nil // joined something already running: show it
 		}
+		if m.quitting && (!m.underWay() || m.st.GetHeads() > 1) {
+			// Ended, or watched, on another screen meanwhile: nothing to ask.
+			return m, tea.Quit
+		}
 		m, c1 := m.needCourse()
 		m, c2 := m.needWorkout()
 		m, c3 := m.animate()
@@ -294,10 +301,13 @@ func (m Model) handleKey(key string) (tea.Model, tea.Cmd) {
 	if next, cmd, ok := m.layoutKey(key); ok {
 		return next, cmd
 	}
-	if key == "q" && m.draft == nil {
-		return m, tea.Quit
+	if key == "q" && m.draft == nil && m.cmds == nil {
+		return m, tea.Quit // a read-only screen has no menu to go back to
 	}
 	if m.cmds != nil {
+		if next, cmd, ok := m.quitKey(key); ok {
+			return next, cmd
+		}
 		if next, cmd, ok := m.pauseKey(key); ok {
 			return next, cmd
 		}
@@ -353,7 +363,7 @@ func (m Model) renderScreen() string {
 	// very bottom.
 	var strip string
 	switch {
-	case m.help || m.arranging != nil || m.draft != nil || m.picking || m.input != nil || m.ending != nil || m.onboarding != nil || m.menu != nil:
+	case m.help || m.arranging != nil || m.draft != nil || m.picking || m.input != nil || m.ending != nil || m.onboarding != nil || m.menu != nil || m.quitting:
 	case m.showWorkout() && m.workoutActive():
 		if w := m.workoutDefs[m.wk().GetId()]; w != nil && m.height >= 20 {
 			strip = workoutProfile(w, m.wk().GetElapsedS(), m.width, 4)
@@ -376,6 +386,8 @@ func (m Model) renderScreen() string {
 		body = m.arrangePanel(m.width, bodyH)
 	case m.onboarding != nil:
 		body = m.onboardPanel(m.width, bodyH)
+	case m.quitting:
+		body = m.quitPanel(m.width, bodyH)
 	case m.menu != nil:
 		body = m.menuPanel(m.width, bodyH)
 	case m.ending != nil:

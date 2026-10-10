@@ -130,6 +130,11 @@ type State struct {
 	// clock, for showing how long).
 	Paused      bool
 	PausedSince time.Time
+	// Heads is how many screens the rider rides with (a TUI, a 3D view)
+	// are connected: their state streams asking to count (StreamState's
+	// head). Without one, internal/unattended pauses and later ends what
+	// is under way.
+	Heads int
 }
 
 // SetPaused parks the core or carries on; whether that changed anything.

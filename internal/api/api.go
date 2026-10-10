@@ -447,6 +447,10 @@ func (s *telemetryServer) StreamState(req *pb.StreamStateRequest, stream grpc.Se
 	}
 	minGap := time.Second / time.Duration(hz)
 	ctx := stream.Context()
+	if req.GetHead() {
+		s.hub.Update(func(st *telemetry.State) bool { st.Heads++; return true })
+		defer s.hub.Update(func(st *telemetry.State) bool { st.Heads--; return true })
+	}
 
 	var (
 		sentSeq  uint64

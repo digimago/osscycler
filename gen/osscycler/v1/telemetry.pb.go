@@ -3752,7 +3752,13 @@ func (*CancelCalibrationResponse) Descriptor() ([]byte, []int) {
 type StreamStateRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Upper bound on the update rate. 0 means the server default (60 Hz).
-	MaxRateHz     uint32 `protobuf:"varint,1,opt,name=max_rate_hz,json=maxRateHz,proto3" json:"max_rate_hz,omitempty"`
+	MaxRateHz uint32 `protobuf:"varint,1,opt,name=max_rate_hz,json=maxRateHz,proto3" json:"max_rate_hz,omitempty"`
+	// A screen the rider rides with (the TUI, a 3D view): counted in
+	// State.heads while the stream is open. With none for 30 s while a ride,
+	// a workout or manual control is under way, the core pauses it, and
+	// after 30 minutes ends it and saves the activity. A renderer in debug
+	// mode or a script watching the state leaves it out.
+	Head          bool `protobuf:"varint,2,opt,name=head,proto3" json:"head,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3792,6 +3798,13 @@ func (x *StreamStateRequest) GetMaxRateHz() uint32 {
 		return x.MaxRateHz
 	}
 	return 0
+}
+
+func (x *StreamStateRequest) GetHead() bool {
+	if x != nil {
+		return x.Head
+	}
+	return false
 }
 
 type StreamStateResponse struct {
@@ -3857,8 +3870,10 @@ type State struct {
 	// The core is paused (SetPaused), since paused_since_unix_ms.
 	Paused            bool  `protobuf:"varint,11,opt,name=paused,proto3" json:"paused,omitempty"`
 	PausedSinceUnixMs int64 `protobuf:"varint,12,opt,name=paused_since_unix_ms,json=pausedSinceUnixMs,proto3" json:"paused_since_unix_ms,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// How many heads (StreamStateRequest.head) are connected.
+	Heads         uint32 `protobuf:"varint,13,opt,name=heads,proto3" json:"heads,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *State) Reset() {
@@ -3971,6 +3986,13 @@ func (x *State) GetPaused() bool {
 func (x *State) GetPausedSinceUnixMs() int64 {
 	if x != nil {
 		return x.PausedSinceUnixMs
+	}
+	return 0
+}
+
+func (x *State) GetHeads() uint32 {
+	if x != nil {
+		return x.Heads
 	}
 	return 0
 }
@@ -5594,11 +5616,12 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\x04type\x18\x01 \x01(\x0e2\x1d.osscycler.v1.CalibrationTypeR\x04type\"\x1a\n" +
 	"\x18StartCalibrationResponse\"\x1a\n" +
 	"\x18CancelCalibrationRequest\"\x1b\n" +
-	"\x19CancelCalibrationResponse\"4\n" +
+	"\x19CancelCalibrationResponse\"H\n" +
 	"\x12StreamStateRequest\x12\x1e\n" +
-	"\vmax_rate_hz\x18\x01 \x01(\rR\tmaxRateHz\"@\n" +
+	"\vmax_rate_hz\x18\x01 \x01(\rR\tmaxRateHz\x12\x12\n" +
+	"\x04head\x18\x02 \x01(\bR\x04head\"@\n" +
 	"\x13StreamStateResponse\x12)\n" +
-	"\x05state\x18\x01 \x01(\v2\x13.osscycler.v1.StateR\x05state\"\xa8\x04\n" +
+	"\x05state\x18\x01 \x01(\v2\x13.osscycler.v1.StateR\x05state\"\xbe\x04\n" +
 	"\x05State\x12\x1a\n" +
 	"\bsequence\x18\x01 \x01(\x04R\bsequence\x12 \n" +
 	"\fcore_time_ns\x18\x02 \x01(\x03R\n" +
@@ -5614,7 +5637,8 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\x05radio\x18\n" +
 	" \x01(\v2\x13.osscycler.v1.RadioR\x05radio\x12\x16\n" +
 	"\x06paused\x18\v \x01(\bR\x06paused\x12/\n" +
-	"\x14paused_since_unix_ms\x18\f \x01(\x03R\x11pausedSinceUnixMs\"7\n" +
+	"\x14paused_since_unix_ms\x18\f \x01(\x03R\x11pausedSinceUnixMs\x12\x14\n" +
+	"\x05heads\x18\r \x01(\rR\x05heads\"7\n" +
 	"\x05Radio\x12\x18\n" +
 	"\apresent\x18\x01 \x01(\bR\apresent\x12\x14\n" +
 	"\x05error\x18\x02 \x01(\tR\x05error\"v\n" +

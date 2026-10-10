@@ -108,7 +108,7 @@ func stream(ctx context.Context, c pb.TelemetryServiceClient, rate uint32, send 
 	const maxBackoff = 5 * time.Second
 	backoff := 500 * time.Millisecond
 	for ctx.Err() == nil {
-		s, err := c.StreamState(ctx, &pb.StreamStateRequest{MaxRateHz: rate})
+		s, err := c.StreamState(ctx, &pb.StreamStateRequest{MaxRateHz: rate, Head: true})
 		for err == nil {
 			var msg *pb.StreamStateResponse
 			if msg, err = s.Recv(); err == nil {

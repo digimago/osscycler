@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	pb "github.com/digimago/osscycler/gen/osscycler/v1"
 	"github.com/digimago/osscycler/internal/telemetry"
@@ -43,5 +44,31 @@ func TestPauseAndCarryOn(t *testing.T) {
 	c.SetPaused(ctx, &pb.SetPausedRequest{Paused: true})
 	if resp, _ := c.SetPaused(ctx, &pb.SetPausedRequest{Paused: false}); resp.GetPaused() {
 		t.Error("resume didn't")
+	}
+}
+
+func TestHeadsAreCounted(t *testing.T) {
+	hub := telemetry.NewHub()
+	c := start(t, hub, nil, testToken)
+	heads := func() int { st, _ := hub.Latest(); return st.Heads }
+	ctx, cancel := context.WithCancel(context.Background())
+	head, err := c.StreamState(ctx, &pb.StreamStateRequest{Head: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := head.Recv(); err != nil {
+		t.Fatal(err)
+	}
+	watcher, _ := c.StreamState(context.Background(), &pb.StreamStateRequest{}) // a script: not a head
+	watcher.Recv()
+	if heads() != 1 {
+		t.Errorf("%d heads, want 1", heads())
+	}
+	cancel() // the screen quits
+	for i := 0; i < 100 && heads() != 0; i++ {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if heads() != 0 {
+		t.Errorf("%d heads after the screen went", heads())
 	}
 }

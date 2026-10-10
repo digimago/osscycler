@@ -59,3 +59,57 @@ func TestRoundabouts(t *testing.T) {
 		}
 	}
 }
+
+// A route that leaves the road for the cycle path round a roundabout (the
+// Velp loop at 2.45 km: its carriageways are closed to bikes) rides the
+// roundabout instead, as on a closed course: in along the west arm, over
+// it and out along the east arm, without the hop up its side.
+func TestSkirtingRouteRidesTheRoundabout(t *testing.T) {
+	arm := func(from, to [2]float64) *roadLine {
+		l := &roadLine{}
+		length := math.Hypot(to[0]-from[0], to[1]-from[1])
+		for at := 0.0; at <= length+1e-9; at += fineStep {
+			f := at / length
+			l.samples = append(l.samples, sample{d: at, e: from[0] + f*(to[0]-from[0]), n: from[1] + f*(to[1]-from[1]), hw: 3})
+		}
+		return l
+	}
+	rb := roundabout{r: 15, hw: 3, arms: []rbArm{
+		{l: arm([2]float64{-18.5, 0}, [2]float64{-200, 0}), d: 0, dir: 1},
+		{l: arm([2]float64{18.5, 0}, [2]float64{200, 0}), d: 0, dir: 1},
+		{l: arm([2]float64{0, -18.5}, [2]float64{0, -200}), d: 0, dir: 1},
+	}}
+	// pathOver puts points every pathStep along the corners given.
+	pathOver := func(corners ...[2]float64) (x, y, z, w []float64) {
+		at := 0.0
+		for k := 1; k < len(corners); k++ {
+			a, b := corners[k-1], corners[k]
+			l := math.Hypot(b[0]-a[0], b[1]-a[1])
+			for ; at < l; at += pathStep {
+				x, y = append(x, a[0]+at/l*(b[0]-a[0])), append(y, a[1]+at/l*(b[1]-a[1]))
+				z, w = append(z, 0), append(w, 5)
+			}
+			at -= l
+		}
+		return
+	}
+	// Off the west arm onto a path 30 m south of the middle, back onto
+	// the east arm.
+	x, y, z, w := pathOver([2]float64{-200, 0}, [2]float64{-60, 0}, [2]float64{-35, -30}, [2]float64{35, -30}, [2]float64{60, 0}, [2]float64{200, 0})
+	rbs := []roundabout{rb}
+	skirtRound(x, y, z, w, rbs)
+	passThrough(x, y, z, rbs)
+	for i := range x {
+		if math.Abs(y[i]) > rb.hw+0.5 {
+			t.Fatalf("at %.0f, %.0f: off the arms and the roundabout; want in along the west arm and out along the east", x[i], y[i])
+		}
+	}
+	// A road 30 m south that never touches the arms is left alone.
+	x, y, z, w = pathOver([2]float64{-200, -30}, [2]float64{200, -30})
+	skirtRound(x, y, z, w, rbs)
+	for i := range y {
+		if y[i] != -30 {
+			t.Fatalf("a road passing by moved to %.0f, %.0f", x[i], y[i])
+		}
+	}
+}

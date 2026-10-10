@@ -575,3 +575,203 @@ func onLine(l *roadLine, e, n float64) (float64, bool) {
 	}
 	return at, best <= hw
 }
+
+// Routes that skirt a roundabout (owner, 2026-10-10: on the Velp loop at
+// 2.45 km the route left the main road for the cycle path round the Velp
+// roundabout, whose carriageways are closed to bikes, and the rider came
+// off the slip road and turned 47° up its side onto the road beyond): on
+// a closed course the rider rides the roundabout. Where the path comes
+// within rbSkirtM of a roundabout's edge, off its arms and the disc, and was on
+// one of its arms heading in shortly before and is on another heading
+// out shortly after, it rides in along the first, over the roundabout and
+// out along the second; passThrough and rideAround then take it across or
+// round as for any route through one.
+const (
+	rbSkirtM    = 25.0  // how near the edge a path counts as passing by
+	skirtLookM  = 120.0 // how far before and after to look for the arms
+	armNearM    = 4.0   // how far off an arm's carriageway still counts as on it
+	armHeading  = 0.7   // cosine: heading in (or out) along the arm
+	skirtLonger = 1.4   // the way round the arms may be this much longer, at most
+)
+
+func skirtRound(x, y, z, w []float64, rbs []roundabout) {
+	look := int(skirtLookM / pathStep)
+	for _, rb := range rbs {
+		if len(rb.arms) < 2 {
+			continue
+		}
+		dist := func(i int) float64 { return math.Hypot(x[i]-rb.c[0], y[i]-rb.c[1]) }
+		near := func(i int) bool { return dist(i) < rb.outer()+rbSkirtM }
+		for a := 1; a < len(x); a++ {
+			if !near(a) || near(a-1) {
+				continue
+			}
+			j := a
+			for j < len(x) && near(j) {
+				j++
+			}
+			m := a
+			for k := a; k < j; k++ {
+				if dist(k) < dist(m) {
+					m = k
+				}
+			}
+			if j >= len(x) {
+				break
+			}
+			// Where it came in: the last point on an arm heading in, or,
+			// where before that it went round off the arms near the
+			// roundabout (a slip road, a cycle path), the last on the arm
+			// it left; where it goes out, the same the other way.
+			in, inAt, i0 := entry(rb, x, y, m, -1, look, dist)
+			out, outAt, i1 := entry(rb, x, y, m, 1, look, dist)
+			if i0 < 0 || i1 < 0 || in.l == out.l || i1-i0 < 2 {
+				a = j
+				continue
+			}
+			// Already in along one, over it and out along the other:
+			// passThrough's or rideAround's.
+			skirts := false
+			for k := i0 + 1; k < i1 && !skirts; k++ {
+				skirts = offArms(rb, x[k], y[k]) && dist(k) >= rb.outer()
+			}
+			if !skirts {
+				a = j
+				continue
+			}
+			var way [][3]float64
+			add := func(l *roadLine, d float64) {
+				s := sampleBetween(l, d)
+				way = append(way, [3]float64{s.e, s.n, s.ele})
+			}
+			add(in.l, inAt)
+			for d := inAt - in.dir*fineStep; (d-in.d)*in.dir > 0; d -= in.dir * fineStep {
+				add(in.l, d)
+			}
+			add(in.l, in.d)
+			for d := out.d; (outAt-d)*out.dir > 0; d += out.dir * fineStep {
+				add(out.l, d)
+			}
+			add(out.l, outAt)
+			was, now := 0.0, 0.0
+			for k := i0; k < i1; k++ {
+				was += math.Hypot(x[k+1]-x[k], y[k+1]-y[k])
+			}
+			for k := 1; k < len(way); k++ {
+				now += math.Hypot(way[k][0]-way[k-1][0], way[k][1]-way[k-1][1])
+			}
+			if now > was*skirtLonger {
+				a = j
+				continue
+			}
+			spreadAlong(x, y, z, i0, i1+1, way)
+			for k := i0; k <= i1; k++ {
+				if rb.island && dist(k) < rb.outer() {
+					w[k] = 2 * rb.hw
+				}
+			}
+			a = i1
+		}
+	}
+}
+
+// entry walks from path point m back (step -1) or on (1) for the point
+// where the path is on one of rb's arms heading in (or out): the first
+// such, unless beyond it the path went off the arms and the disc near the
+// roundabout and then was on another arm, which is then the one.
+func entry(rb roundabout, x, y []float64, m, step, look int, dist func(int) float64) (rbArm, float64, int) {
+	sign := float64(step)
+	var arm rbArm
+	at, k0 := 0.0, -1
+	off := false // went off the arms near it since k0
+	for k := m + step; k > 0 && k < len(x) && (k-m)*step < look; k += step {
+		ar, d, ok := armUnder(rb, x[k], y[k], x[k]-x[k-1], y[k]-y[k-1], sign)
+		switch {
+		case ok && k0 < 0:
+			arm, at, k0 = ar, d, k
+		case ok && off && ar.l != arm.l:
+			return ar, d, k
+		case ok:
+			// still on an arm: the bypass, if any, is further on
+		case k0 >= 0 && offArms(rb, x[k], y[k]) && dist(k) >= rb.outer() && dist(k) < rb.outer()+rbSkirtM:
+			off = true
+		}
+	}
+	return arm, at, k0
+}
+
+// offArms: e, n is on none of rb's arms.
+func offArms(rb roundabout, e, n float64) bool {
+	for _, ar := range rb.arms {
+		if _, off, hw := lineNearest(ar.l, e, n); off <= hw+armNearM {
+			return false
+		}
+	}
+	return true
+}
+
+// armUnder is the arm of rb whose carriageway (within armNearM) is under
+// e, n, outside the roundabout, and where along it, if travel (de, dn)
+// heads along it: in towards the ring (sign -1) or out (sign 1).
+func armUnder(rb roundabout, e, n, de, dn, sign float64) (rbArm, float64, bool) {
+	l := math.Hypot(de, dn)
+	if l == 0 {
+		return rbArm{}, 0, false
+	}
+	de, dn = de/l, dn/l
+	for _, ar := range rb.arms {
+		at, off, hw := lineNearest(ar.l, e, n)
+		if off > hw+armNearM || (at-ar.d)*ar.dir <= 0 {
+			continue // off it, or on the ring side of its cut
+		}
+		a, b := sampleBetween(ar.l, at), sampleBetween(ar.l, at+ar.dir*fineStep)
+		ae, an := b.e-a.e, b.n-a.n // away from the ring
+		if al := math.Hypot(ae, an); al > 0 && (de*ae+dn*an)/al*sign >= armHeading {
+			return ar, at, true
+		}
+	}
+	return rbArm{}, 0, false
+}
+
+// lineNearest is where along line l the point nearest e, n is, how far,
+// and the line's half width there.
+func lineNearest(l *roadLine, e, n float64) (float64, float64, float64) {
+	best, at, hw := math.Inf(1), 0.0, 0.0
+	for i := 0; i+1 < len(l.samples); i++ {
+		a, b := l.samples[i], l.samples[i+1]
+		de, dn := b.e-a.e, b.n-a.n
+		f := 0.0
+		if l2 := de*de + dn*dn; l2 > 0 {
+			f = math.Max(0, math.Min(1, ((e-a.e)*de+(n-a.n)*dn)/l2))
+		}
+		if d := math.Hypot(e-a.e-f*de, n-a.n-f*dn); d < best {
+			best, at, hw = d, a.d+f*(b.d-a.d), a.hw
+		}
+	}
+	return at, best, hw
+}
+
+// spreadAlong puts path points a..b-1 evenly along way (from point a-1 to
+// point b).
+func spreadAlong(x, y, z []float64, a, b int, way [][3]float64) {
+	total := 0.0
+	cum := make([]float64, len(way))
+	for k := 1; k < len(way); k++ {
+		total += math.Hypot(way[k][0]-way[k-1][0], way[k][1]-way[k-1][1])
+		cum[k] = total
+	}
+	for i := a; i < b; i++ {
+		want := total * float64(i-(a-1)) / float64(b-(a-1))
+		k := 1
+		for k < len(way)-1 && cum[k] < want {
+			k++
+		}
+		f := 0.0
+		if cum[k] > cum[k-1] {
+			f = (want - cum[k-1]) / (cum[k] - cum[k-1])
+		}
+		x[i] = way[k-1][0] + f*(way[k][0]-way[k-1][0])
+		y[i] = way[k-1][1] + f*(way[k][1]-way[k-1][1])
+		z[i] = way[k-1][2] + f*(way[k][2]-way[k-1][2])
+	}
+}

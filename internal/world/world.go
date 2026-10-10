@@ -519,6 +519,7 @@ func Build(c *course.Course, o Options) (*World, error) {
 	}
 	lanes := ridingLine(newSmoothLine(pd, px, py, c.Loop, nil), pd, m.Path.WidthM, m.Road.Keep == "right")
 	keepOnRoad(px, py, lanes, lines, patches)
+	skirtRound(px, py, pz, pw, rbs)
 	rideAround(px, py, pz, pw, rbs)
 	passThrough(px, py, pz, rbs)
 	// Across a flat roundabout the rider takes the shortest way, on the

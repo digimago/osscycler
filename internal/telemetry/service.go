@@ -314,7 +314,11 @@ type sensorLoop struct {
 	// apply decodes a payload into the state. Only the loop goroutine calls
 	// it, so it may keep decoder state.
 	apply func(p [8]byte, s *State)
-	// onPair runs once, in its own goroutine, after the first data arrives.
+	// onPair runs in its own goroutine after the first data arrives, and
+	// again whenever the sensor comes back after being lost: a trainer
+	// that reset meanwhile needs the user config again (owner, 2026-10-10:
+	// the Flux dropped out for 5 s, came back asking for it, and had no
+	// rider weight until something else sent it 30 s later).
 	onPair func(ctx context.Context)
 }
 
@@ -331,11 +335,14 @@ func (l *sensorLoop) run(ctx context.Context) {
 				return
 			}
 			if p, ok := m.Payload(); ok {
-				if !paired {
+				first := !paired
+				if first {
 					paired = true
 					wg.Go(func() { l.pair(ctx) })
 				}
-				l.data(p)
+				if l.data(p) && !first && l.onPair != nil {
+					wg.Go(func() { l.onPair(ctx) }) // back after being lost
+				}
 				continue
 			}
 			if e, ok := ant.ParseChannelEvent(m); ok && e.IsRF() {
@@ -351,7 +358,8 @@ func (l *sensorLoop) run(ctx context.Context) {
 	}
 }
 
-func (l *sensorLoop) data(p [8]byte) {
+// data takes a payload; whether the sensor was not connected before.
+func (l *sensorLoop) data(p [8]byte) bool {
 	var reconnected bool
 	l.hub.Update(func(s *State) bool {
 		sn := l.sensor(s)
@@ -364,6 +372,7 @@ func (l *sensorLoop) data(p [8]byte) {
 	if reconnected {
 		l.log.Info("connected")
 	}
+	return reconnected
 }
 
 func (l *sensorLoop) lost(why string) {

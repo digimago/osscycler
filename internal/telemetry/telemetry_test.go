@@ -464,3 +464,38 @@ func TestFakeERG(t *testing.T) {
 		return s.Trainer.PowerW.OK && (s.Trainer.PowerW.V < 175 || s.Trainer.PowerW.V > 185)
 	})
 }
+
+// A trainer that comes back after being lost gets the user config again:
+// the Flux reset while out of reach and came back asking for it (owner,
+// 2026-10-10).
+func TestUserConfigAgainAfterReconnect(t *testing.T) {
+	node, stick := newFakeStick(t)
+	hub := NewHub()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	go NewService(node, hub, Config{StaleAfter: time.Hour, User: fec.UserConfig{UserWeightKg: 87, BikeWeightKg: 9}}, log).Run(ctx)
+	waitFor(t, hub, "searching", func(s State) bool { return s.Trainer.Sensor.Status == StatusSearching })
+
+	userConfig := func(what string) {
+		t.Helper()
+		deadline := time.After(2 * time.Second)
+		for {
+			select {
+			case p := <-stick.acks:
+				if p[0] == fec.PageUserConfig {
+					return
+				}
+			case <-deadline:
+				t.Fatalf("no user config %s", what)
+			}
+		}
+	}
+	page := [8]byte{0x10, 25, 4, 10, 0x8D, 0x20, 0xFF, 0x34}
+	stick.broadcast(trainerChannel, page)
+	userConfig("after pairing")
+	stick.write(ant.Message{ID: ant.MsgChannelEvent, Data: []byte{trainerChannel, 1, byte(ant.EventRxFailGoToSearch)}})
+	waitFor(t, hub, "trainer lost", func(s State) bool { return s.Trainer.Sensor.Status == StatusLost })
+	stick.broadcast(trainerChannel, page)
+	userConfig("after coming back")
+}

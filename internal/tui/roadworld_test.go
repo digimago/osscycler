@@ -69,7 +69,7 @@ func TestHumanTouchesStayOffTheRoad(t *testing.T) {
 	}
 }
 
-func TestMapCreditAtTheStartOnly(t *testing.T) {
+func TestMapCreditInTheMenuOnly(t *testing.T) {
 	m := New("x:1", &stubCommands{}).WithMenu()
 	if out := plain(m.menuPanel(100, 30)); !strings.Contains(out, "OpenStreetMap") {
 		t.Errorf("the start menu lacks the map credit:\n%s", out)
@@ -77,7 +77,7 @@ func TestMapCreditAtTheStartOnly(t *testing.T) {
 
 	m = update(New("x:1", &stubCommands{}), tea.WindowSizeMsg{Width: 200, Height: 40})
 	m.scenes = map[string]*roadScene{"n": straightScene(t, nil)}
-	for elapsed, want := range map[float64]bool{5: true, 60: false} {
+	for elapsed, want := range map[float64]bool{5: false, 60: false} {
 		st := sample()
 		st.Ride = &pb.Ride{Phase: pb.RidePhase_RIDE_PHASE_RIDING, CourseId: "n", CourseName: "N", CourseDistanceM: 2000, DistanceM: 300, ElapsedS: elapsed}
 		m = update(m, StateMsg{State: st})

@@ -40,7 +40,9 @@ type Config struct {
 	// MaxGradePct is the steepest grade the trainer can apply.
 	MaxGradePct float64
 	// Lookahead sends the grade this far ahead (at current speed), so the
-	// trainer's response lag lines up with the course.
+	// trainer's response lag lines up with the course: 2 s (owner,
+	// 2026-10-10, on the Flux 2: with 1 s every change of resistance came
+	// 1-2 s late, on grades and in ERG alike).
 	Lookahead time.Duration
 	// StartDistanceM starts rides this far into the course, with a rolling
 	// start, to practise a section (and for the demo). Clamped to leave
@@ -62,7 +64,7 @@ const minRideM = 100
 // DefaultConfig suits a Tacx Flux 2 (16 % maximum) with Zwift's default
 // trainer difficulty of 50 %.
 func DefaultConfig(params sim.Params) Config {
-	return Config{Params: params, Difficulty: 0.5, MaxGradePct: 16, Lookahead: time.Second}
+	return Config{Params: params, Difficulty: 0.5, MaxGradePct: 16, Lookahead: 2 * time.Second}
 }
 
 const (

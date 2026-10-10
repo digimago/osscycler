@@ -2,7 +2,7 @@
 # ANT_PLUS_NETWORK_KEY and is compiled into the binaries (make release);
 # it never appears in the source, which a test checks with the same secret.
 #
-#   push a tag v*        → make check, make release, a draft GitHub release
+#   push a tag v*        → the key test, make release, a draft GitHub release
 #                          with the Linux tar.gz/.deb/.rpm (with the 3D view
 #                          and the ready-built worlds), macOS universal
 #                          tar.gz and SHA256SUMS. The maintainer checks it
@@ -60,17 +60,22 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Check (including that the key isn't in the source)
-        run: make check
+      # The tag is on main's merge commit, which the check workflow has
+      # checked (make check, the 3D view's tests). What it can't check is
+      # that the key isn't in the source: it has no secrets.
+      - name: The ANT+ network key isn't in the source
+        run: |
+          if [[ -z $ANT_PLUS_NETWORK_KEY ]]; then
+            echo "::error::the ANT_PLUS_NETWORK_KEY secret is missing"
+            exit 1
+          fi
+          go test -count=1 -run '^TestNetworkKeyNotInSource$' ./cmd/osscycler-core
 
       # The 3D view: .NET, and Godot with its export templates (1.3 GB,
       # pinned by SHA-512 in scripts/godot.sh), kept between runs.
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: "8.0.x"
-
-      - name: The 3D view's tests
-        run: dotnet test renderers/godot/tests/Hud
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

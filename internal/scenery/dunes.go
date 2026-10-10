@@ -24,11 +24,11 @@ import (
 //     isn't a dune).
 //   - LandBeach: natural=beach: bare sand.
 //
-// Nowhere in the Netherlands do the coastal dunes reach more than about
-// 5 km inland (the Schoorl dunes, the Amsterdam Water Supply Dunes); the
-// Veluwe's drift sands lie 60 km and more from the sea.
+// The dunes reach about 4 km inland at the Amsterdam Water Supply Dunes
+// (owner, 2026-10-10), among the widest on the Dutch coast; the Veluwe's
+// drift sands lie 60 km and more from the sea.
 const (
-	DuneM     = 6000.0
+	DuneM     = 4000.0
 	duneNextM = 150.0
 )
 

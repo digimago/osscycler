@@ -28,7 +28,7 @@ var menuItems = []menuItem{
 	{"a", "Activities", "your recorded rides: save FIT files, race past rides"},
 	{"p", "Profile", "weight, height and FTP"},
 	{"c", "Calibrate", "spin-down calibration of the trainer"},
-	{"q", "Quit", "close the screen (the core keeps running)"},
+	{"q", "Quit", "close the screen (asks first if a ride is under way)"},
 }
 
 // WithMenu opens the start menu.
@@ -82,6 +82,10 @@ func (m Model) menuKey(key string) (Model, tea.Cmd, bool) {
 		s.sel = (s.sel + 1) % len(menuItems)
 	case "esc", "m":
 		m.menu = nil
+		if m.menuPaused {
+			m.menuPaused = false
+			return m, m.setPaused(false), true
+		}
 	case "enter", "space", " ":
 		return m.choose(menuItems[s.sel].key)
 	default:
@@ -97,9 +101,12 @@ func (m Model) menuKey(key string) (Model, tea.Cmd, bool) {
 // choose closes the menu and does what the item stands for.
 func (m Model) choose(item string) (Model, tea.Cmd, bool) {
 	m.menu = nil
+	if item == "q" {
+		next, cmd := m.askQuit() // the menu's pause stays with the question
+		return next, cmd, true
+	}
+	m.menuPaused = false // whatever comes next, the pause stays as it is (starting something carries on)
 	switch item {
-	case "q":
-		return m, tea.Quit, true
 	case "r", "w", "a":
 		key := map[string]string{"a": "r"}[item]
 		if key == "" {
@@ -230,9 +237,9 @@ func (m Model) menuPanel(width, height int) string {
 		}
 		lines = append(lines, label+"  "+dimStyle.Render(truncate(does, max(10, width-labelW-12)))+extra)
 	}
-	// The map data's credit lives here, at startup, rather than on the ride
-	// screen all the time (the OSMF attribution guidelines allow a start or
-	// menu screen for games and simulations); rides show it at their start.
+	// The map data's credit lives here, at startup, and not on rides
+	// (owner, 2026-10-10; the OSMF attribution guidelines allow a start or
+	// menu screen for games and simulations).
 	lines = append(lines, "", dimStyle.Render(truncate(mapCredit, width)))
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center,
 		lipgloss.JoinVertical(lipgloss.Left, lines...))

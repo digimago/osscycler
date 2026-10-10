@@ -36,6 +36,7 @@ type GhostSource interface {
 var (
 	ErrUnknownRide   = errors.New("ride: no such ride in the history")
 	ErrCourseChanged = errors.New("ride: the course has changed since that ride")
+	ErrPausedRide    = errors.New("ride: that ride was paused, so it can't be raced")
 )
 
 // DistanceAt is where the ghost was t into its ride; at the line once it

@@ -220,6 +220,20 @@ func (s *Session) tick(now time.Time) {
 	if r == nil || !r.phase.Active() {
 		return
 	}
+	if st.Paused {
+		// The core is parked: the workout holds where it is, the trainer
+		// flat; it carries on when pedalling resumes after the pause.
+		if r.phase == telemetry.WorkoutRunning {
+			r.phase = telemetry.WorkoutPaused
+			s.log.Info("workout paused", "workout", r.w.Name, "at", r.elapsed.Round(time.Second), "by", "the rider")
+		}
+		r.last = now
+		if c := s.target; c == nil || c.erg || c.grade != 0 {
+			s.target = &command{grade: 0}
+			s.publish(r)
+		}
+		return
+	}
 	pedalling := power > 0
 	switch r.phase {
 	case telemetry.WorkoutArmed:

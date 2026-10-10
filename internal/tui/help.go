@@ -46,6 +46,12 @@ func (m Model) helpContext() (string, []helpEntry) {
 			{"0-9 .", "type the value"}, {"backspace", "delete a digit"},
 			{"enter", "save it and go on"}, {"esc", "back, or later (rides and workouts wait for it)"},
 		}, always...)
+	case m.quitting:
+		return "QUIT", append([]helpEntry{
+			{"enter  q", "end what is under way, save the ride and quit"},
+			{"l", "quit and leave it paused (the core ends it after 30 minutes without a screen)"},
+			{"esc", "back to the menu"},
+		}, always...)
 	case m.ending != nil:
 		return "END RIDE", append([]helpEntry{
 			{"enter", "save the ride"}, {"d d", "discard it: the file is deleted"}, {"esc", "keep riding"},
@@ -107,8 +113,10 @@ func (m Model) helpContext() (string, []helpEntry) {
 			{"+ / -", fmt.Sprintf("intensity in 1 %% steps (now %.0f %%)", m.wk().GetIntensityPct())},
 			{"n", "skip to the next part"},
 			{"x x", "abort the workout"},
+			{"p  space", "pause: the trainer goes flat and the clocks stand (a paused ride never counts as a PB)"},
+			{"esc", "pause and open the menu (esc again carries on)"},
 			layout[0], layout[1],
-			{"q", "quit the screen (the workout goes on in the core)"},
+			{"q", "the menu (pauses the workout); quit from there"},
 		}, always...)
 	case m.onLoop():
 		return "TRACK", append([]helpEntry{
@@ -118,7 +126,9 @@ func (m Model) helpContext() (string, []helpEntry) {
 			{"g / l", "a fixed grade / brake level instead of the track's"},
 			layout[0], layout[1],
 			{"x x", "end the ride (each lap is kept; your best lap is the ghost)"},
-			{"q", "quit the screen (the ride goes on in the core)"},
+			{"p  space", "pause: the trainer goes flat and the clocks stand (a paused ride never counts as a PB)"},
+			{"esc", "pause and open the menu (esc again carries on)"},
+			{"q", "the menu (pauses the ride); quit from there"},
 		}, always...)
 	case m.showRide() && m.rideActive():
 		return "COURSE RIDE", append([]helpEntry{
@@ -126,7 +136,9 @@ func (m Model) helpContext() (string, []helpEntry) {
 			{"v", "road view or big numbers"},
 			layout[0], layout[1],
 			{"x x", "abort the ride (still recorded; only a finished ride counts as a ghost)"},
-			{"q", "quit the screen (the ride goes on in the core)"},
+			{"p  space", "pause: the trainer goes flat and the clocks stand (a paused ride never counts as a PB)"},
+			{"esc", "pause and open the menu (esc again carries on)"},
+			{"q", "the menu (pauses the ride); quit from there"},
 		}, always...)
 	case m.showRide() || m.showWorkout():
 		return "FINISHED", append([]helpEntry{{"x  enter", "close"}}, always...)
@@ -136,21 +148,23 @@ func (m Model) helpContext() (string, []helpEntry) {
 			{"w", "a new power, or a workout"},
 			{"g / l", "a fixed grade / brake level instead"},
 			{"x  0", "back to free riding (the trainer is set flat)"},
-			{"q", "quit the screen"},
+			{"p  space", "pause: the trainer goes flat until you carry on"},
+			{"esc", "pause and open the menu (esc again carries on)"},
+			{"q", "the menu (pauses it); quit from there"},
 		}, always...)
 	}
 	return "DASHBOARD", append([]helpEntry{
 		{"m", "the menu: everything you can do from here"},
+		{"p  space", "pause the recording (and anything you start carries on)"},
 		{"r", "rides: courses, your history, recordings"},
 		{"w", "workouts, or a fixed power (ERG)"},
 		{"g", "ride at a fixed grade"},
 		{"l", "ride at a fixed brake level"},
-		{"p", "your profile: weight, height and FTP"},
 		{"+ / -", "trainer difficulty on courses, in 10 % steps"},
 		{"c / C", "spin-down calibration: when the trainer asks / any time"},
 		{"e", "end the ride: save or discard the recording"},
 		layout[0], layout[1],
-		{"q", "quit the screen (the core keeps running)"},
+		{"q", "the menu; quit from there (the core keeps running)"},
 	}, always...)
 }
 

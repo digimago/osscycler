@@ -108,7 +108,7 @@ func stream(ctx context.Context, c pb.TelemetryServiceClient, rate uint32, send 
 	const maxBackoff = 5 * time.Second
 	backoff := 500 * time.Millisecond
 	for ctx.Err() == nil {
-		s, err := c.StreamState(ctx, &pb.StreamStateRequest{MaxRateHz: rate})
+		s, err := c.StreamState(ctx, &pb.StreamStateRequest{MaxRateHz: rate, Head: true})
 		for err == nil {
 			var msg *pb.StreamStateResponse
 			if msg, err = s.Recv(); err == nil {
@@ -219,6 +219,11 @@ func (c commands) SetTrainerControl(ctx context.Context, mode pb.ControlMode, v 
 	}
 	resp, err := c.c.SetTrainerControl(ctx, req)
 	return resp.GetTarget(), err
+}
+
+func (c commands) SetPaused(ctx context.Context, paused bool) (bool, error) {
+	resp, err := c.c.SetPaused(ctx, &pb.SetPausedRequest{Paused: paused})
+	return resp.GetPaused(), err
 }
 
 func (c commands) ReleaseTrainerControl(ctx context.Context) error {

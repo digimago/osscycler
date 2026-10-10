@@ -24,6 +24,12 @@ type StateMsg struct{ State *pb.State }
 type ConnMsg struct{ Err error }
 
 type Model struct {
+	// menuPaused: esc opened the menu during a ride, workout or manual
+	// control and paused the core; leaving the menu with esc carries on.
+	menuPaused bool
+	// quitting: Quit was chosen with something under way and no other
+	// screen connected; the question is on screen.
+	quitting      bool
 	addr          string
 	cmds          Commands // nil: read-only
 	width, height int
@@ -180,7 +186,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.animating = false
 	case StateMsg:
-		shown, old := m.ridePos(), m.ride()
+		shown, old, wasPaused := m.ridePos(), m.ride(), m.paused()
 		m.st, m.connected, m.connErr = msg.State, true, nil
 		m = m.withCadence(m.now())
 		if r := m.ride(); r.GetDistanceM() != old.GetDistanceM() || r.GetPhase() != old.GetPhase() {
@@ -194,11 +200,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m = m.followGhost(old)
+		m = m.others()
 		if m.needsOnboarding() {
 			m = m.startOnboarding(false)
 		}
-		if m.menu != nil && m.busy() {
+		if m.menuPaused && wasPaused && !m.paused() {
+			m.menu, m.menuPaused = nil, false // another screen carried on: back to the ride
+		}
+		if m.menu != nil && m.busy() && !m.menuPaused {
 			m.menu = nil // joined something already running: show it
+		}
+		if m.quitting && (!m.underWay() || m.st.GetHeads() > 1) {
+			// Ended, or watched, on another screen meanwhile: nothing to ask.
+			return m, tea.Quit
 		}
 		m, c1 := m.needCourse()
 		m, c2 := m.needWorkout()
@@ -287,10 +301,16 @@ func (m Model) handleKey(key string) (tea.Model, tea.Cmd) {
 	if next, cmd, ok := m.layoutKey(key); ok {
 		return next, cmd
 	}
-	if key == "q" && m.draft == nil {
-		return m, tea.Quit
+	if key == "q" && m.draft == nil && m.cmds == nil {
+		return m, tea.Quit // a read-only screen has no menu to go back to
 	}
 	if m.cmds != nil {
+		if next, cmd, ok := m.quitKey(key); ok {
+			return next, cmd
+		}
+		if next, cmd, ok := m.pauseKey(key); ok {
+			return next, cmd
+		}
 		if next, cmd, ok := m.menuKey(key); ok {
 			return next, cmd
 		}
@@ -318,12 +338,21 @@ func (m Model) handleKey(key string) (tea.Model, tea.Cmd) {
 
 // render draws the screen, with the tour banner on top when there is one.
 func (m Model) render() string {
-	if m.tourCaption == "" || m.width == 0 {
+	var banners []string
+	if a := m.announcement(); a != "" && m.width > 0 {
+		banners = append(banners, m.announceBanner(a))
+	}
+	if m.paused() && m.width > 0 {
+		banners = append(banners, m.pauseBanner())
+	}
+	if m.tourCaption != "" && m.width > 0 {
+		banners = append(banners, tourStyle.Width(m.width).Render(" "+truncate(m.tourCaption, m.width-2)))
+	}
+	if len(banners) == 0 {
 		return m.renderScreen()
 	}
-	banner := tourStyle.Width(m.width).Render(" " + truncate(m.tourCaption, m.width-2))
-	m.height--
-	return lipgloss.JoinVertical(lipgloss.Left, banner, m.renderScreen())
+	m.height -= len(banners)
+	return lipgloss.JoinVertical(lipgloss.Left, append(banners, m.renderScreen())...)
 }
 
 func (m Model) renderScreen() string {
@@ -337,7 +366,7 @@ func (m Model) renderScreen() string {
 	// very bottom.
 	var strip string
 	switch {
-	case m.help || m.arranging != nil || m.draft != nil || m.picking || m.input != nil || m.ending != nil || m.onboarding != nil || m.menu != nil:
+	case m.help || m.arranging != nil || m.draft != nil || m.picking || m.input != nil || m.ending != nil || m.onboarding != nil || m.menu != nil || m.quitting:
 	case m.showWorkout() && m.workoutActive():
 		if w := m.workoutDefs[m.wk().GetId()]; w != nil && m.height >= 20 {
 			strip = workoutProfile(w, m.wk().GetElapsedS(), m.width, 4)
@@ -360,6 +389,8 @@ func (m Model) renderScreen() string {
 		body = m.arrangePanel(m.width, bodyH)
 	case m.onboarding != nil:
 		body = m.onboardPanel(m.width, bodyH)
+	case m.quitting:
+		body = m.quitPanel(m.width, bodyH)
 	case m.menu != nil:
 		body = m.menuPanel(m.width, bodyH)
 	case m.ending != nil:
@@ -476,7 +507,7 @@ func (m Model) footer() string {
 	// Flux asks after every power-up, and a warning hid the other hints.
 	var warnings []string
 	if tr.GetUserConfigRequired() {
-		warnings = append(warnings, "trainer wants your weight: press p")
+		warnings = append(warnings, "trainer wants your weight: m, then p (Profile)")
 	}
 	switch tr.GetTargetPowerLimit() {
 	case pb.TargetPowerLimit_TARGET_POWER_LIMIT_SPEED_TOO_LOW:
@@ -592,9 +623,7 @@ func (m Model) keyHints() string {
 	default:
 		h = append(h, "m menu", "r ride", "w workout", "g/l trainer")
 		if need := missingText(m.profile()); need != "" {
-			h = append(h, "p add "+need)
-		} else if m.profile() != nil {
-			h = append(h, "p profile")
+			h = append(h, "m add "+need) // the menu's Profile
 		}
 		if m.canEnd() {
 			h = append(h, "e end ride")

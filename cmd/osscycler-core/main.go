@@ -40,6 +40,7 @@ import (
 	"github.com/digimago/osscycler/internal/scenery"
 	"github.com/digimago/osscycler/internal/sim"
 	"github.com/digimago/osscycler/internal/telemetry"
+	"github.com/digimago/osscycler/internal/unattended"
 	"github.com/digimago/osscycler/internal/workout"
 )
 
@@ -275,6 +276,9 @@ func run() error {
 		}, rides.Courses())
 		svc.Scenery = scenes
 	}
+	if *courseDir != "" {
+		svc.CourseFiles = courseFiles{dir: *courseDir, courses: rides.Courses()}
+	}
 	if workouts != nil {
 		svc.Workouts = riders.Workouts()
 	}
@@ -319,6 +323,23 @@ func run() error {
 	if workouts != nil {
 		go workouts.Run(ctx)
 	}
+	// No screen connected with a ride under way: paused after 30 s, ended
+	// and saved after 30 minutes.
+	alone := &unattended.Watcher{Hub: hub, Cfg: unattended.DefaultConfig(), Log: log, End: func(ctx context.Context) {
+		rides.Stop()
+		if workouts != nil {
+			workouts.Stop()
+		}
+		manual.Release()
+		if rec != nil {
+			if file, err := rec.End(ctx, false); err != nil {
+				log.Warn("saving the activity", "err", err)
+			} else if file != "" {
+				log.Info("activity saved", "file", file)
+			}
+		}
+	}}
+	go alone.Run(ctx)
 	// The recorder saves the ride under way when ctx ends; wait for it.
 	recorded := make(chan struct{})
 	if rec != nil {

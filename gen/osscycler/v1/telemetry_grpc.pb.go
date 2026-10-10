@@ -38,8 +38,11 @@ const (
 	TelemetryService_SetProfile_FullMethodName            = "/osscycler.v1.TelemetryService/SetProfile"
 	TelemetryService_ListActivities_FullMethodName        = "/osscycler.v1.TelemetryService/ListActivities"
 	TelemetryService_ExportActivity_FullMethodName        = "/osscycler.v1.TelemetryService/ExportActivity"
+	TelemetryService_GetCourseFile_FullMethodName         = "/osscycler.v1.TelemetryService/GetCourseFile"
 	TelemetryService_SetTrainerControl_FullMethodName     = "/osscycler.v1.TelemetryService/SetTrainerControl"
 	TelemetryService_ReleaseTrainerControl_FullMethodName = "/osscycler.v1.TelemetryService/ReleaseTrainerControl"
+	TelemetryService_SetPaused_FullMethodName             = "/osscycler.v1.TelemetryService/SetPaused"
+	TelemetryService_Announce_FullMethodName              = "/osscycler.v1.TelemetryService/Announce"
 )
 
 // TelemetryServiceClient is the client API for TelemetryService service.
@@ -113,6 +116,11 @@ type TelemetryServiceClient interface {
 	// another machine can save it: the first message carries the size,
 	// then chunks follow in order. Unknown names are NOT_FOUND.
 	ExportActivity(ctx context.Context, in *ExportActivityRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ExportActivityResponse], error)
+	// GetCourseFile returns a course's GPX file, so a client can build the
+	// course's 3D world where it draws it (the core, perhaps a Pi by the
+	// trainer, builds none). Built-in tracks and included routes have no
+	// file to send (clients have them): NOT_FOUND, as unknown courses.
+	GetCourseFile(ctx context.Context, in *GetCourseFileRequest, opts ...grpc.CallOption) (*GetCourseFileResponse, error)
 	// SetTrainerControl takes manual control of the trainer outside course
 	// rides and workouts, or changes its target: ERG watts (25-1000), a
 	// grade (-10 % to the trainer's maximum) or a brake level (0-100 %).
@@ -122,6 +130,17 @@ type TelemetryServiceClient interface {
 	SetTrainerControl(ctx context.Context, in *SetTrainerControlRequest, opts ...grpc.CallOption) (*SetTrainerControlResponse, error)
 	// ReleaseTrainerControl ends manual control; the trainer is set flat.
 	ReleaseTrainerControl(ctx context.Context, in *ReleaseTrainerControlRequest, opts ...grpc.CallOption) (*ReleaseTrainerControlResponse, error)
+	// SetPaused parks the core (a coffee, the door) or carries on. While
+	// paused, a course ride and a workout hold still with their clocks
+	// stopped, the trainer goes flat (manual control too), the recording's
+	// timer stops and the activity is never ended for being still. A ride
+	// that was paused keeps its riding time but is never a personal best or
+	// a ghost. Starting a ride, a workout or manual control carries on.
+	SetPaused(ctx context.Context, in *SetPausedRequest, opts ...grpc.CallOption) (*SetPausedResponse, error)
+	// Announce puts a short message on every screen for a while (State.
+	// announcement): a script running a session, a coach on another screen.
+	// Empty text takes the current one off.
+	Announce(ctx context.Context, in *AnnounceRequest, opts ...grpc.CallOption) (*AnnounceResponse, error)
 }
 
 type telemetryServiceClient struct {
@@ -340,6 +359,16 @@ func (c *telemetryServiceClient) ExportActivity(ctx context.Context, in *ExportA
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type TelemetryService_ExportActivityClient = grpc.ServerStreamingClient[ExportActivityResponse]
 
+func (c *telemetryServiceClient) GetCourseFile(ctx context.Context, in *GetCourseFileRequest, opts ...grpc.CallOption) (*GetCourseFileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetCourseFileResponse)
+	err := c.cc.Invoke(ctx, TelemetryService_GetCourseFile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *telemetryServiceClient) SetTrainerControl(ctx context.Context, in *SetTrainerControlRequest, opts ...grpc.CallOption) (*SetTrainerControlResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SetTrainerControlResponse)
@@ -354,6 +383,26 @@ func (c *telemetryServiceClient) ReleaseTrainerControl(ctx context.Context, in *
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ReleaseTrainerControlResponse)
 	err := c.cc.Invoke(ctx, TelemetryService_ReleaseTrainerControl_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *telemetryServiceClient) SetPaused(ctx context.Context, in *SetPausedRequest, opts ...grpc.CallOption) (*SetPausedResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetPausedResponse)
+	err := c.cc.Invoke(ctx, TelemetryService_SetPaused_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *telemetryServiceClient) Announce(ctx context.Context, in *AnnounceRequest, opts ...grpc.CallOption) (*AnnounceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AnnounceResponse)
+	err := c.cc.Invoke(ctx, TelemetryService_Announce_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -431,6 +480,11 @@ type TelemetryServiceServer interface {
 	// another machine can save it: the first message carries the size,
 	// then chunks follow in order. Unknown names are NOT_FOUND.
 	ExportActivity(*ExportActivityRequest, grpc.ServerStreamingServer[ExportActivityResponse]) error
+	// GetCourseFile returns a course's GPX file, so a client can build the
+	// course's 3D world where it draws it (the core, perhaps a Pi by the
+	// trainer, builds none). Built-in tracks and included routes have no
+	// file to send (clients have them): NOT_FOUND, as unknown courses.
+	GetCourseFile(context.Context, *GetCourseFileRequest) (*GetCourseFileResponse, error)
 	// SetTrainerControl takes manual control of the trainer outside course
 	// rides and workouts, or changes its target: ERG watts (25-1000), a
 	// grade (-10 % to the trainer's maximum) or a brake level (0-100 %).
@@ -440,6 +494,17 @@ type TelemetryServiceServer interface {
 	SetTrainerControl(context.Context, *SetTrainerControlRequest) (*SetTrainerControlResponse, error)
 	// ReleaseTrainerControl ends manual control; the trainer is set flat.
 	ReleaseTrainerControl(context.Context, *ReleaseTrainerControlRequest) (*ReleaseTrainerControlResponse, error)
+	// SetPaused parks the core (a coffee, the door) or carries on. While
+	// paused, a course ride and a workout hold still with their clocks
+	// stopped, the trainer goes flat (manual control too), the recording's
+	// timer stops and the activity is never ended for being still. A ride
+	// that was paused keeps its riding time but is never a personal best or
+	// a ghost. Starting a ride, a workout or manual control carries on.
+	SetPaused(context.Context, *SetPausedRequest) (*SetPausedResponse, error)
+	// Announce puts a short message on every screen for a while (State.
+	// announcement): a script running a session, a coach on another screen.
+	// Empty text takes the current one off.
+	Announce(context.Context, *AnnounceRequest) (*AnnounceResponse, error)
 	mustEmbedUnimplementedTelemetryServiceServer()
 }
 
@@ -507,11 +572,20 @@ func (UnimplementedTelemetryServiceServer) ListActivities(context.Context, *List
 func (UnimplementedTelemetryServiceServer) ExportActivity(*ExportActivityRequest, grpc.ServerStreamingServer[ExportActivityResponse]) error {
 	return status.Error(codes.Unimplemented, "method ExportActivity not implemented")
 }
+func (UnimplementedTelemetryServiceServer) GetCourseFile(context.Context, *GetCourseFileRequest) (*GetCourseFileResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetCourseFile not implemented")
+}
 func (UnimplementedTelemetryServiceServer) SetTrainerControl(context.Context, *SetTrainerControlRequest) (*SetTrainerControlResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetTrainerControl not implemented")
 }
 func (UnimplementedTelemetryServiceServer) ReleaseTrainerControl(context.Context, *ReleaseTrainerControlRequest) (*ReleaseTrainerControlResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReleaseTrainerControl not implemented")
+}
+func (UnimplementedTelemetryServiceServer) SetPaused(context.Context, *SetPausedRequest) (*SetPausedResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetPaused not implemented")
+}
+func (UnimplementedTelemetryServiceServer) Announce(context.Context, *AnnounceRequest) (*AnnounceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Announce not implemented")
 }
 func (UnimplementedTelemetryServiceServer) mustEmbedUnimplementedTelemetryServiceServer() {}
 func (UnimplementedTelemetryServiceServer) testEmbeddedByValue()                          {}
@@ -862,6 +936,24 @@ func _TelemetryService_ExportActivity_Handler(srv interface{}, stream grpc.Serve
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type TelemetryService_ExportActivityServer = grpc.ServerStreamingServer[ExportActivityResponse]
 
+func _TelemetryService_GetCourseFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetCourseFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TelemetryServiceServer).GetCourseFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TelemetryService_GetCourseFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TelemetryServiceServer).GetCourseFile(ctx, req.(*GetCourseFileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _TelemetryService_SetTrainerControl_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SetTrainerControlRequest)
 	if err := dec(in); err != nil {
@@ -894,6 +986,42 @@ func _TelemetryService_ReleaseTrainerControl_Handler(srv interface{}, ctx contex
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(TelemetryServiceServer).ReleaseTrainerControl(ctx, req.(*ReleaseTrainerControlRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _TelemetryService_SetPaused_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetPausedRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TelemetryServiceServer).SetPaused(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TelemetryService_SetPaused_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TelemetryServiceServer).SetPaused(ctx, req.(*SetPausedRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _TelemetryService_Announce_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AnnounceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TelemetryServiceServer).Announce(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TelemetryService_Announce_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TelemetryServiceServer).Announce(ctx, req.(*AnnounceRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -974,12 +1102,24 @@ var TelemetryService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _TelemetryService_ListActivities_Handler,
 		},
 		{
+			MethodName: "GetCourseFile",
+			Handler:    _TelemetryService_GetCourseFile_Handler,
+		},
+		{
 			MethodName: "SetTrainerControl",
 			Handler:    _TelemetryService_SetTrainerControl_Handler,
 		},
 		{
 			MethodName: "ReleaseTrainerControl",
 			Handler:    _TelemetryService_ReleaseTrainerControl_Handler,
+		},
+		{
+			MethodName: "SetPaused",
+			Handler:    _TelemetryService_SetPaused_Handler,
+		},
+		{
+			MethodName: "Announce",
+			Handler:    _TelemetryService_Announce_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

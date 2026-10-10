@@ -50,6 +50,7 @@ func join(name string) string {
 func Courses() string  { return join("courses") }
 func Workouts() string { return join("workouts") }
 func Rides() string    { return join("rides") }
+func Worlds() string   { return join("worlds") }
 func Profile() string  { return join("profile.json") }
 func Token() string    { return join("api-token") }
 

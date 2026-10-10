@@ -90,6 +90,12 @@ service TelemetryService {
   // then chunks follow in order. Unknown names are NOT_FOUND.
   rpc ExportActivity(ExportActivityRequest) returns (stream ExportActivityResponse);
 
+  // GetCourseFile returns a course's GPX file, so a client can build the
+  // course's 3D world where it draws it (the core, perhaps a Pi by the
+  // trainer, builds none). Built-in tracks and included routes have no
+  // file to send (clients have them): NOT_FOUND, as unknown courses.
+  rpc GetCourseFile(GetCourseFileRequest) returns (GetCourseFileResponse);
+
   // SetTrainerControl takes manual control of the trainer outside course
   // rides and workouts, or changes its target: ERG watts (25-1000), a
   // grade (-10 % to the trainer's maximum) or a brake level (0-100 %).
@@ -100,6 +106,43 @@ service TelemetryService {
 
   // ReleaseTrainerControl ends manual control; the trainer is set flat.
   rpc ReleaseTrainerControl(ReleaseTrainerControlRequest) returns (ReleaseTrainerControlResponse);
+
+  // SetPaused parks the core (a coffee, the door) or carries on. While
+  // paused, a course ride and a workout hold still with their clocks
+  // stopped, the trainer goes flat (manual control too), the recording's
+  // timer stops and the activity is never ended for being still. A ride
+  // that was paused keeps its riding time but is never a personal best or
+  // a ghost. Starting a ride, a workout or manual control carries on.
+  rpc SetPaused(SetPausedRequest) returns (SetPausedResponse);
+  // Announce puts a short message on every screen for a while (State.
+  // announcement): a script running a session, a coach on another screen.
+  // Empty text takes the current one off.
+  rpc Announce(AnnounceRequest) returns (AnnounceResponse);
+}
+
+message AnnounceRequest {
+  // At most 200 characters; empty clears.
+  string text = 1;
+  // How long screens show it: 1 to 600 s (0: 10 s).
+  double seconds = 2;
+}
+
+message AnnounceResponse {}
+
+// Announcement is a message for every screen until until_unix_ms
+// (Announce).
+message Announcement {
+  string text = 1;
+  int64 until_unix_ms = 2;
+}
+
+message SetPausedRequest {
+  bool paused = 1;
+}
+
+message SetPausedResponse {
+  // As it is now.
+  bool paused = 1;
 }
 
 message SetTrainerControlRequest {
@@ -157,6 +200,9 @@ message SetProfileRequest {
   optional double ftp_w = 2;
   // Sizes the rider's drag on courses: 120-220 cm.
   optional double height_cm = 3;
+  // How a 3D renderer shows the ride: "chase" (behind and above the
+  // rider) or "eyes" (the rider's own view).
+  optional string view = 4;
 }
 
 message SetProfileResponse {
@@ -185,6 +231,9 @@ message RideResult {
   bool personal_best = 10;
   // The recording (an Activity name) the ride is in.
   string file = 11;
+  // The core was paused during the ride: never a personal best, and it
+  // can't be raced.
+  bool paused = 12;
 }
 
 message EndActivityRequest {
@@ -345,6 +394,19 @@ message Course {
   repeated Junction junctions = 18;
   repeated ParkingArea parking = 19;
   repeated PlaceSign place_signs = 20;
+  // 21 was the world's build status, from when the core built worlds.
+  reserved 21;
+  reserved "world";
+}
+
+message GetCourseFileRequest {
+  string course_id = 1;
+}
+
+message GetCourseFileResponse {
+  // The file's name in the core's courses directory (<course id>.gpx).
+  string name = 1;
+  bytes data = 2;
 }
 
 message Junction {
@@ -464,6 +526,12 @@ message CancelCalibrationResponse {}
 message StreamStateRequest {
   // Upper bound on the update rate. 0 means the server default (60 Hz).
   uint32 max_rate_hz = 1;
+  // A screen the rider rides with (the TUI, a 3D view): counted in
+  // State.heads while the stream is open. With none for 30 s while a ride,
+  // a workout or manual control is under way, the core pauses it, and
+  // after 30 minutes ends it and saves the activity. A renderer in debug
+  // mode or a script watching the state leaves it out.
+  bool head = 2;
 }
 
 message StreamStateResponse {
@@ -486,6 +554,13 @@ message State {
   TrainerControl control = 9;
   // The ANT+ stick; absent for a core without one (-fake).
   Radio radio = 10;
+  // The core is paused (SetPaused), since paused_since_unix_ms.
+  bool paused = 11;
+  int64 paused_since_unix_ms = 12;
+  // How many heads (StreamStateRequest.head) are connected.
+  uint32 heads = 13;
+  // A message for every screen (Announce), while until_unix_ms is ahead.
+  Announcement announcement = 14;
 }
 
 message Radio {
@@ -541,6 +616,8 @@ message RiderProfile {
   bool height_forced = 13;
   // Set by -cda on the core: the rider's size doesn't apply this run.
   bool cda_forced = 14;
+  // The rider's view in a 3D renderer: "chase" (the default) or "eyes".
+  string view = 15;
 }
 
 // The core records every ride to a FIT file on its own disk, whether or
@@ -654,6 +731,11 @@ message Ride {
   // A workout or manual control drives the trainer; the loop only moves
   // the rider round (and leads in a workout's free segments).
   bool trainer_yielded = 25;
+  // The core was paused during this ride (its clock stopped meanwhile):
+  // it can't be a personal best or a ghost; on a loop, lap_paused for the
+  // lap under way.
+  bool paused = 26;
+  bool lap_paused = 27;
 }
 
 message RideLap {
@@ -664,6 +746,8 @@ message RideLap {
   double climbed_m = 4;
   // When the lap was completed.
   int64 finished_unix_ms = 5;
+  // The core was paused during the lap.
+  bool paused = 6;
 }
 
 message RideGhost {

@@ -15,6 +15,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -108,7 +109,7 @@ type Control interface {
 
 // Profile changes the rider's settings.
 type Profile interface {
-	SetProfile(ctx context.Context, weightKg, ftpW, heightCm *float64) (telemetry.Profile, error)
+	SetProfile(ctx context.Context, weightKg, ftpW, heightCm *float64, view *string) (telemetry.Profile, error)
 }
 
 // Recorder ends the recorded activity on the rider's request.
@@ -128,6 +129,15 @@ type Services struct {
 	Activities Activities
 	Control    Control
 	Scenery    Scenery
+	// CourseFiles reads a course's GPX file (for clients that build its
+	// world); nil: none to give.
+	CourseFiles CourseFiles
+}
+
+// CourseFiles reads courses' files: the GPX of course id, or an error
+// matching os.ErrNotExist for a course without one.
+type CourseFiles interface {
+	File(courseID string) (name string, data []byte, err error)
 }
 
 // Scenery is what lies along each course, from map data; nil while
@@ -161,7 +171,7 @@ func NewServer(hub *telemetry.Hub, svc Services, token string, opts ...grpc.Serv
 		}),
 	)
 	s := grpc.NewServer(opts...)
-	pb.RegisterTelemetryServiceServer(s, &telemetryServer{hub: hub, cal: svc.Calibrator, rides: svc.Rides, workouts: svc.Workouts, recorder: svc.Recorder, history: svc.History, profile: svc.Profile, activities: svc.Activities, control: svc.Control, scenery: svc.Scenery, maxHz: DefaultRateHz})
+	pb.RegisterTelemetryServiceServer(s, &telemetryServer{hub: hub, cal: svc.Calibrator, rides: svc.Rides, workouts: svc.Workouts, recorder: svc.Recorder, history: svc.History, profile: svc.Profile, activities: svc.Activities, control: svc.Control, scenery: svc.Scenery, courseFiles: svc.CourseFiles, maxHz: DefaultRateHz})
 	return s, nil
 }
 
@@ -177,17 +187,18 @@ func authorize(ctx context.Context, token string) error {
 
 type telemetryServer struct {
 	pb.UnimplementedTelemetryServiceServer
-	hub        *telemetry.Hub
-	cal        telemetry.Calibrator // nil: calibration unavailable
-	rides      Rides                // nil: no course rides
-	workouts   Workouts             // nil: no workout library
-	recorder   Recorder             // nil: rides aren't recorded
-	history    History              // nil: no history
-	profile    Profile              // nil: no rider profile
-	activities Activities           // nil: nothing recorded
-	control    Control              // nil: no manual control
-	scenery    Scenery              // nil: no map data
-	maxHz      uint32
+	hub         *telemetry.Hub
+	cal         telemetry.Calibrator // nil: calibration unavailable
+	rides       Rides                // nil: no course rides
+	workouts    Workouts             // nil: no workout library
+	recorder    Recorder             // nil: rides aren't recorded
+	history     History              // nil: no history
+	profile     Profile              // nil: no rider profile
+	activities  Activities           // nil: nothing recorded
+	control     Control              // nil: no manual control
+	scenery     Scenery              // nil: no map data
+	courseFiles CourseFiles          // nil: no course files to give
+	maxHz       uint32
 }
 
 func (s *telemetryServer) SetTrainerControl(_ context.Context, req *pb.SetTrainerControlRequest) (*pb.SetTrainerControlResponse, error) {
@@ -213,8 +224,42 @@ func (s *telemetryServer) SetTrainerControl(_ context.Context, req *pb.SetTraine
 	case err != nil:
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
+	s.carryOn()
 	return &pb.SetTrainerControlResponse{Mode: pb.ControlMode(m) + 1, Target: got}, nil
 }
+
+// SetPaused parks the core or carries on (telemetry.Hub.SetPaused); the
+// rides, workouts, manual control and recorder each hold while paused.
+func (s *telemetryServer) SetPaused(_ context.Context, req *pb.SetPausedRequest) (*pb.SetPausedResponse, error) {
+	s.hub.SetPaused(req.GetPaused())
+	st, _ := s.hub.Latest()
+	return &pb.SetPausedResponse{Paused: st.Paused}, nil
+}
+
+// carryOn ends a pause before something new starts: starting it means
+// riding again.
+func (s *telemetryServer) carryOn() { s.hub.SetPaused(false) }
+
+// Announce puts a message on every screen for a while (State.announcement).
+func (s *telemetryServer) Announce(_ context.Context, req *pb.AnnounceRequest) (*pb.AnnounceResponse, error) {
+	text := strings.TrimSpace(req.GetText())
+	if utf8.RuneCountInString(text) > maxAnnouncement {
+		return nil, status.Errorf(codes.InvalidArgument, "an announcement is at most %d characters", maxAnnouncement)
+	}
+	secs := req.GetSeconds()
+	if secs == 0 {
+		secs = 10
+	}
+	if secs < 1 || secs > 600 {
+		return nil, status.Error(codes.InvalidArgument, "an announcement shows 1 to 600 s")
+	}
+	s.hub.Announce(text, time.Now().Add(time.Duration(secs*float64(time.Second))))
+	return &pb.AnnounceResponse{}, nil
+}
+
+// maxAnnouncement: an announcement's length, in characters (a line on a
+// TV, two in a terminal).
+const maxAnnouncement = 200
 
 func (s *telemetryServer) ReleaseTrainerControl(context.Context, *pb.ReleaseTrainerControlRequest) (*pb.ReleaseTrainerControlResponse, error) {
 	if s.control != nil {
@@ -281,7 +326,7 @@ func (s *telemetryServer) SetProfile(ctx context.Context, req *pb.SetProfileRequ
 	if s.profile == nil {
 		return nil, status.Error(codes.Unimplemented, "this core has no rider profile")
 	}
-	p, err := s.profile.SetProfile(ctx, req.WeightKg, req.FtpW, req.HeightCm)
+	p, err := s.profile.SetProfile(ctx, req.WeightKg, req.FtpW, req.HeightCm, req.View)
 	switch {
 	case errors.Is(err, profile.ErrOutOfRange):
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -304,7 +349,7 @@ func (s *telemetryServer) ListResults(context.Context, *pb.ListResultsRequest) (
 		resp.Results = append(resp.Results, &pb.RideResult{
 			FinishedUnixMs: e.Finished.UnixMilli(), CourseId: e.CourseID, CourseName: e.CourseName,
 			StartM: e.StartM, DistanceM: e.DistanceM, ElapsedS: e.ElapsedS, AvgPowerW: e.AvgPowerW,
-			ClimbedM: e.ClimbedM, DifficultyPct: e.DifficultyPct, PersonalBest: e.PB, File: e.File,
+			ClimbedM: e.ClimbedM, DifficultyPct: e.DifficultyPct, PersonalBest: e.PB, File: e.File, Paused: e.Paused,
 		})
 	}
 	return resp, nil
@@ -358,11 +403,12 @@ func (s *telemetryServer) StartRide(_ context.Context, req *pb.StartRideRequest)
 	switch {
 	case errors.Is(err, ride.ErrUnknownCourse), errors.Is(err, ride.ErrUnknownRide):
 		return nil, status.Error(codes.NotFound, err.Error())
-	case errors.Is(err, ride.ErrRideActive), errors.Is(err, profile.ErrIncomplete), errors.Is(err, ride.ErrCourseChanged):
+	case errors.Is(err, ride.ErrRideActive), errors.Is(err, profile.ErrIncomplete), errors.Is(err, ride.ErrCourseChanged), errors.Is(err, ride.ErrPausedRide):
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	case err != nil:
 		return nil, status.Error(codes.Internal, err.Error())
 	}
+	s.carryOn()
 	if s.scenery != nil {
 		from := 0.0
 		if st, _ := s.hub.Latest(); st.Ride.CourseID == req.GetCourseId() {
@@ -371,6 +417,21 @@ func (s *telemetryServer) StartRide(_ context.Context, req *pb.StartRideRequest)
 		s.scenery.Want(req.GetCourseId(), from)
 	}
 	return &pb.StartRideResponse{}, nil
+}
+
+func (s *telemetryServer) GetCourseFile(_ context.Context, req *pb.GetCourseFileRequest) (*pb.GetCourseFileResponse, error) {
+	id := req.GetCourseId()
+	if s.courseFiles == nil {
+		return nil, status.Errorf(codes.NotFound, "no file for course %q", id)
+	}
+	name, data, err := s.courseFiles.File(id)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return nil, status.Errorf(codes.NotFound, "no file for course %q", id)
+	case err != nil:
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return &pb.GetCourseFileResponse{Name: name, Data: data}, nil
 }
 
 func (s *telemetryServer) SetDifficulty(_ context.Context, req *pb.SetDifficultyRequest) (*pb.SetDifficultyResponse, error) {
@@ -433,6 +494,10 @@ func (s *telemetryServer) StreamState(req *pb.StreamStateRequest, stream grpc.Se
 	}
 	minGap := time.Second / time.Duration(hz)
 	ctx := stream.Context()
+	if req.GetHead() {
+		s.hub.Update(func(st *telemetry.State) bool { st.Heads++; return true })
+		defer s.hub.Update(func(st *telemetry.State) bool { st.Heads--; return true })
+	}
 
 	var (
 		sentSeq  uint64

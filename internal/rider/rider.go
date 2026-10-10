@@ -103,10 +103,15 @@ func (s *Service) applyDrag() {
 	}
 }
 
-// SetProfile changes the weight, FTP and/or height (nil leaves one as it
-// is), checking all before applying any, and returns the profile in
+// SetProfile changes the weight, FTP, height and/or view (nil leaves one
+// as it is), checking all before applying any, and returns the profile in
 // effect. Out-of-range values match profile.ErrOutOfRange.
-func (s *Service) SetProfile(ctx context.Context, weightKg, ftpW, heightCm *float64) (telemetry.Profile, error) {
+func (s *Service) SetProfile(ctx context.Context, weightKg, ftpW, heightCm *float64, view *string) (telemetry.Profile, error) {
+	if view != nil {
+		if err := profile.CheckView(*view); err != nil {
+			return s.state(), err
+		}
+	}
 	for _, c := range []struct {
 		f profile.Field
 		v *float64
@@ -135,6 +140,14 @@ func (s *Service) SetProfile(ctx context.Context, weightKg, ftpW, heightCm *floa
 		}
 		if s.workouts != nil {
 			s.workouts.SetFTP(*ftpW)
+		}
+	}
+	if view != nil {
+		_, err := s.m.SetView(*view)
+		s.publish()
+		if err != nil {
+			s.log.Error("saving the rider profile failed", "path", s.m.Path(), "err", err)
+			return s.state(), err
 		}
 	}
 	return s.state(), nil
@@ -181,7 +194,7 @@ func (s *Service) state() telemetry.Profile {
 		HeightCm: p.HeightCm, CdA: s.cda(),
 		WeightForced: s.m.Forced(profile.Weight), FTPForced: s.m.Forced(profile.FTP),
 		DifficultyForced: s.m.Forced(profile.Difficulty), HeightForced: s.m.Forced(profile.Height),
-		CdAForced: s.cdaForced(), Path: s.m.Path(),
+		CdAForced: s.cdaForced(), Path: s.m.Path(), View: p.ViewOrDefault(),
 	}
 }
 

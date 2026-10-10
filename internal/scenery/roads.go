@@ -36,6 +36,9 @@ type Branch struct {
 	BearingDeg float64 // compass bearing from the junction, clockwise from north
 	WidthM     float64
 	LengthM    float64 // how far it runs before it ends or bends away (at most branchMaxM)
+	// Line is its centre line from the junction, LengthM long, in metres
+	// east and north of the course's start (course.Project).
+	Line [][2]float64
 }
 
 // Junction is a place where other roads meet the route.
@@ -46,10 +49,14 @@ type Junction struct {
 }
 
 // Parking is a car park beside the route, as a box aligned with the road
-// like Building.
+// like Building, and as its outline.
 type Parking struct {
 	DistanceM, OffsetM, LengthM, DepthM float64
 	Name                                string
+	// Outline is its edge, in metres east and north of the course's start
+	// (course.Project), the first point not repeated.
+	Outline [][2]float64
+	Surface Surface
 }
 
 // PlaceSign is a place-name sign where the route enters a built-up area
@@ -82,6 +89,7 @@ type road struct {
 	major, layer bool // major road; on a bridge or in a tunnel
 	motorway     bool
 	widthM       float64
+	tags         map[string]string
 	// next lists the roads that go on from each end (first, last node).
 	next [2][]*road
 }
@@ -121,7 +129,7 @@ func roadsOf(c *course.Course, d *Data) []*road {
 		default:
 			continue
 		}
-		r := &road{id: el.ID, nodes: el.Nodes, name: el.Tags["name"], class: class, widthM: roadWidth(class, el.Tags)}
+		r := &road{id: el.ID, nodes: el.Nodes, name: el.Tags["name"], class: class, widthM: roadWidth(class, el.Tags), tags: el.Tags}
 		// Motorways never meet a ride on the level: they are fetched for
 		// the 3D world (viaducts, tunnels), never drawn as junctions.
 		r.motorway = class == "motorway"
@@ -292,7 +300,7 @@ func branchesAt(roads []*road, x, y, inBearing, outBearing float64, keep func(*r
 			continue
 		}
 		for _, dir := range []int{1, -1} {
-			b, length, ok := walk(rd, k, dir)
+			b, length, line, ok := walk(rd, k, dir)
 			if !ok || angleDiff(b, inBearing+180) < sameWayDeg || angleDiff(b, outBearing) < sameWayDeg {
 				continue
 			}
@@ -301,7 +309,7 @@ func branchesAt(roads []*road, x, y, inBearing, outBearing float64, keep func(*r
 				dup = dup || angleDiff(o.BearingDeg, b) < 15
 			}
 			if !dup {
-				out = append(out, Branch{BearingDeg: b, WidthM: rd.widthM, LengthM: length})
+				out = append(out, Branch{BearingDeg: b, WidthM: rd.widthM, LengthM: length, Line: line})
 			}
 		}
 	}
@@ -311,13 +319,13 @@ func branchesAt(roads []*road, x, y, inBearing, outBearing float64, keep func(*r
 
 // walk follows rd from vertex k in direction dir, on into the pieces of
 // the same road beyond its end: the bearing to the point branchProbeM out,
-// and how far the road runs (up to branchMaxM) before ending or turning
-// more than 30° away from that bearing.
-func walk(rd *road, k, dir int) (b, length float64, ok bool) {
+// how far the road runs (up to branchMaxM) before ending or turning more
+// than 30° away from that bearing, and its line that far.
+func walk(rd *road, k, dir int) (b, length float64, line [][2]float64, ok bool) {
 	x0, y0 := rd.x[k], rd.y[k]
 	pts := trace(rd, k, dir, branchMaxM+20)
 	if len(pts) < 2 {
-		return 0, 0, false
+		return 0, 0, nil, false
 	}
 	var px, py float64
 	for _, p := range pts[1:] {
@@ -327,20 +335,34 @@ func walk(rd *road, k, dir int) (b, length float64, ok bool) {
 		}
 	}
 	if math.Hypot(px-x0, py-y0) < 5 {
-		return 0, 0, false
+		return 0, 0, nil, false
 	}
 	b = bearing(x0, y0, px, py)
+	line = [][2]float64{pts[0]}
 	for _, p := range pts[1:] {
 		dd := math.Hypot(p[0]-x0, p[1]-y0)
 		if dd > 8 && angleDiff(bearing(x0, y0, p[0], p[1]), b) > 30 {
 			break
 		}
-		length = dd
-		if length >= branchMaxM {
-			return b, branchMaxM, true
+		if dd >= branchMaxM {
+			// Cut the line where the branch is cut: branchMaxM out.
+			q := line[len(line)-1]
+			lo, hi := 0.0, 1.0
+			for range 30 {
+				m := (lo + hi) / 2
+				if math.Hypot(q[0]+m*(p[0]-q[0])-x0, q[1]+m*(p[1]-q[1])-y0) < branchMaxM {
+					lo = m
+				} else {
+					hi = m
+				}
+			}
+			line = append(line, [2]float64{q[0] + lo*(p[0]-q[0]), q[1] + lo*(p[1]-q[1])})
+			return b, branchMaxM, line, true
 		}
+		length = dd
+		line = append(line, p)
 	}
-	return b, length, true
+	return b, length, line, true
 }
 
 // trace lists the points of rd from vertex k in direction dir, going on
@@ -579,7 +601,14 @@ func parkings(c *course.Course, d *Data, r []routePt, roads []*road, east, north
 		if clear := math.Abs(off) - depth/2; clear < buildingClearM {
 			off = math.Copysign(buildingClearM+depth/2, off)
 		}
-		lot := Parking{DistanceM: float64(i)*c.Spacing + (a0+a1)/2, OffsetM: off, LengthM: a1 - a0, DepthM: depth, Name: t["name"]}
+		lot := Parking{DistanceM: float64(i)*c.Spacing + (a0+a1)/2, OffsetM: off, LengthM: a1 - a0, DepthM: depth, Name: t["name"],
+			Surface: surfaceOf(t["surface"], "")}
+		for k := range xs {
+			if k == len(xs)-1 && xs[k] == xs[0] && ys[k] == ys[0] {
+				break // the ring's closing point
+			}
+			lot.Outline = append(lot.Outline, [2]float64{xs[k], ys[k]})
+		}
 		lots = append(lots, lot)
 		if j, ok := entrance(r, roads, xs, ys); ok {
 			entrances = append(entrances, j)
@@ -628,12 +657,12 @@ func entrance(r []routePt, roads []*road, xs, ys []float64) (Junction, bool) {
 			if into < j {
 				dir = -1
 			}
-			b, length, ok := walk(rd, j, dir)
+			b, length, line, ok := walk(rd, j, dir)
 			if !ok {
 				continue
 			}
 			bestOff, found = off, true
-			best = Junction{DistanceM: d, Kind: JunctionEntrance, Branches: []Branch{{BearingDeg: b, WidthM: rd.widthM, LengthM: length}}}
+			best = Junction{DistanceM: d, Kind: JunctionEntrance, Branches: []Branch{{BearingDeg: b, WidthM: rd.widthM, LengthM: length, Line: line}}}
 		}
 	}
 	return best, found

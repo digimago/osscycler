@@ -449,7 +449,59 @@ func networkPatches(ls []*roadLine, ws []scenery.Way) []patch {
 		p.nodes = [][2]float64{p.node}
 		out = append(out, p)
 	}
-	return shapePatches(mergePatches(out))
+	ps := mergePatches(out)
+	for changed := true; changed; {
+		changed = false
+		for k := range ps {
+			changed = abreast(&ps[k]) || changed
+		}
+		if changed {
+			ps = mergePatches(ps)
+		}
+	}
+	return shapePatches(ps)
+}
+
+// abreast cuts roads of one junction that run alongside each other abreast
+// (owner, 2026-10-10: at 3.0 km on the Velp loop a service road's junction
+// reached 15 m further along it than the main road beside it was cut, and
+// the strip between them, under mergeGapM wide, showed as a wedge of
+// ground between two road surfaces): where one road's cut (with its reach
+// over to the other, joinAlongside's) lies within mergeGapM of another's
+// edge, that road's span reaches out to it, so the
+// junction's outline spans the strip between them. True if it changed p.
+func abreast(p *patch) bool {
+	const reachM = 30.0 // a span grows at most this far
+	changed := false
+	for i := range p.spans {
+		a := p.spans[i]
+		for _, end := range []float64{a.from, a.to} {
+			e := sampleBetween(a.l, end)
+			de, dn, _ := a.l.smooth.heading(end)
+			for j := range p.spans {
+				b := &p.spans[j]
+				if b.l == a.l {
+					continue
+				}
+				d, off, hw := lineNearest(b.l, e.e, e.n)
+				first, last := b.l.samples[0].d, b.l.samples[len(b.l.samples)-1].d
+				if off >= e.hw+math.Max(e.wide[0], e.wide[1])+hw+mergeGapM || d <= first+0.5 || d >= last-0.5 {
+					continue
+				}
+				be, bn, _ := b.l.smooth.heading(d)
+				if math.Abs(de*be+dn*bn) < parallelCosine {
+					continue // across it, not alongside
+				}
+				switch {
+				case d < b.from-0.5 && b.from-d <= reachM:
+					b.from, changed = d, true
+				case d > b.to+0.5 && d-b.to <= reachM:
+					b.to, changed = d, true
+				}
+			}
+		}
+	}
+	return changed
 }
 
 // patchInc is a road at a junction's node: its line, where along it the

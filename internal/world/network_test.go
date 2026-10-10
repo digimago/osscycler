@@ -522,3 +522,51 @@ func TestOpenRunsFindGapsUnderThePath(t *testing.T) {
 		t.Error("a gap found on a roundabout's disc")
 	}
 }
+
+// A junction cuts roads running alongside each other abreast (the Velp
+// loop at 3.0 km): a service road 1 m beside a main road has a side road
+// at e 5 and a link to the main road at e 20; the junction (one, merged)
+// reaches along the service road past the side road, and the main road
+// beside it must be cut as far, or the strip between them shows as a
+// wedge of ground between two road surfaces.
+func TestJunctionCutsRoadsAlongsideAbreast(t *testing.T) {
+	line := func(from, to [2]float64, hw float64, nodes map[int64]float64) *roadLine {
+		l := &roadLine{nodes: map[int64][]float64{}}
+		for k, v := range nodes {
+			l.nodes[k] = []float64{v}
+		}
+		length := math.Hypot(to[0]-from[0], to[1]-from[1])
+		var d, x, y []float64
+		for k := 0; ; k++ {
+			at := math.Min(float64(k)*fineStep, length)
+			f := at / length
+			e, n := from[0]+f*(to[0]-from[0]), from[1]+f*(to[1]-from[1])
+			l.samples = append(l.samples, sample{d: at, e: e, n: n, hw: hw, ele: 10})
+			d, x, y = append(d, at), append(x, e), append(y, n)
+			if at == length {
+				break
+			}
+		}
+		l.smooth = newSmoothLine(d, x, y, false, nil)
+		return l
+	}
+	main := line([2]float64{-200, 0}, [2]float64{200, 0}, 3.5, map[int64]float64{2: 220})
+	service := line([2]float64{-200, -7}, [2]float64{26, -7}, 2.5, map[int64]float64{3: 205, 4: 220})
+	side := line([2]float64{5, -7}, [2]float64{5, -100}, 2.5, map[int64]float64{3: 0})
+	link := line([2]float64{20, 0}, [2]float64{20, -7}, 2.5, map[int64]float64{2: 0, 4: 7})
+	ps := networkPatches([]*roadLine{main, service, side, link}, nil)
+	var j *patch
+	for k := range ps {
+		if inPoly(ps[k].poly, 5, -7) {
+			j = &ps[k]
+		}
+	}
+	if j == nil {
+		t.Fatal("no junction at the side road")
+	}
+	for e := -2.5; e <= 15; e += 2.5 {
+		if !inPoly(j.poly, e, -4) {
+			t.Errorf("at e %.1f the strip between the roads is not on the junction", e)
+		}
+	}
+}

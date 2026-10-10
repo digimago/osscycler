@@ -128,6 +128,7 @@ public partial class Main : Node3D
         _worldsDir = args.File("worlds", Path.Combine(Core.Home(), "worlds"));
         _shot = args.File("shot", "") is { Length: > 0 } s ? s : null;
         _shotFrames = (int)args.Number("frames", _shotFrames);
+        StatsArgs(args);
         // --keys "?@60,x@120": keys pressed at those frames (for checks).
         foreach (var part in args.Get("keys", "").Split(',', StringSplitOptions.RemoveEmptyEntries))
         {
@@ -342,6 +343,7 @@ public partial class Main : Node3D
             _grass = new Grass(w.Ground, _relief, w.TerrainMaterial, _bloom);
             AddChild(_grass.Node);
         }
+        HideParts(w);
         _missing = "";
         _gaze = Vector3.Zero;
     }
@@ -349,12 +351,14 @@ public partial class Main : Node3D
     public override void _Process(double delta)
     {
         _clock += delta;
+        Lap("");
         if (_head.Quit) // set after calls to the core (ending the ride) finish
         {
             GetTree().Quit();
             return;
         }
         Swap();
+        Lap("swap");
         if (_core != null)
         {
             Follow();
@@ -375,13 +379,18 @@ public partial class Main : Node3D
             if (!_world.Manifest.Course.Loop)
                 _distance = Math.Min(_distance, _world.Length);
         }
+        Lap("follow");
         if (_world != null)
             Place(delta);
+        Lap("place");
         Cyclists(delta);
+        Lap("cyclists");
         CoverUp(delta);
+        Lap("cover");
         var now = _core?.Latest().State;
         _head.Started(now);
         _head.Tick(now, _clock);
+        Lap("head");
         _hud.Arrange(_head.Layout);
         _hud.Head(_head.Asking(_clock), _head.Notice(_clock), _head.Help, _head.List(), _head.Prompt, _head.Dialog(now, _clock), _head.Form(now));
         if (_core != null)
@@ -398,13 +407,16 @@ public partial class Main : Node3D
         }
         else
             _hud.Update(Riding(), _clock, Status(), _world?.Profile(), _distance);
+        Lap("hud");
         _trace?.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0:F4} {1:F3}", _clock, _distance));
 
         foreach (var (frame, key) in _keys)
             if (frame == _frames)
                 Press(key);
+        MeasureFrame(delta);
         if (_shot != null && ++_frames == _shotFrames)
         {
+            PrintStats();
             var err = GetViewport().GetTexture().GetImage().SavePng(_shot);
             GD.Print($"osscycler: view at {_distance:F0} m saved to {_shot}: {err}");
             GetTree().Quit();

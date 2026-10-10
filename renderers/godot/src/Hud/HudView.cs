@@ -149,14 +149,14 @@ public sealed class HudView
             panel.Visible = i < tiles.Count;
             if (!panel.Visible)
                 continue;
-            value.AddThemeFontSizeOverride("font_size", _layout.Medium ? MediumDigits : LargeDigits);
+            FontSize(value, _layout.Medium ? MediumDigits : LargeDigits);
             panel.CustomMinimumSize = new Vector2(_layout.Medium ? TileMinW * 0.8f : TileMinW, 0);
             var t = tiles[i];
             label.Text = t.Label;
             value.Text = t.Value;
-            value.AddThemeColorOverride("font_color", Readable(Color(t.ValueColor)));
+            FontColor(value, Readable(Color(t.ValueColor)));
             unit.Text = t.Unit == "" ? " " : t.Unit;
-            unit.AddThemeColorOverride("font_color", t.UnitColor is Rgb u ? Color(u) : new Color(1, 1, 1, 0.7f));
+            FontColor(unit, t.UnitColor is Rgb u ? Color(u) : new Color(1, 1, 1, 0.7f));
         }
         _status.Text = status;
 
@@ -167,7 +167,7 @@ public sealed class HudView
         {
             _bannerTitle.Text = b.Title;
             _bannerSub.Text = b.Sub;
-            _bannerSub.AddThemeColorOverride("font_color", Readable(Color(b.SubColor)));
+            FontColor(_bannerSub, Readable(Color(b.SubColor)));
             _bannerLine.Text = b.Line;
             _bannerLine.Visible = b.Line != "";
             Center(_banner, 330);
@@ -224,7 +224,7 @@ public sealed class HudView
                 foreach (var (label, text) in new[] { ((Label)row.GetChild(0), l.Label), ((Label)row.GetChild(1), l.Time) })
                 {
                     label.Text = text;
-                    label.AddThemeColorOverride("font_color", c);
+                    FontColor(label, c);
                 }
             }
         }
@@ -344,6 +344,23 @@ public sealed class HudView
         for (int i = 0; i < 8 && c.Luminance < minLuma; i++)
             c = c.Lerp(Colors.White, 0.2f);
         return c;
+    }
+
+    // FontSize and FontColor set a label's override only when it changes:
+    // setting one, even to the same value, makes Godot lay the label out
+    // and shape its text again; every tile every frame took 7 ms
+    // (2026-10-10, the Amsterdam Water Supply Dunes at 9 km: 44 fps with
+    // the GPU at 3 ms a frame).
+    static void FontSize(Control c, int size)
+    {
+        if (!c.HasThemeFontSizeOverride("font_size") || c.GetThemeFontSize("font_size") != size)
+            c.AddThemeFontSizeOverride("font_size", size);
+    }
+
+    static void FontColor(Control c, Color col)
+    {
+        if (!c.HasThemeColorOverride("font_color") || c.GetThemeColor("font_color") != col)
+            c.AddThemeColorOverride("font_color", col);
     }
 }
 

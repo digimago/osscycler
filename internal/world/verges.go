@@ -436,7 +436,12 @@ func subtract(p [][2]float64, t [3][2]float64) [][][2]float64 {
 }
 
 // clip is p without what the road surfaces cover.
-func (c *cutter) clip(p gltf.Primitive) gltf.Primitive {
+func (c *cutter) clip(p gltf.Primitive) gltf.Primitive { return c.clipSeams(p, c.seams) }
+
+// clipSeams is clip, with seam skirts or without (the 5 m terrain: at a
+// road's edge its verge is what shows, and skirts under the terrain cut
+// there stood hidden in the verges by the hundred thousand).
+func (c *cutter) clipSeams(p gltf.Primitive, seams bool) gltf.Primitive {
 	out := gltf.Primitive{Material: p.Material}
 	pos := p.Positions
 	hasN, hasC, hasUV := len(p.Normals) > 0, len(p.Colors) > 0, len(p.UVs) > 0
@@ -562,7 +567,7 @@ func (c *cutter) clip(p gltf.Primitive) gltf.Primitive {
 			// need nothing.
 			ccw := ringArea(pc) > 0
 			for i, q := range pc {
-				if !c.seams {
+				if !seams {
 					break
 				}
 				r := pc[(i+1)%len(pc)]

@@ -411,7 +411,7 @@ func Build(c *course.Course, o Options) (*World, error) {
 		cut.seams = true
 		t.surfaces = cut
 		for _, l := range lots {
-			cut.add(l.mesh)
+			cut.add(l.cut)
 		}
 		for _, ps := range roads {
 			for _, p := range ps {
@@ -439,7 +439,9 @@ func Build(c *course.Course, o Options) (*World, error) {
 			before := newLandSurface(landPrims, func(m int) bool { return m == ground })
 			for _, x := range exact {
 				s, b := t.waterMeshes(x, waterMat, ground, before)
-				wcut.add(s)
+				// The outline's own triangles cut: the sheet's split ones
+				// fragmented the land under a big water by the hundred thousand.
+				wcut.add(drapedIn(func(e, n float64) float64 { return 0 }, x.ring, waterMat, 0, 0))
 				exactSurf[x.key] = append(exactSurf[x.key], s)
 				exactBed[x.key] = append(exactBed[x.key], b)
 			}
@@ -455,20 +457,20 @@ func Build(c *course.Course, o Options) (*World, error) {
 			}
 		}
 		clipDone := func() { progress(0.6 + 0.1*float64(clipped.Add(1))/float64(clips)) }
-		both := func(p gltf.Primitive) gltf.Primitive {
-			p = cut.clip(p)
+		both := func(p gltf.Primitive, seams bool) gltf.Primitive {
+			p = cut.clipSeams(p, seams)
 			if wcut != nil {
 				p = wcut.clip(p)
 			}
 			return p
 		}
 		for k := range meshes {
-			cw.Go(func() { meshes[k] = both(meshes[k]); clipDone() })
+			cw.Go(func() { meshes[k] = both(meshes[k], false); clipDone() })
 		}
 		for k, ps := range roads {
 			for i, p := range ps {
 				if p.Material == ground {
-					cw.Go(func() { roads[k][i] = both(p); clipDone() })
+					cw.Go(func() { roads[k][i] = both(p, true); clipDone() })
 				}
 			}
 		}
@@ -773,6 +775,7 @@ func (w *World) addParking(lots []parkingLot) error {
 // parkingLot is a car park's mesh and its node's extras.
 type parkingLot struct {
 	mesh    gltf.Primitive
+	cut     gltf.Primitive // its outline's own triangles, what cuts the land (the 1 m mesh fragmented the verges round it)
 	rim     gltf.Primitive // its bank face to the land beside it (rims.go)
 	extras  map[string]any
 	height  func(e, n float64) float64
@@ -806,7 +809,7 @@ func parkingLots(t *terrain, sc *scenery.Scenery, m roadMaterials, roads map[[2]
 		if lot.Name != "" {
 			extras["name"] = lot.Name
 		}
-		out = append(out, parkingLot{mesh: p, extras: extras, height: height, outline: lot.Outline})
+		out = append(out, parkingLot{mesh: p, cut: drapedIn(height, lot.Outline, p.Material, 0, 0), extras: extras, height: height, outline: lot.Outline})
 	}
 	return out
 }

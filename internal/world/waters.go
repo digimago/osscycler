@@ -189,11 +189,24 @@ func (t *terrain) waterMeshes(x exactWater, water, ground int, land *landSurface
 			}
 		}
 	}
+	grid := map[[2]int][]shore{}
+	cell := func(e, n float64) [2]int {
+		return [2]int{int(math.Floor(e / shoreReachM)), int(math.Floor(n / shoreReachM))}
+	}
+	for _, s := range shores {
+		k := cell(s.e, s.n)
+		grid[k] = append(grid[k], s)
+	}
 	level := func(e, n float64) float64 {
 		lv := t.cover.level(t, x.id, e, n)
-		for _, s := range shores {
-			if math.Abs(s.e-e) < shoreReachM && math.Abs(s.n-n) < shoreReachM && math.Hypot(s.e-e, s.n-n) < shoreReachM {
-				lv = math.Min(lv, s.h-shoreUnderM)
+		k := cell(e, n)
+		for dx := -1; dx <= 1; dx++ {
+			for dy := -1; dy <= 1; dy++ {
+				for _, s := range grid[[2]int{k[0] + dx, k[1] + dy}] {
+					if math.Hypot(s.e-e, s.n-n) < shoreReachM {
+						lv = math.Min(lv, s.h-shoreUnderM)
+					}
+				}
 			}
 		}
 		return lv

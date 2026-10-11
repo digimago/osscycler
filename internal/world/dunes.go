@@ -45,13 +45,13 @@ func seaBuckthornTemplate(p *gltf.Primitive, leaf, wood [3]float32) {
 func brambleTemplate(p *gltf.Primitive, leaf, wood [3]float32) {
 	// 0.8 m: a low mound, canes arching out of it to the ground, leaves
 	// along them.
-	clump(p, 0, 0.4, 0, 0.9, 0.4, leaf, 0.7)
+	clump(p, 0, 0.3, 0, 0.9, 0.42, leaf, 0.7) // its foot on the ground
 	for i := range 6 {
 		a := 2*math.Pi*float64(i)/6 + 0.35
 		mx, mz := around(a, 0.8)
 		ex, ez := around(a, 1.5+0.2*float64(i%2))
 		limb(p, 0, 0.2, 0, mx, 0.85, mz, 0.015, 0.012, 3, wood)
-		limb(p, mx, 0.85, mz, ex, 0.05, ez, 0.012, 0.008, 3, wood)
+		limb(p, mx, 0.85, mz, ex, 0, ez, 0.012, 0.008, 3, wood)
 		clump(p, mx*0.95, 0.7, mz*0.95, 0.4, 0.25, shade(leaf, 0.9+0.07*float64(i%3)), 0.4)
 		clump(p, (mx+ex)/2, 0.45, (mz+ez)/2, 0.3, 0.2, shade(leaf, 0.95), 0.4)
 	}

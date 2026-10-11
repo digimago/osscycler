@@ -41,7 +41,7 @@ sealed class Calls : ICommands
     public List<Activity> Activities = new()
     {
         new Activity { Name = "2026-10-09-120000.fit", StartUnixMs = 1_760_000_000_000 },
-        new Activity { Name = "2026-10-08-090000.fit", StartUnixMs = 1_759_900_000_000 },
+        new Activity { Name = "2026-10-08-090000.fit", StartUnixMs = 1_759_900_000_000, HeldMaxHeartRateBpm = 176 },
     };
     public List<WorkoutDef> Workouts = new() { new WorkoutDef { Id = "intervals", Name = "Intervals", DurationS = 1800 } };
 
@@ -360,8 +360,13 @@ public class SetupTests
         h.Key("5", st, 0);
         h.Key("enter", st, 0);
         Settle();
-        // The maximum heart rate: optional too, and the last step here.
-        Assert.StartsWith("Your maximum heart rate", h.Dialog(st, 0)!.Big);
+        // The maximum heart rate: optional too, and the last step here; the
+        // highest held in the rides is told, not filled in.
+        var d = h.Dialog(st, 0)!;
+        Assert.Equal("Your maximum heart rate: _ bpm", d.Big);
+        Assert.Contains(d.Lines, l => l.Contains("held for 10 s in your rides: 176 bpm"));
+        Assert.All(d.Lines, l => Assert.True(l.Length < 80, l)); // they fit the panel
+        Assert.Contains(d.Lines, l => l.Contains("not medical advice"));
         h.Key("enter", st, 0); // skipped
         Assert.Null(h.Dialog(st, 0));
         Assert.Equal(new[] { "profile 75  ", "profile  195 " }, c.Sent);

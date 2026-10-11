@@ -152,6 +152,9 @@ func (m Model) onProfileSaved(msg profileSavedMsg) (Model, tea.Cmd) {
 		next.step, next.saved = msg.step+1, msg.profile
 		next.value = stepValueFrom(msg.profile, next.step)
 		m.onboarding = &next
+		if next.step == stepMaxHR {
+			return m, m.fetchActivities() // for the highest heart rate held in them
+		}
 		return m, nil
 	}
 	m.onboarding = nil
@@ -187,6 +190,10 @@ func (m Model) onboardPanel(width, height int) string {
 	case stepMaxHR:
 		prompt, unit = "Your maximum heart rate", "bpm"
 		why = "Optional: it sets the heart rate zones of your ride summaries.\nThe highest you have seen in an all-out effort; leave it empty to skip."
+		if hr := heldMaxHR(m.activities); hr > 0 {
+			why += fmt.Sprintf("\nThe highest you have held for 10 s in your rides: %d bpm, so your maximum is at least this.", hr)
+		}
+		why += "\nZones describe your rides; they are not medical advice."
 	default:
 		prompt, unit, forced = "Your FTP", "W", p.GetFtpForced()
 		why = fmt.Sprintf("It sets the targets of ERG workouts. Not sure? %.0f W is 2.5 W/kg,\na fair start; change it any time (f, or p here).", p.GetSuggestedFtpW())
@@ -241,6 +248,16 @@ func stepValueFrom(p *pb.RiderProfile, step int) string {
 		return ""
 	}
 	return fmt.Sprintf("%.0f", v)
+}
+
+// heldMaxHR is the highest heart rate held for 10 s over the recordings
+// (0: none).
+func heldMaxHR(as []*pb.Activity) uint32 {
+	var best uint32
+	for _, a := range as {
+		best = max(best, a.GetHeldMaxHeartRateBpm())
+	}
+	return best
 }
 
 // missingText names what the core still needs, for hints.

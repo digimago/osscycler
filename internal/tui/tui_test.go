@@ -1210,7 +1210,7 @@ func TestGhostOnRideScreen(t *testing.T) {
 }
 
 func TestOnboarding(t *testing.T) {
-	cmds := &stubCommands{}
+	cmds := &stubCommands{activities: []*pb.Activity{{Name: "a.fit", HeldMaxHeartRateBpm: 168}, {Name: "b.fit", HeldMaxHeartRateBpm: 176}}}
 	m0, _ := New("x:1", cmds).Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	st := sample()
 	st.Profile = &pb.RiderProfile{Missing: []string{"weight_kg", "ftp_w"}, SuggestedFtpW: 200, Path: "/home/r/.config/osscycler/profile.json"}
@@ -1251,8 +1251,10 @@ func TestOnboarding(t *testing.T) {
 	if len(cmds.profileCalls) != 2 || *cmds.profileCalls[1][1] != 220 {
 		t.Errorf("after FTP: calls %d", len(cmds.profileCalls))
 	}
-	// The maximum heart rate is optional too, and the last step.
-	if out := plain(m.render()); !strings.Contains(out, "4/4  Your maximum heart rate:") || !strings.Contains(out, "heart rate zones") {
+	// The maximum heart rate is optional too, and the last step; the
+	// highest held in the rides is told, not filled in.
+	if out := plain(m.render()); !strings.Contains(out, "4/4  Your maximum heart rate:") || !strings.Contains(out, "heart rate zones") ||
+		!strings.Contains(out, "held for 10 s in your rides: 176 bpm") || !strings.Contains(out, "not medical advice") || m.onboarding.value != "" {
 		t.Errorf("max HR step:\n%s", out)
 	}
 	m = pressAll(m, "enter")

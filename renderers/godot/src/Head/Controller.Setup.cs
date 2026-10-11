@@ -358,7 +358,11 @@ public sealed partial class Controller
                         if (_onboard != o)
                             return;
                         if (step < Step.MaxHr || step == Step.MaxHr && o.Edit && done.Result.View != "")
+                        {
                             (o.Step, o.Value) = (step + 1, StepValue(done.Result, step + 1)); // editing: the view too, if the core keeps it
+                            if (o.Step == Step.MaxHr) // for the highest heart rate held in them
+                                Load("activities", _cmds.ListActivities, l => _activities = l);
+                        }
                         else
                         {
                             _onboard = null;
@@ -403,10 +407,20 @@ public sealed partial class Controller
             {
                 Step.Weight => ("Your weight", "kg", "It sets how climbs feel on the trainer and your speed on a course.", p?.WeightForced == true),
                 Step.Height => ("Your height", "cm", "Optional: with your weight it sizes how much air you push on a course. Leave it empty to skip.", p?.HeightForced == true),
-                Step.MaxHr => ("Your maximum heart rate", "bpm", "Optional: it sets the heart rate zones of your ride summaries. The highest you have seen in an all-out effort; leave it empty to skip.", false),
+                Step.MaxHr => ("Your maximum heart rate", "bpm", "Optional: it sets the heart rate zones of your ride summaries.", false),
                 _ => ("Your FTP", "W", "The power you can hold for about an hour: workouts are set from it. Not sure? Take the suggestion.", p?.FtpForced == true),
             };
             var lines = new List<string> { why };
+            if (o.Step == Step.MaxHr) // each line under 80 characters: the panel's width
+            {
+                lines.Add("The highest you reach in an all-out effort; leave it empty to skip.");
+                uint held = 0;
+                foreach (var a in _activities ?? new List<Activity>())
+                    held = Math.Max(held, a.HeldMaxHeartRateBpm);
+                if (held > 0)
+                    lines.Add($"Highest held for 10 s in your rides: {held} bpm; your maximum is at least this.");
+                lines.Add("Zones describe your rides; they are not medical advice.");
+            }
             if (forced)
                 lines.Add("a flag on the core forces this for its run: what you enter is saved for later");
             return new(o.Edit ? "RIDER PROFILE" : "WELCOME TO OSSCYCLER", $"{prompt}: {o.Value}_ {unit}", Hud.Palette.Plain, lines,

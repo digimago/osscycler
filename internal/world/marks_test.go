@@ -375,6 +375,37 @@ func TestCarParkMeetsTheRoad(t *testing.T) {
 	}
 }
 
+// A bridge the map tags that stays a road (low over a canal) still has
+// its railings.
+func TestTaggedBridgesHaveRailings(t *testing.T) {
+	l := &roadLine{}
+	var d, x, y []float64
+	for k := 0; k <= 20; k++ {
+		s := sample{d: float64(k) * 2, e: 0, n: float64(k) * 2, hw: 3, ele: 5}
+		if k >= 5 && k <= 10 {
+			s.way = 1 // the bridge, 10 m
+		}
+		l.samples = append(l.samples, s)
+		d, x, y = append(d, s.d), append(x, s.e), append(y, s.n)
+	}
+	l.smooth = newSmoothLine(d, x, y, false, nil)
+	ways := []scenery.Way{{}, {Bridge: true}}
+	w := &World{doc: gltf.New("test")}
+	tr := &terrain{o: Options{ChunkM: 250}}
+	if err := w.addBridges(tr, []*roadLine{l}, ways); err != nil {
+		t.Fatal(err)
+	}
+	high := 0.0
+	for _, p := range w.prims {
+		for i := 1; i < len(p.Positions); i += 3 {
+			high = math.Max(high, float64(p.Positions[i]))
+		}
+	}
+	if high < 5+railH-0.1 {
+		t.Errorf("the bridge's highest point %.2f m, want railings to %.2f", high, 5+railH)
+	}
+}
+
 // Land cut along a road it stands over gets a skirt down from its new
 // edge (the edge was open, a dark line at a junction); land under the road
 // gets none.

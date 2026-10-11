@@ -519,7 +519,7 @@ func Build(c *course.Course, o Options) (*World, error) {
 	if err := w.addFences(&t, o.Fences); err != nil {
 		return nil, err
 	}
-	if err := w.addBridges(&t, lines); err != nil {
+	if err := w.addBridges(&t, lines, ways); err != nil {
 		return nil, err
 	}
 	if c.Loop {

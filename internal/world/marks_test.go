@@ -265,6 +265,23 @@ func TestWaterFromItsOutline(t *testing.T) {
 	if high > 0 {
 		t.Errorf("land stands above the water at %d points inside the ditch", high)
 	}
+	// Beside it the land never lies under the water's surface: lowered
+	// ground inside sloped the land across the shore under it, and from
+	// the road the eye went under the water's edge.
+	low := 0
+	for n := 105.0; n <= 395; n += 1 {
+		f := (n - 100) / 300
+		for _, e := range []float64{6 + 3*f - 0.4, 10 + 3*f + 0.4} {
+			lv, ok := top(water, e+map[bool]float64{true: 0.8, false: -0.8}[e < 8+3*f], n)
+			h, okl := top(land, e, n)
+			if ok && okl && h < lv-0.01 {
+				low++
+			}
+		}
+	}
+	if low > 0 {
+		t.Errorf("the land beside the ditch lies under its water at %d points", low)
+	}
 }
 
 // A sidewalk or cycle lane that stops between two cross-sections ends in

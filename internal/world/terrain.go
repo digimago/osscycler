@@ -252,7 +252,15 @@ func (t *terrain) vertex(e, n float64, segs []int, near []sample) (float64, scen
 	if rn.d < rn.edge+verge {
 		land = verdure
 	}
-	if land == scenery.LandWater && (rn.d >= rn.flat || t.cut && rn.d >= rn.edge) {
+	switch {
+	case land == scenery.LandWater && t.exact[id]:
+		// Water drawn from its outline has a bed of its own and the land
+		// under it is cut away: the land stands just over the level, so the
+		// cells across its shore meet the water at or above it (lowered, they
+		// sloped under it at the outline, and from the road the eye looked
+		// under the water's edge: owner, 2026-10-11, 0.3-1.4 km of a new course).
+		h = math.Max(h, t.cover.level(t, id, e, n)+exactShoreM)
+	case land == scenery.LandWater && (rn.d >= rn.flat || t.cut && rn.d >= rn.edge):
 		h = math.Min(h, t.cover.level(t, id, e, n)-bedM)
 	}
 	return h, land, id

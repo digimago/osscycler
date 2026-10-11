@@ -33,6 +33,12 @@ const (
 	// land and the bank faces doubled a world with much water (Grebbeberg
 	// to Rotterdam: 16 -> 28 M triangles, every polder ditch in 300 m).
 	exactReachM = 60.0
+	// exactShoreM: the land under such a water stands this far over its
+	// level (terrain.vertex).
+	exactShoreM = 0.1
+	// The level stays shoreUnderM under the land along the outline within
+	// shoreReachM, sampled every shoreStepM.
+	shoreStepM, shoreReachM, shoreUnderM = 2.5, 20.0, 0.05
 )
 
 type exactWater struct {
@@ -143,19 +149,15 @@ func (t *terrain) exactWaters(keys [][2]int) []exactWater {
 		if !over || !reaches(r) {
 			continue
 		}
-		// Only where ear clipping takes the whole outline, every triangle
-		// turning the ring's way: else the cells. (A 1 % tolerance on
-		// unsigned areas let a pond through whose triangles left square
-		// metres of it uncovered, holes at the water's edge.)
-		want, got, flipped := ringArea(r), 0.0, false
+		// Only where ear clipping covers the outline exactly: its triangles'
+		// unsigned areas add up to the outline's (overlaps would add more, and
+		// left gaps less), else the cells. (A 1 % tolerance let a pond through
+		// whose triangles left square metres of it uncovered.)
+		want, abs := math.Abs(ringArea(r)), 0.0
 		for _, tr := range earClip(r) {
-			a := ringArea([][2]float64{r[tr[0]], r[tr[1]], r[tr[2]]})
-			if a*want < 0 && math.Abs(a) > 1e-6 {
-				flipped = true
-			}
-			got += a
+			abs += math.Abs(ringArea([][2]float64{r[tr[0]], r[tr[1]], r[tr[2]]}))
 		}
-		if want == 0 || flipped || math.Abs(got-want) > 1e-6*math.Abs(want)+1e-3 {
+		if want == 0 || math.Abs(abs-want) > 1e-4*want+1e-2 {
 			continue
 		}
 		out = append(out, exactWater{id: id, ring: r, key: [2]int{int(math.Floor(r[0][0] / size)), int(math.Floor(r[0][1] / size))}})
@@ -169,7 +171,33 @@ func (t *terrain) exactWaters(keys [][2]int) []exactWater {
 // its bed and bank (material ground, in vertex colours). land is the land
 // as drawn before the cut: where the bank face starts.
 func (t *terrain) waterMeshes(x exactWater, water, ground int, land *landSurface) (surface, bed gltf.Primitive) {
-	level := func(e, n float64) float64 { return t.cover.level(t, x.id, e, n) }
+	// The level from the banks, never over the land drawn along the
+	// outline nearby (a verge or road beside a ditch can lie under the banks
+	// the level comes from; the water then stood over the land at its edge,
+	// and the eye went under it).
+	type shore struct{ e, n, h float64 }
+	var shores []shore
+	for i := range x.ring {
+		a, b := x.ring[i], x.ring[(i+1)%len(x.ring)]
+		l := math.Hypot(b[0]-a[0], b[1]-a[1])
+		k := max(1, int(math.Ceil(l/shoreStepM)))
+		for j := range k {
+			f := float64(j) / float64(k)
+			e, n := a[0]+f*(b[0]-a[0]), a[1]+f*(b[1]-a[1])
+			if h, ok := land.at(e, n); ok {
+				shores = append(shores, shore{e, n, h})
+			}
+		}
+	}
+	level := func(e, n float64) float64 {
+		lv := t.cover.level(t, x.id, e, n)
+		for _, s := range shores {
+			if math.Abs(s.e-e) < shoreReachM && math.Abs(s.n-n) < shoreReachM && math.Hypot(s.e-e, s.n-n) < shoreReachM {
+				lv = math.Min(lv, s.h-shoreUnderM)
+			}
+		}
+		return lv
+	}
 	surface = waterSheet(level, x.ring, water)
 	bed = waterSheet(func(e, n float64) float64 { return level(e, n) - bedM }, x.ring, ground)
 	bedColour := landColors[scenery.LandWater]

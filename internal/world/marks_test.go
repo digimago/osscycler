@@ -295,6 +295,24 @@ func TestWaterFromItsOutline(t *testing.T) {
 	if low > 0 {
 		t.Errorf("the land beside the ditch lies under its water at %d points", low)
 	}
+	// Along the outline itself nothing is open: the water reaches under
+	// the land's cut edge (cut exactly along it, rounding left hairlines).
+	open := 0
+	for _, side := range [][2][2]float64{{{6, 100}, {9, 400}}, {{10, 100}, {13, 400}}} {
+		a, b := side[0], side[1]
+		for k := 1; k < 3000; k++ {
+			f := float64(k) / 3000
+			e, n := a[0]+f*(b[0]-a[0]), a[1]+f*(b[1]-a[1])
+			_, okw := top(water, e, n)
+			_, okl := top(land, e, n)
+			if !okw && !okl {
+				open++
+			}
+		}
+	}
+	if open > 0 {
+		t.Errorf("%d points along the ditch's outline have nothing drawn", open)
+	}
 }
 
 // A sidewalk or cycle lane that stops between two cross-sections ends in

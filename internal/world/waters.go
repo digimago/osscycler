@@ -19,11 +19,6 @@ import (
 // islands, and very long outlines, keep the cells.
 const (
 	exactMaxPoints = 2000 // a longer outline (a river) keeps the cells
-	// The surface's triangles are split to at most waterCellM across (the
-	// level varies along a long water, slowly: it comes from banks within
-	// localM), each by its own longest edge; a whole-outline split made a
-	// 160 m ditch 19,000 triangles, and the cut through them took minutes.
-	waterCellM = 50.0
 	// The bank face's points along the outline, besides its corners: the
 	// land's edge it follows is the 5 m terrain's (1 m made 3 M triangles
 	// of bank face on the Grebbeberg course, every ditch side metre by metre).
@@ -36,6 +31,7 @@ const (
 	// exactShoreM: the land under such a water stands this far over its
 	// level (terrain.vertex).
 	exactShoreM = 0.1
+	sheetGrowM  = 0.03
 	// The level stays shoreUnderM under the land along the outline within
 	// shoreReachM, sampled every shoreStepM.
 	shoreStepM, shoreReachM, shoreUnderM = 2.5, 20.0, 0.05
@@ -211,7 +207,9 @@ func (t *terrain) waterMeshes(x exactWater, water, ground int, land *landSurface
 		}
 		return lv
 	}
-	surface = waterSheet(level, x.ring, water)
+	// 3 cm past the outline, under the land's edge: cut exactly along
+	// it, float rounding left hairline gaps between land and water.
+	surface = waterSheet(level, grownRing(x.ring, sheetGrowM), water)
 	bed = waterSheet(func(e, n float64) float64 { return level(e, n) - bedM }, x.ring, ground)
 	bedColour := landColors[scenery.LandWater]
 	bed.UVs = nil
@@ -276,38 +274,60 @@ func (t *terrain) waterMeshes(x exactWater, water, ground int, land *landSurface
 	return surface, bed
 }
 
-// waterSheet lays outline r flat at height(e, n), ear-clipped, each
-// triangle split by its own longest edge into pieces at most waterCellM
-// across; normals up, UVs every 5 m.
+// waterSheet lays outline r flat at height(e, n), ear-clipped; normals
+// up, UVs every 5 m. The triangles stay whole: split each by its own
+// longest edge, neighbours split their shared edge differently, and the
+// rounding at those T-junctions opened hairline slits (Zandvoort's holes
+// 21 -> 39 m²). A water's level varies smoothly, so its outline's own
+// triangles carry it.
 func waterSheet(height func(e, n float64) float64, r [][2]float64, material int) gltf.Primitive {
 	p := gltf.Primitive{Material: material}
-	for _, t := range earClip(r) {
-		a, b, c := r[t[0]], r[t[1]], r[t[2]]
-		longest := math.Max(math.Hypot(b[0]-a[0], b[1]-a[1]), math.Max(math.Hypot(c[0]-b[0], c[1]-b[1]), math.Hypot(a[0]-c[0], a[1]-c[1])))
-		n := min(8, max(1, int(math.Ceil(longest/waterCellM))))
-		idx := map[[2]int]uint32{}
-		vtx := func(i, j int) uint32 {
-			if v, ok := idx[[2]int{i, j}]; ok {
-				return v
-			}
-			fi, fj := float64(i)/float64(n), float64(j)/float64(n)
-			e := a[0] + fi*(b[0]-a[0]) + fj*(c[0]-a[0])
-			no := a[1] + fi*(b[1]-a[1]) + fj*(c[1]-a[1])
-			p.Positions = append(p.Positions, float32(e), float32(height(e, no)), float32(-no))
-			p.Normals = append(p.Normals, 0, 1, 0)
-			p.UVs = append(p.UVs, float32(e/5), float32(no/5))
-			v := uint32(len(p.Positions)/3 - 1)
-			idx[[2]int{i, j}] = v
+	idx := map[int]uint32{}
+	vtx := func(k int) uint32 {
+		if v, ok := idx[k]; ok {
 			return v
 		}
-		for i := range n {
-			for j := range n - i {
-				tri(&p, vtx(i, j), vtx(i+1, j), vtx(i, j+1), [3]float64{0, 1, 0})
-				if i+j+1 < n {
-					tri(&p, vtx(i+1, j), vtx(i+1, j+1), vtx(i, j+1), [3]float64{0, 1, 0})
-				}
-			}
-		}
+		e, n := r[k][0], r[k][1]
+		p.Positions = append(p.Positions, float32(e), float32(height(e, n)), float32(-n))
+		p.Normals = append(p.Normals, 0, 1, 0)
+		p.UVs = append(p.UVs, float32(e/5), float32(n/5))
+		v := uint32(len(p.Positions)/3 - 1)
+		idx[k] = v
+		return v
+	}
+	for _, t := range earClip(r) {
+		tri(&p, vtx(t[0]), vtx(t[1]), vtx(t[2]), [3]float64{0, 1, 0})
 	}
 	return p
+}
+
+// grownRing is ring r moved d outward at every vertex (along the bisector
+// of its two edges, so the edges move d; at most 4d at a sharp corner).
+func grownRing(r [][2]float64, d float64) [][2]float64 {
+	out := make([][2]float64, len(r))
+	sg := 1.0 // a counter-clockwise ring has its outside to the right of its edges
+	if ringArea(r) < 0 {
+		sg = -1
+	}
+	normal := func(a, b [2]float64) [2]float64 {
+		l := math.Hypot(b[0]-a[0], b[1]-a[1])
+		if l == 0 {
+			return [2]float64{}
+		}
+		return [2]float64{(b[1] - a[1]) / l * sg, -(b[0] - a[0]) / l * sg}
+	}
+	for i := range r {
+		p, q, n := r[(i+len(r)-1)%len(r)], r[i], r[(i+1)%len(r)]
+		a, b := normal(p, q), normal(q, n)
+		m := [2]float64{a[0] + b[0], a[1] + b[1]}
+		ml := math.Hypot(m[0], m[1])
+		if ml < 1e-9 {
+			out[i] = q
+			continue
+		}
+		m = [2]float64{m[0] / ml, m[1] / ml}
+		cos := math.Max(0.25, m[0]*a[0]+m[1]*a[1])
+		out[i] = [2]float64{q[0] + m[0]*d/cos, q[1] + m[1]*d/cos}
+	}
+	return out
 }

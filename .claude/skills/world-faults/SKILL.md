@@ -142,6 +142,7 @@ small; fix at the stage that causes it, then make it stay fixed.
 | Torn edge at a roundabout | roundabout | `findRoundabouts`, `absorb`, `fit`, `shape` (roundabout.go) |
 | Step or kink in a road's height | heights | `heights`, `joinHeights` (nodes share a height, blended 15 m), `markAloft`, `markDecks` |
 | Bridge over nothing, or a road under a deck missing | decks | `markDecks`, `bridgeM` 2.5 m, ways tagged `bridge` the route runs along (`runsAlong`); railways are not fetched |
+| Path height steps (the check's `-max-path-step`, path_check's grade) | path / matching, or heights | a change onto a road above or below (`unridableCost` in `path`), a tunnel or underpass the world doesn't model, `heights` along the road |
 | Rider jumps sideways, hops roads, wrong carriageway | path / matching | `courseRoads` (`wrongWay`, `against`, `use_sidepath` reach), `smoothRuns`, `connectors` (`openRunM` 18 m), `smoothTurns`, `rideAround`/`passThrough`, `limitDrift`, `evenPace` |
 | Fault only in some builds | order | map iteration or goroutine order: sort keys; `glb_diff.py` on two builds |
 | Fault only with `-dem` | the cut | everything after `t.cut = true` in `Build`: `markAloft`, verges, `rasterize`, the cell cut in `terrain.chunk`, the cutter |
@@ -212,7 +213,9 @@ All in `scripts/`; Python ones read only `world.glb` and `world.json`
 - The builder's own check: printed by every `osscycler-world` build and
   by `clip`; limits `-max-holes` (10 m²), `-max-land-over-road` (1 m²),
   `-max-off-road` (1 m per km of course: current worlds have 0 and 0.1
-  since 2026-10-10); `-check=warn`
+  since 2026-10-10), `-max-path-step` (3 m: the most the rider's height
+  changes between two path points 5 m apart; Grebbeberg 2.64, the rest
+  under 0.8 since 2026-10-11); `-check=warn`
   keeps a world past them (the renderer's on-demand builds use it).
 
 Frames: world positions are x east, y up, z south of `world.json`'s

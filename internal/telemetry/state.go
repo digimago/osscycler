@@ -207,6 +207,7 @@ type Profile struct {
 	WeightKg         float64
 	FTPW             float64
 	HeightCm         float64 // zero: unknown
+	MaxHRBpm         float64 // zero: unknown
 	CdA              float64 // drag area rides start with, m²
 	DifficultyPct    float64
 	SuggestedFTPW    float64 // a starting point for onboarding

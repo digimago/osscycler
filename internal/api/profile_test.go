@@ -18,7 +18,7 @@ type stubProfile struct {
 	views                  []*string
 }
 
-func (s *stubProfile) SetProfile(_ context.Context, w, f, h *float64, v *string) (telemetry.Profile, error) {
+func (s *stubProfile) SetProfile(_ context.Context, w, f, h, _ *float64, v *string) (telemetry.Profile, error) {
 	s.weights, s.ftps, s.heights, s.views = append(s.weights, w), append(s.ftps, f), append(s.heights, h), append(s.views, v)
 	if v != nil {
 		if err := profile.CheckView(*v); err != nil {

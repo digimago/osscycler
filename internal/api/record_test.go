@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	pb "github.com/digimago/osscycler/gen/osscycler/v1"
+	"github.com/digimago/osscycler/internal/effort"
 	"github.com/digimago/osscycler/internal/history"
 	"github.com/digimago/osscycler/internal/record"
 	"github.com/digimago/osscycler/internal/telemetry"
@@ -17,6 +18,15 @@ import (
 type stubRecorder struct {
 	err      error
 	discards []bool
+	file     string // the activity under way; "" for none
+	samples  []effort.Sample
+}
+
+func (s *stubRecorder) History(since int) (string, []effort.Sample) {
+	if since >= len(s.samples) {
+		return s.file, nil
+	}
+	return s.file, s.samples[since:]
 }
 
 func (s *stubRecorder) End(_ context.Context, discard bool) (string, error) {

@@ -12,6 +12,9 @@ import (
 
 // terrain shapes the ground in square chunks along the route.
 type terrain struct {
+	// exact are the water areas drawn from their own outline (waters.go):
+	// the cells leave their water out.
+	exact        map[int]bool
 	o            Options
 	c            *course.Course
 	fine, coarse []sample
@@ -197,7 +200,7 @@ func (t *terrain) chunk(key [2]int, material, waterMaterial int) (ground, water 
 		for i := range n {
 			id := -1
 			for _, k := range [4]int{(j+1)*side + i + 1, (j+1)*side + i + 2, (j+2)*side + i + 1, (j+2)*side + i + 2} {
-				if land[k] == scenery.LandWater && waterID[k] >= 0 {
+				if land[k] == scenery.LandWater && waterID[k] >= 0 && !t.exact[waterID[k]] {
 					id = waterID[k]
 					break
 				}

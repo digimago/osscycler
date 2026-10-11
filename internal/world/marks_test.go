@@ -4,6 +4,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/digimago/osscycler/internal/course"
 	"github.com/digimago/osscycler/internal/gltf"
 	"github.com/digimago/osscycler/internal/scenery"
 )
@@ -119,6 +120,90 @@ func TestSidewalkNeverRunsIntoABuilding(t *testing.T) {
 
 // Water is drawn from its own outline, the land cut away under it: no
 // ground stands up into it (green triangles stood in the ditches along
+// the roads).
+func TestWaterFromItsOutline(t *testing.T) {
+	var pts []course.Point
+	for i := range 51 {
+		pts = append(pts, course.Point{Lat: 52 + float64(i)*10/111195, Lon: 5, Ele: 5})
+	}
+	c, err := course.New("ditch", "Ditch", pts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kx := 111195 * math.Cos(52*math.Pi/180)
+	ll := func(x, y float64) scenery.LatLon { return scenery.LatLon{Lat: 52 + y/111195, Lon: 5 + x/kx} }
+	// A ditch 4 m wide, 6 to 10 m east of the road, from n 100 to 400, at
+	// a slant across the terrain's cells.
+	ditch := []scenery.LatLon{ll(6, 100), ll(10, 100), ll(13, 400), ll(9, 400), ll(6, 100)}
+	lm := scenery.NewLandMap(c, &scenery.Data{Elements: []scenery.Element{
+		{Type: "way", ID: 1, Tags: map[string]string{"natural": "water", "water": "ditch"}, Geometry: ditch},
+	}})
+	ground := func(lat, lon float64) (float64, bool) { return 5, true }
+	w, err := Build(c, Options{Generator: "test", Elevation: ground, Land: lm})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var water []gltf.Primitive
+	var land []gltf.Primitive
+	for _, p := range w.prims {
+		switch w.doc.MaterialName(p.Material) {
+		case "water":
+			water = append(water, p)
+		case "terrain":
+			land = append(land, p)
+		}
+	}
+	if len(water) == 0 {
+		t.Fatal("no water drawn")
+	}
+	// top is the highest of ps over e, n (false: none).
+	top := func(ps []gltf.Primitive, e, n float64) (float64, bool) {
+		x, z := e, -n
+		best, ok := math.Inf(-1), false
+		for _, p := range ps {
+			for k := 0; k+2 < len(p.Indices); k += 3 {
+				var px, py, pz [3]float64
+				for c := range 3 {
+					v := p.Indices[k+c]
+					px[c], py[c], pz[c] = float64(p.Positions[3*v]), float64(p.Positions[3*v+1]), float64(p.Positions[3*v+2])
+				}
+				den := (pz[1]-pz[2])*(px[0]-px[2]) + (px[2]-px[1])*(pz[0]-pz[2])
+				if math.Abs(den) < 1e-12 {
+					continue
+				}
+				a := ((pz[1]-pz[2])*(x-px[2]) + (px[2]-px[1])*(z-pz[2])) / den
+				b := ((pz[2]-pz[0])*(x-px[2]) + (px[0]-px[2])*(z-pz[2])) / den
+				if a < -1e-9 || b < -1e-9 || 1-a-b < -1e-9 {
+					continue
+				}
+				if h := a*py[0] + b*py[1] + (1-a-b)*py[2]; h > best {
+					best, ok = h, true
+				}
+			}
+		}
+		return best, ok
+	}
+	// The land under the water: below it everywhere inside the outline
+	// (the bank's face reaches 2 cm over the land's edge, so the edge is
+	// left out).
+	high := 0
+	for n := 105.0; n <= 395; n += 0.5 {
+		f := (n - 100) / 300
+		for e := 6.4 + 3*f; e <= 9.6+3*f; e += 0.25 {
+			lv, ok := top(water, e, n)
+			if !ok {
+				t.Fatalf("no water surface at %.2f, %.1f inside the ditch", e, n)
+			}
+			if h, ok := top(land, e, n); ok && h > lv+0.01 {
+				high++
+			}
+		}
+	}
+	if high > 0 {
+		t.Errorf("land stands above the water at %d points inside the ditch", high)
+	}
+}
+
 // A sidewalk or cycle lane that stops between two cross-sections ends in
 // a taper to the road's edge: ended square, the wedge between it and the
 // road widening over the step was a hole (or land showing in the road).

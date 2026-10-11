@@ -362,6 +362,8 @@ func Build(c *course.Course, o Options) (*World, error) {
 	}
 
 	keys := t.chunks()
+	exact := t.exactWaters(keys)
+	exactSurf, exactBed := map[[2]int][]gltf.Primitive{}, map[[2]int][]gltf.Primitive{}
 	meshes := make([]gltf.Primitive, len(keys))
 	waters := make([]gltf.Primitive, len(keys))
 	var wg sync.WaitGroup
@@ -396,6 +398,30 @@ func Build(c *course.Course, o Options) (*World, error) {
 				}
 			}
 		}
+		// Water from its own outline: the land under it goes, as under a
+		// road; its bed and bank stand in for it. A cutter of its own: the
+		// road one (t.surfaces) also keeps plants off the roads, and
+		// would keep them off every bank.
+		var wcut *cutter
+		if len(exact) > 0 {
+			wcut = newCutter()
+			var landPrims []gltf.Primitive
+			landPrims = append(landPrims, meshes...)
+			for _, ps := range roads {
+				for _, p := range ps {
+					if p.Material == ground {
+						landPrims = append(landPrims, p)
+					}
+				}
+			}
+			before := newLandSurface(landPrims, func(m int) bool { return m == ground })
+			for _, x := range exact {
+				s, b := t.waterMeshes(x, waterMat, ground, before)
+				wcut.add(s)
+				exactSurf[x.key] = append(exactSurf[x.key], s)
+				exactBed[x.key] = append(exactBed[x.key], b)
+			}
+		}
 		var cw sync.WaitGroup
 		var clipped atomic.Int64
 		clips := len(meshes)
@@ -407,13 +433,20 @@ func Build(c *course.Course, o Options) (*World, error) {
 			}
 		}
 		clipDone := func() { progress(0.6 + 0.1*float64(clipped.Add(1))/float64(clips)) }
+		both := func(p gltf.Primitive) gltf.Primitive {
+			p = cut.clip(p)
+			if wcut != nil {
+				p = wcut.clip(p)
+			}
+			return p
+		}
 		for k := range meshes {
-			cw.Go(func() { meshes[k] = cut.clip(meshes[k]); clipDone() })
+			cw.Go(func() { meshes[k] = both(meshes[k]); clipDone() })
 		}
 		for k, ps := range roads {
 			for i, p := range ps {
 				if p.Material == ground {
-					cw.Go(func() { roads[k][i] = cut.clip(p); clipDone() })
+					cw.Go(func() { roads[k][i] = both(p); clipDone() })
 				}
 			}
 		}
@@ -427,6 +460,17 @@ func Build(c *course.Course, o Options) (*World, error) {
 		}
 	}
 	waterChunks := 0
+	for _, k := range chunkOrder(exactSurf) {
+		waterChunks++
+		if err := w.add(fmt.Sprintf("water exact %d %d", k[0], k[1]),
+			map[string]any{"kind": "water", "chunk": k}, mergeByMaterial(exactSurf[k])...); err != nil {
+			return nil, err
+		}
+		if err := w.add(fmt.Sprintf("bank %d %d", k[0], k[1]),
+			map[string]any{"kind": "terrain", "chunk": k}, mergeByMaterial(exactBed[k])...); err != nil {
+			return nil, err
+		}
+	}
 	for k, p := range waters {
 		if len(p.Positions) == 0 {
 			continue

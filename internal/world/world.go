@@ -286,6 +286,7 @@ func Build(c *course.Course, o Options) (*World, error) {
 	// alongside joined.
 	net.lines = dropCovered(net.lines, rbs)
 	joinAlongside(net.lines, o.CellM)
+	clearWalksOfBuildings(net.lines, o.Buildings)
 	pd, px, py, pz, pw := net.finish(rbs)
 	lines := net.lines
 	patches := networkPatches(lines, ways)

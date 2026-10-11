@@ -1,9 +1,11 @@
 package world
 
 import (
+	"math"
 	"testing"
 
 	"github.com/digimago/osscycler/internal/gltf"
+	"github.com/digimago/osscycler/internal/scenery"
 )
 
 // Faults marked on a new course (owner, 2026-10-11), each kept fixed.
@@ -95,8 +97,70 @@ func TestJoinedRoadsHaveNoSkirtBetween(t *testing.T) {
 }
 
 // A sidewalk never runs into a building: houses at the street had it
+// drawn through their fronts.
+func TestSidewalkNeverRunsIntoABuilding(t *testing.T) {
+	l := &roadLine{}
+	for k := 0; k <= 50; k++ {
+		s := sample{d: float64(k) * 2, e: 0, n: float64(k) * 2, hw: 3}
+		s.walk = [2]bool{true, true}
+		l.samples = append(l.samples, s)
+	}
+	// Heading north, right is east: a house from 4 m east of the centre
+	// (inside the sidewalk, which runs 3 to 4.8 m) between n 40 and 50.
+	house := scenery.Footprint{Outline: [][2]float64{{4, 40}, {14, 40}, {14, 50}, {4, 50}}}
+	clearWalksOfBuildings([]*roadLine{l}, []scenery.Footprint{house})
+	if l.samples[22].walk[1] {
+		t.Error("a sidewalk through the house's front at n 44")
+	}
+	if !l.samples[22].walk[0] || !l.samples[5].walk[1] {
+		t.Error("sidewalks away from the house were dropped")
+	}
+}
+
 // Water is drawn from its own outline, the land cut away under it: no
 // ground stands up into it (green triangles stood in the ditches along
 // A sidewalk or cycle lane that stops between two cross-sections ends in
 // a taper to the road's edge: ended square, the wedge between it and the
+// road widening over the step was a hole (or land showing in the road).
+func TestSidewalksAndLanesEndInATaper(t *testing.T) {
+	c := northCourse(t)
+	for _, which := range []string{"sidewalk", "cycle lane"} {
+		tr := testTerrain(c, Options{})
+		for i := range tr.fine[:100] { // to 198 m, then none
+			if which == "sidewalk" {
+				tr.fine[i].walk[1] = true
+			} else {
+				tr.fine[i].lane[1] = true
+			}
+		}
+		m := addRoadMaterials(gltf.New("test"))
+		ps := roadMesh(tr.fine[:200], tr.fine, 0, courseLine(c, nil), false, m, nil)
+		covered := func(e, n float64) bool {
+			for _, p := range ps {
+				for k := 0; k+2 < len(p.Indices); k += 3 {
+					var tri [6]float64
+					for j := range 3 {
+						v := p.Indices[k+j]
+						tri[2*j], tri[2*j+1] = float64(p.Positions[3*v]), -float64(p.Positions[3*v+2])
+					}
+					if math.Abs((tri[2]-tri[0])*(tri[5]-tri[1])-(tri[4]-tri[0])*(tri[3]-tri[1])) > 1e-9 && inTri2(tri, e, n) {
+						return true
+					}
+				}
+			}
+			return false
+		}
+		// Heading north, right is east: just inside the road's edge (the
+		// lane) or just outside it (the sidewalk), a quarter into the step.
+		hw := tr.fine[99].hw
+		e := hw - 0.3
+		if which == "sidewalk" {
+			e = hw + 0.3
+		}
+		if !covered(e, 198.5) {
+			t.Errorf("the %s's end leaves a hole at %.2f m east, 198.5 m north", which, e)
+		}
+	}
+}
+
 // The rider's path never steps back against its way: a point past its

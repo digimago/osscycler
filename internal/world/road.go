@@ -262,6 +262,28 @@ func roadMesh(seg, all []sample, from int, line *smoothLine, loop bool, m roadMa
 		}
 		for i := range f0.parts {
 			p0, p1 := f0.parts[i], f1.parts[i]
+			// A sidewalk that starts or stops between two cross-sections
+			// ramps down to the road's edge over them, as a dropped kerb:
+			// ended square, the verge from its outer edge back to the
+			// road's left a triangle of nothing (owner, 2026-10-11: sidewalks
+			// now stop in front of buildings mid-street).
+			// A cycle lane narrows to nothing at the road's edge the same
+			// way: the carriageway beside it widens over the step, and the
+			// wedge between them showed the land.
+			if p0.on != p1.on && f0.parts[0].on && f1.parts[0].on {
+				off, of := &p0, f0
+				if p0.on {
+					off, of = &p1, f1
+				}
+				switch {
+				case i >= 3 && i <= 8: // sidewalk, kerb, outer face
+					*off = rampEnd(*off, of.parts[9+(i-3)%2].a)
+				case i == 1: // left cycle lane
+					*off = rampEnd(*off, of.parts[1].a)
+				case i == 2:
+					*off = rampEnd(*off, of.parts[2].b)
+				}
+			}
 			if !p0.on || !p1.on {
 				continue
 			}
@@ -385,4 +407,12 @@ func markPassesAgain(ls []*roadLine) {
 			grid[k] = append(grid[k], ref{li, i})
 		}
 	}
+}
+
+// rampEnd is part p (a sidewalk's surface, kerb or outer face, or a cycle
+// lane) gone to nothing at the road's edge, edge, where it stops: for a
+// sidewalk a dropped kerb.
+func rampEnd(p part, edge float64) part {
+	p.on, p.a, p.b, p.ya, p.yb = true, edge, edge, 0, 0
+	return p
 }

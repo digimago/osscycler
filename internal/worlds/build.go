@@ -23,7 +23,7 @@ import (
 
 // BuilderVersion goes up when a change to the builder should rebuild the
 // worlds riders have (a fix they'd ride into, not every commit).
-const BuilderVersion = 8
+const BuilderVersion = 9
 
 // Builder builds worlds.
 type Builder struct {

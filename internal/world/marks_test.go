@@ -32,6 +32,47 @@ func TestPlantsStandOnTheLandAsDrawn(t *testing.T) {
 // under the junction's sidewalk, onto the grass, and the rider rode the
 // Settling looks both ways across the path for the road: at a junction's
 // inside corner the nearest carriageway lies ahead, and a move towards it
+// A small piece of land shut in by roads is paved; a larger one stays.
+func TestSmallEnclosedLandIsPaved(t *testing.T) {
+	const ground, asphalt = 0, 1
+	// A road square 0..40 m with a 2 × 2 m hole in it at 10..12, and a
+	// 10 × 10 m one at 25..35: rings of road round each.
+	ring := func(x0, z0, x1, z1, w float64) []gltf.Primitive {
+		r := func(a, b, c, d float64) gltf.Primitive {
+			return gltf.Primitive{Material: asphalt,
+				Positions: []float32{float32(a), 0, float32(b), float32(c), 0, float32(b), float32(c), 0, float32(d), float32(a), 0, float32(d)},
+				Indices:   []uint32{0, 2, 1, 0, 3, 2}}
+		}
+		return []gltf.Primitive{r(x0-w, z0-w, x1+w, z0), r(x0-w, z1, x1+w, z1+w), r(x0-w, z0, x0, z1), r(x1, z0, x1+w, z1)}
+	}
+	// Chunk (0, -1): x 0..250 east, z -250..0 south (n 0..250).
+	roads := map[[2]int][]gltf.Primitive{{0, 0}: append(ring(10, -12, 12, -10, 3), ring(25, -35, 35, -25, 3)...)}
+	paved := pavedIslands(roads, ground, asphalt, 250)
+	p, ok := paved[[2]int{0, 0}]
+	if !ok {
+		t.Fatal("nothing paved")
+	}
+	in := func(x, z float64) bool {
+		for k := 0; k+2 < len(p.Indices); k += 3 {
+			var tri [3][3]float64
+			for c := range 3 {
+				v := p.Indices[k+c]
+				tri[c] = [3]float64{float64(p.Positions[3*v]), float64(p.Positions[3*v+1]), float64(p.Positions[3*v+2])}
+			}
+			if inTri2([6]float64{tri[0][0], tri[0][2], tri[1][0], tri[1][2], tri[2][0], tri[2][2]}, x, z) {
+				return true
+			}
+		}
+		return false
+	}
+	if !in(11, -11) {
+		t.Error("the 2 × 2 m piece of land is not paved")
+	}
+	if in(30, -30) {
+		t.Error("the 10 × 10 m piece of land is paved")
+	}
+}
+
 // Roads joined side by side have no skirt along the edge they share: its
 // face showed as a dark line along the seam.
 func TestJoinedRoadsHaveNoSkirtBetween(t *testing.T) {

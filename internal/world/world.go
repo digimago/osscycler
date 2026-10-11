@@ -352,6 +352,9 @@ func Build(c *course.Course, o Options) (*World, error) {
 	}
 	progress(0.1) // the network, junctions and path
 	roads, decks := roadPrims(lines, patches, o.ChunkM, roadMats, verges)
+	for k, p := range pavedIslands(roads, ground, roadMats.surface[scenery.SurfaceAsphalt], o.ChunkM) {
+		roads[k] = append(roads[k], p)
+	}
 	progress(0.2)
 	if t.cut {
 		t.footprint = rasterize(roads, o.ChunkM)

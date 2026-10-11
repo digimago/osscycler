@@ -161,23 +161,36 @@ func TestJoinedRoadsHaveNoSkirtBetween(t *testing.T) {
 }
 
 // A sidewalk never runs into a building: houses at the street had it
-// drawn through their fronts.
+// drawn through their fronts. It narrows to the wall where there is room
+// (a house right at a narrow sidewalk keeps it), else that side has none.
 func TestSidewalkNeverRunsIntoABuilding(t *testing.T) {
-	l := &roadLine{}
-	for k := 0; k <= 50; k++ {
-		s := sample{d: float64(k) * 2, e: 0, n: float64(k) * 2, hw: 3}
-		s.walk = [2]bool{true, true}
-		l.samples = append(l.samples, s)
+	line := func() *roadLine {
+		l := &roadLine{}
+		for k := 0; k <= 50; k++ {
+			s := sample{d: float64(k) * 2, e: 0, n: float64(k) * 2, hw: 3}
+			s.walk = [2]bool{true, true}
+			l.samples = append(l.samples, s)
+		}
+		return l
 	}
-	// Heading north, right is east: a house from 4 m east of the centre
-	// (inside the sidewalk, which runs 3 to 4.8 m) between n 40 and 50.
+	// Heading north, right is east: the sidewalk runs 3 to 4.8 m east of
+	// the centre. A house from 4 m east between n 40 and 50 leaves 1 m.
+	l := line()
 	house := scenery.Footprint{Outline: [][2]float64{{4, 40}, {14, 40}, {14, 50}, {4, 50}}}
 	clearWalksOfBuildings([]*roadLine{l}, []scenery.Footprint{house})
-	if l.samples[22].walk[1] {
-		t.Error("a sidewalk through the house's front at n 44")
+	s := l.samples[22] // n 44
+	if !s.walk[1] || s.hw+s.walkWidth(1) > 4 || s.walkWidth(1) < walkMinM {
+		t.Errorf("at the house: sidewalk %v, %.2f m wide; want one up to the wall at 4 m", s.walk[1], s.walkWidth(1))
 	}
-	if !l.samples[22].walk[0] || !l.samples[5].walk[1] {
-		t.Error("sidewalks away from the house were dropped")
+	if !l.samples[22].walk[0] || l.samples[5].walkWidth(1) != walkM {
+		t.Error("sidewalks away from the house were changed")
+	}
+	// A house from 3.3 m east leaves no room: no sidewalk there.
+	l = line()
+	house.Outline = [][2]float64{{3.3, 40}, {14, 40}, {14, 50}, {3.3, 50}}
+	clearWalksOfBuildings([]*roadLine{l}, []scenery.Footprint{house})
+	if l.samples[22].walk[1] {
+		t.Error("a sidewalk where a house leaves 0.3 m")
 	}
 }
 

@@ -157,10 +157,10 @@ func deck(prim func(e, n float64) *gltf.Primitive, s *surface, l *roadLine, i, j
 		de, dn, _ := l.smooth.heading(a.d)
 		left, right := a.hw+a.wide[0], a.hw+a.wide[1]
 		if a.walk[0] {
-			left = a.hw + walkM
+			left = a.hw + a.walkWidth(0)
 		}
 		if a.walk[1] {
-			right = a.hw + walkM
+			right = a.hw + a.walkWidth(1)
 		}
 		frames = append(frames, deckFrame{c: [3]float64{x, a.ele, -y}, r: [3]float64{dn, 0, de}, along: [3]float64{de, 0, -dn}, left: left, right: right})
 	}

@@ -203,7 +203,10 @@ type sample struct {
 	// butt: another road's surface continues at that edge (joinAlongside):
 	// no skirt there, whose face showed as a dark line along the seam
 	// (owner, 2026-10-11: two carriageways side by side, 1 cm apart).
-	butt       [2]bool
+	butt [2]bool
+	// walkW: the sidewalk's width on that side where a building leaves it
+	// less than walkM (0: walkM; walls.go).
+	walkW      [2]float64
 	onPatch    bool // within a junction's span: the junction draws the surface
 	underPatch bool // a road not of the junction, lying on its patch
 	aloft      bool // on a bridge or viaduct, off the ground (cut terrain)

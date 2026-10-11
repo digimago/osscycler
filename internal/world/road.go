@@ -124,12 +124,12 @@ func roadMesh(seg, all []sample, from int, line *smoothLine, loop bool, m roadMa
 			{on: true, a: a, b: b, material: m.surface[s.surface]},
 			{on: s.lane[0], a: -s.hw, b: -s.hw + laneM, material: m.lane},
 			{on: s.lane[1], a: s.hw - laneM, b: s.hw, material: m.lane},
-			{on: s.walk[0], a: -s.hw - walkM, b: -s.hw, ya: kerbM, yb: kerbM, material: m.walk},
-			{on: s.walk[1], a: s.hw, b: s.hw + walkM, ya: kerbM, yb: kerbM, material: m.walk},
+			{on: s.walk[0], a: -s.hw - s.walkWidth(0), b: -s.hw, ya: kerbM, yb: kerbM, material: m.walk},
+			{on: s.walk[1], a: s.hw, b: s.hw + s.walkWidth(1), ya: kerbM, yb: kerbM, material: m.walk},
 			{on: s.walk[0], a: -s.hw, b: -s.hw, ya: 0, yb: kerbM, material: m.kerb, wall: true},
 			{on: s.walk[1], a: s.hw, b: s.hw, ya: 0, yb: kerbM, material: m.kerb, wall: true, wallLeft: true},
-			{on: s.walk[0], a: -s.hw - walkM, b: -s.hw - walkM, ya: -walkFootM, yb: kerbM, material: m.kerb, wall: true, wallLeft: true},
-			{on: s.walk[1], a: s.hw + walkM, b: s.hw + walkM, ya: -walkFootM, yb: kerbM, material: m.kerb, wall: true},
+			{on: s.walk[0], a: -s.hw - s.walkWidth(0), b: -s.hw - s.walkWidth(0), ya: -walkFootM, yb: kerbM, material: m.kerb, wall: true, wallLeft: true},
+			{on: s.walk[1], a: s.hw + s.walkWidth(1), b: s.hw + s.walkWidth(1), ya: -walkFootM, yb: kerbM, material: m.kerb, wall: true},
 			// Without a sidewalk, the edge goes on into the ground: the road
 			// sits in the landscape, not on it.
 			{on: !s.walk[0] && !s.butt[0], a: -s.hw - s.wide[0], b: -s.hw - s.wide[0], ya: -skirtM, yb: 0, material: m.surface[s.surface], wall: true, wallLeft: true},
@@ -204,7 +204,7 @@ func roadMesh(seg, all []sample, from int, line *smoothLine, loop bool, m roadMa
 			for side, sign := range []float64{-1, 1} {
 				base, y0 := s.hw+s.wide[side], ele
 				if s.walk[side] {
-					base, y0 = s.hw+walkM, ele+kerbM
+					base, y0 = s.hw+s.walkWidth(side), ele+kerbM
 				}
 				limit := math.Inf(1)
 				if k != 0 && (k > 0) == (side == 0) {
@@ -407,6 +407,14 @@ func markPassesAgain(ls []*roadLine) {
 			grid[k] = append(grid[k], ref{li, i})
 		}
 	}
+}
+
+// walkWidth is the sidewalk's width on side (0 left).
+func (s sample) walkWidth(side int) float64 {
+	if s.walkW[side] > 0 {
+		return s.walkW[side]
+	}
+	return walkM
 }
 
 // rampEnd is part p (a sidewalk's surface, kerb or outer face, or a cycle

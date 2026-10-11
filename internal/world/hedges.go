@@ -261,7 +261,7 @@ func hedges(t *terrain, s *surface, sp *spots, wp *wayPlaces) []plant {
 			// verge's width off the road.
 			off := a.hw + a.wide[side] + 1.2
 			if a.walk[side] {
-				off = a.hw + a.wide[side] + walkM + 0.6
+				off = a.hw + a.wide[side] + a.walkWidth(side) + 0.6
 			}
 			for k := math.Ceil(math.Min(sa, sb) / hedgeStepM); k*hedgeStepM < math.Max(sa, sb); k++ {
 				along := k * hedgeStepM

@@ -374,3 +374,32 @@ func TestCarParkMeetsTheRoad(t *testing.T) {
 		t.Errorf("away from the road: %.3f m, want the ground's %.2f", h, ground+parkingLiftM)
 	}
 }
+
+// Land cut along a road it stands over gets a skirt down from its new
+// edge (the edge was open, a dark line at a junction); land under the road
+// gets none.
+func TestCutLandEdgeIsClosed(t *testing.T) {
+	const land, road = 0, 1
+	// Skirt vertices have level normals; the land's point up.
+	upright := func(p gltf.Primitive) int {
+		n := 0
+		for k := 1; k < len(p.Normals); k += 3 {
+			if math.Abs(float64(p.Normals[k])) < 1e-6 {
+				n++
+			}
+		}
+		return n
+	}
+	for _, c := range []struct {
+		land  float32
+		skirt bool
+	}{{0.06, true}, {-0.06, false}} {
+		cut := newCutter()
+		cut.seams = true
+		cut.add(flat(road, 2, 6, 0)) // a road square 2..6 m
+		got := cut.clip(flat(land, 0, 8, c.land))
+		if (upright(got) > 0) != c.skirt {
+			t.Errorf("land %+.2f m by the road: %d skirt vertices, want some: %v", c.land, upright(got), c.skirt)
+		}
+	}
+}

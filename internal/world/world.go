@@ -408,6 +408,7 @@ func Build(c *course.Course, o Options) (*World, error) {
 	}
 	if t.cut {
 		cut := newCutter()
+		cut.seams = true
 		t.surfaces = cut
 		for _, l := range lots {
 			cut.add(l.mesh)

@@ -778,7 +778,7 @@ public partial class Main : Node3D
             _ghostSpeed = 0;
             return double.NaN;
         }
-        _ghost.Report(gh.DistanceM, _ride!.ElapsedS, _clock);
+        _ghost.Report(gh.DistanceM, _ride!.ElapsedS, _clock, gh.SpeedMps);
         if (_ride.Phase != RidePhase.Riding || _core.Latest().State?.Paused == true)
         {
             _ghost.Stand();

@@ -20,15 +20,19 @@ public sealed class GhostTrack
     public double Speed { get; private set; }
 
     // Report takes the core's ghost distance at its ride clock rideS,
-    // arriving at clock (this program's seconds).
-    public void Report(double dist, double rideS, double clock)
+    // arriving at clock (this program's seconds), and its speed when the
+    // core says (RideGhost.speed_mps, since 2026-10-11; 0 from an older
+    // core: then it is taken from the reports).
+    public void Report(double dist, double rideS, double clock, double speed = 0)
     {
+        if (speed > 0)
+            (Speed, _measured) = (speed, true);
         if (dist == _dist && rideS == _rideS)
             return;
         if (!double.IsNaN(_dist))
         {
             double shown = At(clock);
-            if (rideS > _rideS)
+            if (rideS > _rideS && speed <= 0)
             {
                 double v = (dist - _dist) / (rideS - _rideS);
                 if (v >= 0 && v < 30)

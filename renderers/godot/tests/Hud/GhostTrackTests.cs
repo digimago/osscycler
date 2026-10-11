@@ -59,4 +59,16 @@ public class GhostTrackTests
         Assert.Equal(before, g.At(0.5), 6);
         Assert.Equal(3 + g.Speed * 0.45, g.At(0.95), 6);
     }
+
+    // The core's own speed for the ghost is taken as it is, however the
+    // reports fall.
+    [Fact]
+    public void TakesTheCoresSpeed()
+    {
+        var g = new GhostTrack();
+        g.Report(100, 10.0, 0.0, 7.5);
+        g.Report(101, 10.25, 0.9, 7.5); // late, and 4 m/s by the clocks
+        Assert.Equal(7.5, g.Speed);
+        Assert.Equal(7.5 * 0.05, g.At(1.35) - g.At(1.3), 6); // past the blend: at its speed
+    }
 }

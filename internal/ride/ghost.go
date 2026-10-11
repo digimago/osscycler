@@ -54,6 +54,22 @@ func (g *Ghost) DistanceAt(t time.Duration) float64 {
 	return a.DistanceM + (b.DistanceM-a.DistanceM)*float64(t-a.At)/float64(b.At-a.At)
 }
 
+// SpeedAt is the ghost's speed t into its ride, m/s: over the second
+// around t, so screens can carry it forward between the core's updates
+// at its own speed rather than one guessed from them (owner, 2026-10-10:
+// the ghost looked nervous). 0 before its start and once it has finished.
+func (g *Ghost) SpeedAt(t time.Duration) float64 {
+	if t < 0 || t >= g.Elapsed {
+		return 0
+	}
+	const half = 500 * time.Millisecond
+	a, b := max(0, t-half), min(g.Elapsed, t+half)
+	if b <= a {
+		return 0
+	}
+	return (g.DistanceAt(b) - g.DistanceAt(a)) / (b - a).Seconds()
+}
+
 // TimeAt is when the ghost first got to distance d: its ride clock there.
 // A stop doesn't count twice; past its finish it is Elapsed.
 func (g *Ghost) TimeAt(d float64) time.Duration {

@@ -111,6 +111,12 @@ func (m Model) followGhost(old *pb.Ride) Model {
 		m.ghostV, m.ghostD, m.ghostSeen = 0, d, now // a new ride: from here
 		return m
 	}
+	// The core says how fast the ghost goes (since 2026-10-11); older ones
+	// don't, and then it is estimated from the reports.
+	reported := g.GetSpeedMps() > 0
+	if reported {
+		m.ghostV = g.GetSpeedMps()
+	}
 	if d == m.ghostD {
 		return m
 	}
@@ -119,7 +125,7 @@ func (m Model) followGhost(old *pb.Ride) Model {
 		moved += l // over the line
 	}
 	// Faster than any rider is a jump (a new ghost, a new lap), not speed.
-	if dt := now.Sub(m.ghostSeen).Seconds(); dt > 0.05 && dt < 2 && moved >= 0 && moved/dt < 30 {
+	if dt := now.Sub(m.ghostSeen).Seconds(); !reported && dt > 0.05 && dt < 2 && moved >= 0 && moved/dt < 30 {
 		m.ghostV = 0.5*m.ghostV + 0.5*moved/dt // the reports arrive a little unevenly
 	}
 	m.ghostD, m.ghostSeen = d, now

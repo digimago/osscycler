@@ -844,6 +844,10 @@ message RideGhost {
   double gap_s = 3;
   // The ghost's time to the line.
   double time_s = 4;
+  // Its speed now, m/s, from its own ride (0 while it stands: armed,
+  // paused, finished). Screens carry it forward at this speed between
+  // updates; older cores leave it 0.
+  double speed_mps = 5;
 }
 
 enum SensorStatus {

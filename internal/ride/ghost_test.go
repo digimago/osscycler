@@ -141,3 +141,32 @@ func TestStartAgainst(t *testing.T) {
 		t.Errorf("unknown ride: %v", err)
 	}
 }
+
+// The ghost's speed is published with its place, so screens carry it on
+// at its own speed between updates: its speed from its trace while it
+// rides, 0 while it stands.
+func TestGhostSpeed(t *testing.T) {
+	g := ghostOf(t, steady(250, 20*time.Minute))
+	mid := g.Elapsed / 2
+	want := (g.DistanceAt(mid+time.Second) - g.DistanceAt(mid-time.Second)) / 2
+	if v := g.SpeedAt(mid); math.Abs(v-want) > 0.05 || v < 1 {
+		t.Errorf("speed half way %.2f m/s, want about %.2f", v, want)
+	}
+	if g.SpeedAt(-time.Second) != 0 || g.SpeedAt(g.Elapsed) != 0 {
+		t.Error("speed before the start or at the finish")
+	}
+	seen := 0.0
+	race(t, g, func(time.Duration) uint16 { return 250 }, func(r telemetry.Ride) {
+		switch r.Phase {
+		case telemetry.RideRiding:
+			seen = math.Max(seen, r.Ghost.SpeedMPS)
+		case telemetry.RideArmed, telemetry.RideFinished:
+			if r.Ghost.SpeedMPS != 0 {
+				t.Fatalf("%v: ghost speed %.2f, want 0", r.Phase, r.Ghost.SpeedMPS)
+			}
+		}
+	})
+	if seen < 1 {
+		t.Errorf("the ghost's speed while riding: at most %.2f m/s", seen)
+	}
+}

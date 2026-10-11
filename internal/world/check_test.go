@@ -28,10 +28,19 @@ func TestCheck(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := w.Check()
-	if r.HolesM2 > 0.5 || r.LandOverRoadM2 > 0.1 || r.OffRoadM > 0 {
-		t.Errorf("holes %.2f m² %v, land over road %.2f m² %v, off road %.0f m %v",
-			r.HolesM2, r.Holes, r.LandOverRoadM2, r.LandOverRoad, r.OffRoadM, r.OffRoad)
+	if r.HolesM2 > 0.5 || r.LandOverRoadM2 > 0.1 || r.OffRoadM > 0 || r.StepM > checkStepM || len(r.Steps) > 0 {
+		t.Errorf("holes %.2f m² %v, land over road %.2f m² %v, off road %.0f m %v, path steps %.2f m %v",
+			r.HolesM2, r.Holes, r.LandOverRoadM2, r.LandOverRoad, r.OffRoadM, r.OffRoad, r.StepM, r.Steps)
 	}
+	// The path dropping 7.5 m at 805 m (onto a road below, as once at
+	// Zandvoort) and back up 5 m on.
+	xyz := w.Manifest.Path.XYZ
+	saved := append([]float64(nil), xyz...)
+	xyz[3*161+1] -= 7.5
+	if r := w.Check(); math.Abs(r.StepM-7.5) > 0.5 || len(r.Steps) != 1 || r.Steps[0].D != 800 {
+		t.Errorf("path dropped 7.5 m: steps at most %.2f m %v, want 7.5 m at 800 m", r.StepM, r.Steps)
+	}
+	copy(xyz, saved)
 	// The road taken out from 600 to 610 m: the terrain (verges) is whole,
 	// so no holes, but the riding line is off road for 10 m.
 	all := w.prims

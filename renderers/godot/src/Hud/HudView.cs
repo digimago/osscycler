@@ -129,6 +129,7 @@ public sealed class HudView
         _note = note;
         _strips.ShowLookAhead = _layout.Showing(Layout.LookAhead);
         _strips.ShowProfile = _layout.Showing(Layout.Profile);
+        _strips.ShowMap = _layout.Showing(Layout.Map);
         if (Tiles.WorkoutActive(st) && workout != null)
             _strips.ShowWorkout(workout, st!.Workout.ElapsedS);
         else

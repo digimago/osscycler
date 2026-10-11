@@ -269,6 +269,8 @@ public sealed class World
         for (int i = 0; i < n; i++)
         {
             c.ProfileElevationM.Add(Y(i));
+            c.ProfileEastM.Add((float)m.Path.Xyz[3 * i]); // for the minimap: x is east,
+            c.ProfileNorthM.Add(-(float)m.Path.Xyz[3 * i + 2]); // z south
             c.ProfileGradePct.Add((Y(i + k) - Y(i - k)) / (float)(2 * k * m.Path.StepM) * 100);
         }
         return _profile = c;

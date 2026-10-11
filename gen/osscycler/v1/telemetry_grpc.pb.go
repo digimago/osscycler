@@ -38,6 +38,8 @@ const (
 	TelemetryService_SetProfile_FullMethodName            = "/osscycler.v1.TelemetryService/SetProfile"
 	TelemetryService_ListActivities_FullMethodName        = "/osscycler.v1.TelemetryService/ListActivities"
 	TelemetryService_ExportActivity_FullMethodName        = "/osscycler.v1.TelemetryService/ExportActivity"
+	TelemetryService_GetActivityHistory_FullMethodName    = "/osscycler.v1.TelemetryService/GetActivityHistory"
+	TelemetryService_GetActivitySummary_FullMethodName    = "/osscycler.v1.TelemetryService/GetActivitySummary"
 	TelemetryService_GetCourseFile_FullMethodName         = "/osscycler.v1.TelemetryService/GetCourseFile"
 	TelemetryService_SetTrainerControl_FullMethodName     = "/osscycler.v1.TelemetryService/SetTrainerControl"
 	TelemetryService_ReleaseTrainerControl_FullMethodName = "/osscycler.v1.TelemetryService/ReleaseTrainerControl"
@@ -116,6 +118,15 @@ type TelemetryServiceClient interface {
 	// another machine can save it: the first message carries the size,
 	// then chunks follow in order. Unknown names are NOT_FOUND.
 	ExportActivity(ctx context.Context, in *ExportActivityRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ExportActivityResponse], error)
+	// An activity's samples, one a second of riding time, for a graph of
+	// power and heart rate: the activity being recorded (name empty) or a
+	// finished one. NOT_FOUND for an unknown name, FAILED_PRECONDITION when
+	// no activity is being recorded.
+	GetActivityHistory(ctx context.Context, in *GetActivityHistoryRequest, opts ...grpc.CallOption) (*GetActivityHistoryResponse, error)
+	// What an activity took: averages, the best power over set durations
+	// and the time in each power and heart rate zone. Errors as
+	// GetActivityHistory.
+	GetActivitySummary(ctx context.Context, in *GetActivitySummaryRequest, opts ...grpc.CallOption) (*GetActivitySummaryResponse, error)
 	// GetCourseFile returns a course's GPX file, so a client can build the
 	// course's 3D world where it draws it (the core, perhaps a Pi by the
 	// trainer, builds none). Built-in tracks and included routes have no
@@ -359,6 +370,26 @@ func (c *telemetryServiceClient) ExportActivity(ctx context.Context, in *ExportA
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type TelemetryService_ExportActivityClient = grpc.ServerStreamingClient[ExportActivityResponse]
 
+func (c *telemetryServiceClient) GetActivityHistory(ctx context.Context, in *GetActivityHistoryRequest, opts ...grpc.CallOption) (*GetActivityHistoryResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetActivityHistoryResponse)
+	err := c.cc.Invoke(ctx, TelemetryService_GetActivityHistory_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *telemetryServiceClient) GetActivitySummary(ctx context.Context, in *GetActivitySummaryRequest, opts ...grpc.CallOption) (*GetActivitySummaryResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetActivitySummaryResponse)
+	err := c.cc.Invoke(ctx, TelemetryService_GetActivitySummary_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *telemetryServiceClient) GetCourseFile(ctx context.Context, in *GetCourseFileRequest, opts ...grpc.CallOption) (*GetCourseFileResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetCourseFileResponse)
@@ -480,6 +511,15 @@ type TelemetryServiceServer interface {
 	// another machine can save it: the first message carries the size,
 	// then chunks follow in order. Unknown names are NOT_FOUND.
 	ExportActivity(*ExportActivityRequest, grpc.ServerStreamingServer[ExportActivityResponse]) error
+	// An activity's samples, one a second of riding time, for a graph of
+	// power and heart rate: the activity being recorded (name empty) or a
+	// finished one. NOT_FOUND for an unknown name, FAILED_PRECONDITION when
+	// no activity is being recorded.
+	GetActivityHistory(context.Context, *GetActivityHistoryRequest) (*GetActivityHistoryResponse, error)
+	// What an activity took: averages, the best power over set durations
+	// and the time in each power and heart rate zone. Errors as
+	// GetActivityHistory.
+	GetActivitySummary(context.Context, *GetActivitySummaryRequest) (*GetActivitySummaryResponse, error)
 	// GetCourseFile returns a course's GPX file, so a client can build the
 	// course's 3D world where it draws it (the core, perhaps a Pi by the
 	// trainer, builds none). Built-in tracks and included routes have no
@@ -571,6 +611,12 @@ func (UnimplementedTelemetryServiceServer) ListActivities(context.Context, *List
 }
 func (UnimplementedTelemetryServiceServer) ExportActivity(*ExportActivityRequest, grpc.ServerStreamingServer[ExportActivityResponse]) error {
 	return status.Error(codes.Unimplemented, "method ExportActivity not implemented")
+}
+func (UnimplementedTelemetryServiceServer) GetActivityHistory(context.Context, *GetActivityHistoryRequest) (*GetActivityHistoryResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetActivityHistory not implemented")
+}
+func (UnimplementedTelemetryServiceServer) GetActivitySummary(context.Context, *GetActivitySummaryRequest) (*GetActivitySummaryResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetActivitySummary not implemented")
 }
 func (UnimplementedTelemetryServiceServer) GetCourseFile(context.Context, *GetCourseFileRequest) (*GetCourseFileResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetCourseFile not implemented")
@@ -936,6 +982,42 @@ func _TelemetryService_ExportActivity_Handler(srv interface{}, stream grpc.Serve
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type TelemetryService_ExportActivityServer = grpc.ServerStreamingServer[ExportActivityResponse]
 
+func _TelemetryService_GetActivityHistory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetActivityHistoryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TelemetryServiceServer).GetActivityHistory(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TelemetryService_GetActivityHistory_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TelemetryServiceServer).GetActivityHistory(ctx, req.(*GetActivityHistoryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _TelemetryService_GetActivitySummary_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetActivitySummaryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TelemetryServiceServer).GetActivitySummary(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TelemetryService_GetActivitySummary_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TelemetryServiceServer).GetActivitySummary(ctx, req.(*GetActivitySummaryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _TelemetryService_GetCourseFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetCourseFileRequest)
 	if err := dec(in); err != nil {
@@ -1100,6 +1182,14 @@ var TelemetryService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListActivities",
 			Handler:    _TelemetryService_ListActivities_Handler,
+		},
+		{
+			MethodName: "GetActivityHistory",
+			Handler:    _TelemetryService_GetActivityHistory_Handler,
+		},
+		{
+			MethodName: "GetActivitySummary",
+			Handler:    _TelemetryService_GetActivitySummary_Handler,
 		},
 		{
 			MethodName: "GetCourseFile",

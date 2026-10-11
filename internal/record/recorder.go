@@ -9,8 +9,10 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
+	"github.com/digimago/osscycler/internal/effort"
 	"github.com/digimago/osscycler/internal/sim"
 	"github.com/digimago/osscycler/internal/telemetry"
 )
@@ -117,6 +119,25 @@ type Recorder struct {
 	held bool
 	ends chan endReq
 	done chan struct{} // closed when Run returns
+
+	// The activity under way, a sample a second of riding time, for the
+	// live graph and its summary (History); guarded by mu, as the API
+	// reads it from other goroutines.
+	mu       sync.Mutex
+	hist     []effort.Sample
+	histFile string
+}
+
+// History is the activity under way: its file name (as it will be saved)
+// and its samples from riding second since on. The name is empty when no
+// activity is open.
+func (r *Recorder) History(since int) (string, []effort.Sample) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.histFile == "" || since >= len(r.hist) {
+		return r.histFile, nil
+	}
+	return r.histFile, append([]effort.Sample(nil), r.hist[max(0, since):]...)
 }
 
 type endReq struct {
@@ -285,6 +306,9 @@ func (r *Recorder) step(st telemetry.State, now time.Time) {
 		x := sampleOf(st, now, speed, r.dist)
 		x.hasPos = x.hasPos && r.cfg.GPS
 		a.record(x)
+		r.mu.Lock()
+		r.hist = append(r.hist, effort.Sample{T: float64(len(r.hist)), PowerW: x.power, HR: x.hr, Cadence: x.cad, SpeedMS: x.speed, DistM: x.dist})
+		r.mu.Unlock()
 	}
 	if err := a.flush(now); err != nil {
 		r.fail(err)
@@ -328,6 +352,9 @@ func (r *Recorder) open(now time.Time) bool {
 		return false
 	}
 	r.a, r.dist, r.errMsg = a, 0, ""
+	r.mu.Lock()
+	r.hist, r.histFile = nil, filepath.Base(a.path[:len(a.path)-len(".part")])
+	r.mu.Unlock()
 	r.log.Info("recording", "file", a.path)
 	return true
 }
@@ -339,6 +366,7 @@ func (r *Recorder) end() {
 		return
 	}
 	r.a = nil
+	r.forget()
 	at := a.session.last
 	if a.lap.n == 0 && a.session.n == 0 {
 		at = r.lastStep
@@ -372,6 +400,7 @@ func (r *Recorder) endByRider(st telemetry.State, discard bool) (string, error) 
 	}
 	a := r.a
 	r.a = nil
+	r.forget()
 	a.f.Close()
 	if err := os.Remove(a.path); err != nil {
 		r.fail(err)
@@ -387,7 +416,15 @@ func (r *Recorder) fail(err error) {
 	if r.a != nil {
 		r.a.f.Close()
 		r.a = nil
+		r.forget()
 	}
+}
+
+// forget drops the history of the activity that ended.
+func (r *Recorder) forget() {
+	r.mu.Lock()
+	r.hist, r.histFile = nil, ""
+	r.mu.Unlock()
 }
 
 // result appends a finished course ride to the results file.

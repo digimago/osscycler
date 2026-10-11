@@ -89,6 +89,15 @@ service TelemetryService {
   // another machine can save it: the first message carries the size,
   // then chunks follow in order. Unknown names are NOT_FOUND.
   rpc ExportActivity(ExportActivityRequest) returns (stream ExportActivityResponse);
+  // An activity's samples, one a second of riding time, for a graph of
+  // power and heart rate: the activity being recorded (name empty) or a
+  // finished one. NOT_FOUND for an unknown name, FAILED_PRECONDITION when
+  // no activity is being recorded.
+  rpc GetActivityHistory(GetActivityHistoryRequest) returns (GetActivityHistoryResponse);
+  // What an activity took: averages, the best power over set durations
+  // and the time in each power and heart rate zone. Errors as
+  // GetActivityHistory.
+  rpc GetActivitySummary(GetActivitySummaryRequest) returns (GetActivitySummaryResponse);
 
   // GetCourseFile returns a course's GPX file, so a client can build the
   // course's 3D world where it draws it (the core, perhaps a Pi by the
@@ -195,6 +204,74 @@ message ExportActivityResponse {
   bytes chunk = 2;
 }
 
+message GetActivityHistoryRequest {
+  // A finished activity (ListActivities' name); empty for the one being
+  // recorded.
+  string name = 1;
+  // From this second of riding time on: a graph fetches what it lacks.
+  uint32 since_s = 2;
+}
+
+message GetActivityHistoryResponse {
+  // The activity's file name (the one being recorded: as it will be saved).
+  string name = 1;
+  // Riding second of the first sample.
+  uint32 from_s = 2;
+  // One a second of riding time, in columns; -1 where there was no
+  // reading.
+  repeated sint32 power_w = 3;
+  repeated sint32 heart_rate_bpm = 4;
+  repeated sint32 cadence_rpm = 5;
+  repeated float speed_mps = 6;
+}
+
+message GetActivitySummaryRequest {
+  // As GetActivityHistoryRequest.name.
+  string name = 1;
+}
+
+message GetActivitySummaryResponse {
+  ActivitySummary summary = 1;
+}
+
+message ActivitySummary {
+  string name = 1;
+  // Riding time, pauses left out.
+  double timer_s = 2;
+  double distance_m = 3;
+  // Over seconds with a reading; 0 when none.
+  double avg_power_w = 4;
+  double max_power_w = 5;
+  // 0 for under 30 s.
+  double normalized_power_w = 6;
+  double work_kj = 7;
+  // 0 when no heart rate was read.
+  double avg_heart_rate_bpm = 8;
+  double max_heart_rate_bpm = 9;
+  double avg_cadence_rpm = 10;
+  // The best average power for each of 5 s, 10 s, 30 s, 1, 2, 5, 10, 20,
+  // 30 and 60 min the ride lasted.
+  repeated PowerBest power_curve = 11;
+  // Seconds in each power zone (Zwift's six; their upper bounds as a
+  // fraction of FTP in power_zone_upper); empty without an FTP or power.
+  repeated double power_zone_s = 12;
+  repeated double power_zone_upper = 13;
+  // Seconds in each heart rate zone (five; upper bounds as a fraction of
+  // the maximum heart rate in heart_rate_zone_upper); empty without a
+  // maximum heart rate in the profile or heart rate.
+  repeated double heart_rate_zone_s = 14;
+  repeated double heart_rate_zone_upper = 15;
+  // What the zones were taken from: the FTP the activity was ridden with
+  // (else the profile's), the profile's maximum heart rate.
+  double ftp_w = 16;
+  double max_hr_bpm = 17;
+}
+
+message PowerBest {
+  uint32 duration_s = 1;
+  double power_w = 2;
+}
+
 message SetProfileRequest {
   optional double weight_kg = 1;
   optional double ftp_w = 2;
@@ -203,6 +280,8 @@ message SetProfileRequest {
   // How a 3D renderer shows the ride: "chase" (behind and above the
   // rider) or "eyes" (the rider's own view).
   optional string view = 4;
+  // Sets the heart rate zones of ride summaries: 100-230 bpm.
+  optional double max_hr_bpm = 5;
 }
 
 message SetProfileResponse {
@@ -618,6 +697,8 @@ message RiderProfile {
   bool cda_forced = 14;
   // The rider's view in a 3D renderer: "chase" (the default) or "eyes".
   string view = 15;
+  // Optional; 0 when unknown (summaries then leave heart rate zones out).
+  double max_hr_bpm = 16;
 }
 
 // The core records every ride to a FIT file on its own disk, whether or

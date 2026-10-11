@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/digimago/osscycler/internal/effort"
 	"github.com/digimago/osscycler/internal/fit"
 )
 
@@ -161,4 +162,49 @@ func summarise(path string) Activity {
 		return Activity{Err: errors.New("no session summary")}
 	}
 	return a
+}
+
+// Samples reads a finished recording's samples, one a second of riding
+// time, and the FTP it was ridden with (0 when it has none). The name is
+// checked as Open checks it.
+func (c *Catalog) Samples(name string) ([]effort.Sample, float64, error) {
+	f, _, err := c.Open(name)
+	if err != nil {
+		return nil, 0, err
+	}
+	b, err := io.ReadAll(f)
+	f.Close()
+	if err != nil {
+		return nil, 0, err
+	}
+	msgs, err := fit.Decode(b)
+	if err != nil {
+		return nil, 0, err
+	}
+	var out []effort.Sample
+	ftp := 0.0
+	reading := func(m fit.Msg, num uint8) int {
+		if v, ok := m.Get(num); ok {
+			return int(v)
+		}
+		return -1
+	}
+	for _, m := range msgs {
+		switch m.Num {
+		case recordMsg.Num:
+			x := effort.Sample{T: float64(len(out)), PowerW: reading(m, 7), HR: reading(m, 3), Cadence: reading(m, 4)}
+			if v, ok := m.Get(6); ok {
+				x.SpeedMS = float64(v) / 1000
+			}
+			if v, ok := m.Get(5); ok {
+				x.DistM = float64(v) / 100
+			}
+			out = append(out, x)
+		case zonesTargetMsg.Num:
+			if v, ok := m.Get(3); ok {
+				ftp = float64(v)
+			}
+		}
+	}
+	return out, ftp, nil
 }

@@ -136,7 +136,7 @@ func ghostToProto(g telemetry.RideGhost) *pb.RideGhost {
 	if g.Label == "" {
 		return nil
 	}
-	return &pb.RideGhost{Label: g.Label, DistanceM: g.DistanceM, GapS: g.Gap.Seconds(), TimeS: g.Elapsed.Seconds()}
+	return &pb.RideGhost{Label: g.Label, DistanceM: g.DistanceM, GapS: g.Gap.Seconds(), TimeS: g.Elapsed.Seconds(), SpeedMps: g.SpeedMPS}
 }
 
 // CourseToProto converts a course with its full profile and track, and

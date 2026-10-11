@@ -369,6 +369,7 @@ type Lap struct {
 type RideGhost struct {
 	Label     string        // e.g. "PB 7 Oct"
 	DistanceM float64       // where the ghost is now on the course
+	SpeedMPS  float64       // its speed there; 0 while it stands (armed, paused, finished)
 	Gap       time.Duration // the rider behind the ghost (negative: ahead), at the rider's position
 	Elapsed   time.Duration // the ghost's time to the line
 }

@@ -5788,7 +5788,11 @@ type RideGhost struct {
 	// is ahead. At the finish: the difference in times.
 	GapS float64 `protobuf:"fixed64,3,opt,name=gap_s,json=gapS,proto3" json:"gap_s,omitempty"`
 	// The ghost's time to the line.
-	TimeS         float64 `protobuf:"fixed64,4,opt,name=time_s,json=timeS,proto3" json:"time_s,omitempty"`
+	TimeS float64 `protobuf:"fixed64,4,opt,name=time_s,json=timeS,proto3" json:"time_s,omitempty"`
+	// Its speed now, m/s, from its own ride (0 while it stands: armed,
+	// paused, finished). Screens carry it forward at this speed between
+	// updates; older cores leave it 0.
+	SpeedMps      float64 `protobuf:"fixed64,5,opt,name=speed_mps,json=speedMps,proto3" json:"speed_mps,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5847,6 +5851,13 @@ func (x *RideGhost) GetGapS() float64 {
 func (x *RideGhost) GetTimeS() float64 {
 	if x != nil {
 		return x.TimeS
+	}
+	return 0
+}
+
+func (x *RideGhost) GetSpeedMps() float64 {
+	if x != nil {
+		return x.SpeedMps
 	}
 	return 0
 }
@@ -6649,13 +6660,14 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\vavg_power_w\x18\x03 \x01(\x01R\tavgPowerW\x12\x1b\n" +
 	"\tclimbed_m\x18\x04 \x01(\x01R\bclimbedM\x12(\n" +
 	"\x10finished_unix_ms\x18\x05 \x01(\x03R\x0efinishedUnixMs\x12\x16\n" +
-	"\x06paused\x18\x06 \x01(\bR\x06paused\"l\n" +
+	"\x06paused\x18\x06 \x01(\bR\x06paused\"\x89\x01\n" +
 	"\tRideGhost\x12\x14\n" +
 	"\x05label\x18\x01 \x01(\tR\x05label\x12\x1d\n" +
 	"\n" +
 	"distance_m\x18\x02 \x01(\x01R\tdistanceM\x12\x13\n" +
 	"\x05gap_s\x18\x03 \x01(\x01R\x04gapS\x12\x15\n" +
-	"\x06time_s\x18\x04 \x01(\x01R\x05timeS\"\xee\x01\n" +
+	"\x06time_s\x18\x04 \x01(\x01R\x05timeS\x12\x1b\n" +
+	"\tspeed_mps\x18\x05 \x01(\x01R\bspeedMps\"\xee\x01\n" +
 	"\x06Sensor\x122\n" +
 	"\x06status\x18\x01 \x01(\x0e2\x1a.osscycler.v1.SensorStatusR\x06status\x12#\n" +
 	"\rdevice_number\x18\x02 \x01(\rR\fdeviceNumber\x12'\n" +

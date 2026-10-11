@@ -514,6 +514,9 @@ func (s *Session) publish(r *run, now time.Time) {
 		if r.phase != telemetry.RideArmed {
 			ghost.Gap = g.Gap(clock, r.rider.DistanceM)
 		}
+		if r.phase == telemetry.RideRiding && r.pausedAt.IsZero() {
+			ghost.SpeedMPS = g.SpeedAt(clock)
+		}
 	}
 	s.hub.Update(func(st *telemetry.State) bool {
 		changed := st.Ride.Changed

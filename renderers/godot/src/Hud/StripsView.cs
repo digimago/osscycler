@@ -24,6 +24,18 @@ public partial class StripsView : Control
     public bool ShowLookAhead { get; set; } = true;
     public bool ShowProfile { get; set; } = true;
 
+    // The ride graph at the bottom left (null: none): the activity being
+    // recorded, power by zone (ftp; one colour without it) and heart rate.
+    RideHistory? _graph;
+    double _ftp;
+
+    public void Graph(RideHistory? h, double ftp)
+    {
+        if (!ReferenceEquals(h, _graph) || ftp != _ftp)
+            QueueRedraw();
+        (_graph, _ftp) = (h, ftp);
+    }
+
     public StripsView(Font regular, Font bold)
     {
         (_regular, _bold) = (regular, bold);
@@ -49,6 +61,14 @@ public partial class StripsView : Control
     public override void _Draw()
     {
         float w = Size.X, h = Size.Y;
+        if (_graph != null)
+        {
+            // Left of the look-ahead (which takes the middle half), as high
+            // as the profile.
+            float gw = Mathf.Min(420, (w - Mathf.Min(960, w * 0.5f)) / 2 - 2 * Margin - Pad);
+            if (gw > 160)
+                RideGraph(new Rect2(Margin + Pad, h - Margin - ProfileH - Pad - 60, gw, ProfileH));
+        }
         if (_workout != null)
         {
             if (!ShowProfile)
@@ -166,6 +186,46 @@ public partial class StripsView : Control
         float hx = r.Position.X + (float)Mathf.Clamp(_elapsed / w.DurationS, 0, 1) * r.Size.X;
         DrawLine(new Vector2(hx, r.Position.Y - 4), new Vector2(hx, r.End.Y), Colors.White, 3);
         Diamond(new Vector2(hx, r.Position.Y - 4), 6, Colors.White);
+    }
+
+    // RideGraph draws the whole activity in r: power as bars coloured by
+    // zone, heart rate as a line over them, the scale at the top left.
+    void RideGraph(Rect2 r)
+    {
+        Panel(r);
+        var h = _graph!;
+        var labels = r.Position;
+        r = new Rect2(r.Position + new Vector2(0, 26), r.Size - new Vector2(0, 26)); // the scale above the bars
+        int n = (int)(r.Size.X / 3);
+        var (cols, top, minHr, maxHr) = h.Columns(n);
+        float cw = r.Size.X / cols.Count;
+        for (int x = 0; x < cols.Count; x++)
+        {
+            float hgt = (float)(cols[x].PowerW / top) * r.Size.Y;
+            var col = _ftp > 0 ? Color8(Palette.Zone(cols[x].PowerW / _ftp)) : Color8(Palette.Power);
+            DrawRect(new Rect2(r.Position.X + x * cw, r.End.Y - hgt, cw + 0.5f, hgt), col);
+        }
+        if (maxHr > minHr)
+        {
+            var heart = new Color(1f, 0.67f, 0.78f); // lighter than zones 5 and 6, which it crosses
+            Vector2? last = null;
+            for (int x = 0; x < cols.Count; x++)
+            {
+                if (cols[x].HeartRate <= 0)
+                {
+                    last = null;
+                    continue;
+                }
+                float f = (float)((cols[x].HeartRate - minHr) / (maxHr - minHr));
+                var at = new Vector2(r.Position.X + (x + 0.5f) * cw, r.End.Y - 6 - f * (r.Size.Y - 18));
+                if (last is Vector2 l)
+                    DrawLine(l, at, heart, 3);
+                last = at;
+            }
+            DrawString(_bold, labels + new Vector2(110, 18), $"{maxHr:F0} bpm", HorizontalAlignment.Left, -1, 18, heart);
+        }
+        DrawString(_bold, labels + new Vector2(2, 18), $"{top:F0} W", HorizontalAlignment.Left, -1, 18, Color8(Palette.Power));
+        DrawString(_regular, new Vector2(r.Position.X, r.End.Y + 22), Format.Clock(h.Count), HorizontalAlignment.Right, r.Size.X, 18, new Color(1, 1, 1, 0.8f));
     }
 
     void Diamond(Vector2 at, float s, Color c) =>

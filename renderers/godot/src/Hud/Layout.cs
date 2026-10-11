@@ -39,8 +39,8 @@ public sealed class Layout
     };
 
     // The strips along the bottom, each shown unless hidden.
-    public const string LookAhead = "look_ahead", Profile = "profile";
-    public static readonly string[] Strips = { LookAhead, Profile };
+    public const string LookAhead = "look_ahead", Profile = "profile", Graph = "graph";
+    public static readonly string[] Strips = { LookAhead, Profile, Graph };
 
     public static readonly IReadOnlyDictionary<string, string> Labels = new Dictionary<string, string>
     {
@@ -49,6 +49,7 @@ public sealed class Layout
         ["to_go"] = "Distance to go", ["climbed"] = "Climbed", ["avg_power"] = "Average power", ["target"] = "Target power",
         ["interval"] = "Time left in this part", ["workout_left"] = "Time left in the workout",
         [LookAhead] = "Look-ahead strip (the next 250 m)", [Profile] = "Course or workout profile",
+        [Graph] = "Ride graph (power and heart rate over the ride)",
     };
 
     // TilesBy lists the shown tiles per screen, in order (a screen not in

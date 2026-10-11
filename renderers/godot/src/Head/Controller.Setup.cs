@@ -20,7 +20,7 @@ public sealed partial class Controller
     public sealed record DialogView(string Title, string Big, Hud.Rgb BigColor, IReadOnlyList<string> Lines, string Hint);
 
     // Onboarding: the profile's steps, as the TUI's.
-    enum Step { Weight, Height, Ftp, View }
+    enum Step { Weight, Height, Ftp, MaxHr, View }
 
     sealed class Onboarding
     {
@@ -82,6 +82,7 @@ public sealed partial class Controller
     {
         FormDone();
         Others(st);
+        NeedHistory(st);
         var p = st?.Profile;
         if (_onboard == null && !_onboardLater && p != null && p.Missing.Count > 0 && !Busy(st) &&
             _prompt == null && _form == null && !_ending && _screen != Screen.Picker && double.IsNaN(_countdownTo))
@@ -160,6 +161,7 @@ public sealed partial class Controller
         Step.View => p?.View == "eyes" ? "eyes" : "chase",
         Step.Weight => p is { WeightKg: > 0 } ? Hud.Format.Fixed(p.WeightKg, 0) : "",
         Step.Height => p is { HeightCm: > 0 } ? Hud.Format.Fixed(p.HeightCm, 0) : "",
+        Step.MaxHr => p is { MaxHrBpm: > 0 } ? Hud.Format.Fixed(p.MaxHrBpm, 0) : "",
         _ => p is { FtpW: > 0 } ? Hud.Format.Fixed(p.FtpW, 0) : p != null ? Hud.Format.Fixed(p.SuggestedFtpW, 0) : "",
     };
 
@@ -313,10 +315,22 @@ public sealed partial class Controller
                     (o.Step, o.Value) = (Step.Ftp, StepValue(st?.Profile, Step.Ftp)); // optional: skipped
                     return;
                 }
+                if (o.Step == Step.MaxHr && o.Value == "") // optional: skipped
+                {
+                    if (o.Edit && st?.Profile?.View is { Length: > 0 })
+                        (o.Step, o.Value) = (Step.View, StepValue(st.Profile, Step.View));
+                    else
+                    {
+                        _onboard = null;
+                        Say("profile saved");
+                    }
+                    return;
+                }
                 var (lo, hi, what) = o.Step switch
                 {
                     Step.Weight => (30.0, 200.0, "weight in kg"),
                     Step.Height => (120.0, 220.0, "height in cm"),
+                    Step.MaxHr => (100.0, 230.0, "maximum heart rate in bpm"),
                     _ => (50.0, 600.0, "FTP in watts"),
                 };
                 if (!double.TryParse(o.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) || v < lo || v > hi)
@@ -327,9 +341,10 @@ public sealed partial class Controller
                 var step = o.Step;
                 Task<RiderProfile> save = step switch
                 {
-                    Step.Weight => _cmds.SetProfile(v, null, null),
-                    Step.Height => _cmds.SetProfile(null, null, v),
-                    _ => _cmds.SetProfile(null, v, null),
+                    Step.Weight => _cmds.SetProfile(v, null, null, null),
+                    Step.Height => _cmds.SetProfile(null, null, v, null),
+                    Step.MaxHr => _cmds.SetProfile(null, null, null, v),
+                    _ => _cmds.SetProfile(null, v, null, null),
                 };
                 save.ContinueWith(done =>
                 {
@@ -342,7 +357,7 @@ public sealed partial class Controller
                     {
                         if (_onboard != o)
                             return;
-                        if (step < Step.Ftp || step == Step.Ftp && o.Edit && done.Result.View != "")
+                        if (step < Step.MaxHr || step == Step.MaxHr && o.Edit && done.Result.View != "")
                             (o.Step, o.Value) = (step + 1, StepValue(done.Result, step + 1)); // editing: the view too, if the core keeps it
                         else
                         {
@@ -360,9 +375,14 @@ public sealed partial class Controller
     }
 
     void End(bool discard) =>
-        _cmds.EndActivity(discard).ContinueWith(done => Say(done.Exception != null
-            ? "ending the ride failed: " + done.Exception.GetBaseException().Message
-            : discard ? "ride discarded" : "ride saved: " + done.Result), TaskContinuationOptions.ExecuteSynchronously);
+        _cmds.EndActivity(discard).ContinueWith(done =>
+        {
+            Say(done.Exception != null
+                ? "ending the ride failed: " + done.Exception.GetBaseException().Message
+                : discard ? "ride discarded" : "ride saved: " + done.Result);
+            if (done.Exception == null && !discard && done.Result != "")
+                OpenSummary(done.Result, false);
+        }, TaskContinuationOptions.ExecuteSynchronously);
 
     // Dialog is the setup panel to show (null: none).
     public DialogView? Dialog(State? st, double now)
@@ -374,7 +394,7 @@ public sealed partial class Controller
             bool chase = ov.Value != "eyes";
             return new("RIDER PROFILE", chase ? "View: ▸ behind the rider ◂   your eyes" : "View:   behind the rider   ▸ your eyes ◂", Hud.Palette.Plain,
                 new[] { "How the 3D view shows your ride: from behind and above you (you see yourself and your ghost), or through your own eyes. v switches while riding." },
-                "step 4 of 4 · ← → choose · enter save · esc back");
+                "step 5 of 5 · ← → choose · enter save · esc back");
         }
         if (_onboard is { } o)
         {
@@ -383,13 +403,14 @@ public sealed partial class Controller
             {
                 Step.Weight => ("Your weight", "kg", "It sets how climbs feel on the trainer and your speed on a course.", p?.WeightForced == true),
                 Step.Height => ("Your height", "cm", "Optional: with your weight it sizes how much air you push on a course. Leave it empty to skip.", p?.HeightForced == true),
+                Step.MaxHr => ("Your maximum heart rate", "bpm", "Optional: it sets the heart rate zones of your ride summaries. The highest you have seen in an all-out effort; leave it empty to skip.", false),
                 _ => ("Your FTP", "W", "The power you can hold for about an hour: workouts are set from it. Not sure? Take the suggestion.", p?.FtpForced == true),
             };
             var lines = new List<string> { why };
             if (forced)
                 lines.Add("a flag on the core forces this for its run: what you enter is saved for later");
             return new(o.Edit ? "RIDER PROFILE" : "WELCOME TO OSSCYCLER", $"{prompt}: {o.Value}_ {unit}", Hud.Palette.Plain, lines,
-                $"step {(int)o.Step + 1} of {(o.Edit && st?.Profile?.View is { Length: > 0 } ? 4 : 3)} · enter save and go on · esc {(o.Edit && o.Step > Step.Weight ? "back" : "later")}");
+                $"step {(int)o.Step + 1} of {(o.Edit && st?.Profile?.View is { Length: > 0 } ? 5 : 4)} · enter save and go on · esc {(o.Edit && o.Step > Step.Weight ? "back" : "later")}");
         }
         if (_ending)
         {

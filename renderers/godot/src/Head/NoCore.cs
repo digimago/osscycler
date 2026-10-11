@@ -30,10 +30,12 @@ public sealed class NoCore : ICommands
     public Task SetGrade(double pct) => None();
     public Task SetLevel(double pct) => None();
     public Task ReleaseControl() => None();
-    public Task<RiderProfile> SetProfile(double? weightKg, double? ftpW, double? heightCm) => Task.FromException<RiderProfile>(new InvalidOperationException("no core"));
+    public Task<RiderProfile> SetProfile(double? weightKg, double? ftpW, double? heightCm, double? maxHrBpm) => Task.FromException<RiderProfile>(new InvalidOperationException("no core"));
     public Task<RiderProfile> SetView(string view) => Task.FromException<RiderProfile>(new InvalidOperationException("no core"));
     public Task<string> EndActivity(bool discard) => Task.FromException<string>(new InvalidOperationException("no core"));
     public Task StartCalibration() => None();
     public Task CancelCalibration() => None();
     public Task<string> SaveActivity(string name) => Task.FromException<string>(new InvalidOperationException("no core"));
+    public Task<GetActivityHistoryResponse> ActivityHistory(string name, uint since) => Task.FromException<GetActivityHistoryResponse>(new InvalidOperationException("no core"));
+    public Task<ActivitySummary> ActivitySummary(string name) => Task.FromException<ActivitySummary>(new InvalidOperationException("no core"));
 }

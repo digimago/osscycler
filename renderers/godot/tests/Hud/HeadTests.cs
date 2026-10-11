@@ -74,12 +74,13 @@ sealed class Calls : ICommands
     public Task StartCalibration() => Add("calibrate");
     public Task CancelCalibration() => Add("cancel calibration");
     public RiderProfile Profile = new() { SuggestedFtpW = 190 };
-    public Task<RiderProfile> SetProfile(double? weightKg, double? ftpW, double? heightCm)
+    public Task<RiderProfile> SetProfile(double? weightKg, double? ftpW, double? heightCm, double? maxHrBpm)
     {
-        Add($"profile {weightKg} {ftpW} {heightCm}");
+        Add($"profile {weightKg} {ftpW} {heightCm}" + (maxHrBpm is double m ? $" hr {m}" : ""));
         if (weightKg is double w) Profile.WeightKg = w;
         if (ftpW is double f) Profile.FtpW = f;
         if (heightCm is double h) Profile.HeightCm = h;
+        if (maxHrBpm is double hr) Profile.MaxHrBpm = hr;
         return Task.FromResult(Profile.Clone());
     }
     public Task<string> EndActivity(bool discard)
@@ -91,6 +92,27 @@ sealed class Calls : ICommands
     {
         Add("save " + name);
         return Task.FromResult("/tmp/" + name);
+    }
+    // The activity being recorded (null: none), and summaries by name.
+    public GetActivityHistoryResponse? History;
+    public Dictionary<string, ActivitySummary> Summaries = new();
+    public readonly List<uint> HistoryCalls = new(); // fetches, not commands: kept apart from Sent
+    public Task<GetActivityHistoryResponse> ActivityHistory(string name, uint since)
+    {
+        lock (HistoryCalls)
+            HistoryCalls.Add(since);
+        if (History == null)
+            return Task.FromException<GetActivityHistoryResponse>(new InvalidOperationException("no ride is being recorded"));
+        var r = new GetActivityHistoryResponse { Name = History.Name, FromS = since };
+        r.PowerW.AddRange(History.PowerW.Skip((int)since));
+        r.HeartRateBpm.AddRange(History.HeartRateBpm.Skip((int)since));
+        return Task.FromResult(r);
+    }
+    public Task<ActivitySummary> ActivitySummary(string name)
+    {
+        Add("summary " + name);
+        return Summaries.TryGetValue(name, out var s) ? Task.FromResult(s)
+            : Task.FromException<ActivitySummary>(new InvalidOperationException("no such activity"));
     }
 }
 
@@ -338,6 +360,9 @@ public class SetupTests
         h.Key("5", st, 0);
         h.Key("enter", st, 0);
         Settle();
+        // The maximum heart rate: optional too, and the last step here.
+        Assert.StartsWith("Your maximum heart rate", h.Dialog(st, 0)!.Big);
+        h.Key("enter", st, 0); // skipped
         Assert.Null(h.Dialog(st, 0));
         Assert.Equal(new[] { "profile 75  ", "profile  195 " }, c.Sent);
         Assert.Equal("profile saved", h.Notice(1));
@@ -402,7 +427,7 @@ public class SetupTests
         h.Key("e", st, 10);
         h.Key("enter", st, 10);
         Settle();
-        Assert.Equal("end save", c.Sent[^1]);
+        Assert.Equal(new[] { "end save", "summary ride.fit" }, c.Sent.Skip(1)); // saved: its summary
     }
 
     [Fact]
@@ -449,7 +474,7 @@ public class LayoutTests
             var l = h.List()!;
             Assert.Equal("COURSE RIDE", l.Subtitle);
             Assert.Equal(new[] { "1", "2", "3", "4", "5" }, l.Rows.Take(5).Select(r => r.Key));
-            Assert.Equal(Layout.Labels[Layout.LookAhead], l.Rows[^2].Label);
+            Assert.Equal(Layout.Labels[Layout.LookAhead], l.Rows[^3].Label); // then the profile and the graph
             // Climbed (hidden, the 9th choice) to the second place; power
             // down one; grade hidden; the look-ahead strip hidden.
             for (int i = 0; i < 8; i++)
@@ -464,6 +489,7 @@ public class LayoutTests
             h.Key(" ", st, 0); // grade
             for (int i = 0; i < 20; i++)
                 h.Key("down", st, 0);
+            h.Key("up", st, 0);
             h.Key("up", st, 0);
             h.Key(" ", st, 0); // the look-ahead
             h.Key("z", st, 0);
@@ -760,6 +786,14 @@ public class ViewTests
         h.Key("enter", st, 0); // height, empty: skipped
         h.Key("enter", st, 0); // FTP
         Thread.Sleep(30);
+        Assert.StartsWith("Your maximum heart rate", h.Dialog(st, 0)!.Big);
+        foreach (var k in new[] { "2", "5", "0", "enter" })
+            h.Key(k, st, 0);
+        Assert.Contains("100 to 230", h.Notice(0)); // out of range: caught here
+        foreach (var k in new[] { "backspace", "backspace", "backspace", "1", "8", "8", "enter" })
+            h.Key(k, st, 0);
+        Thread.Sleep(30);
+        Assert.Equal("profile    hr 188", c.Sent[^1]);
         Assert.Contains("behind the rider", h.Dialog(st, 0)!.Big);
         h.Key("right", st, 0);
         h.Key("enter", st, 0);

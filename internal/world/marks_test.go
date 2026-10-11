@@ -353,3 +353,24 @@ func TestPathHasNoFolds(t *testing.T) {
 		}
 	}
 }
+
+// A car park meets the road beside it at the road's height, under it
+// where they overlap, and lies on the ground further in (it lay on the 5 m
+// terrain, up to 0.6 m off the road, and the step showed as slits).
+func TestCarParkMeetsTheRoad(t *testing.T) {
+	const road = 1
+	// A road 10 m wide at 10 m, x 0..10 east, the whole length north.
+	rs := newSurfaceIndex([]gltf.Primitive{{Material: road,
+		Positions: []float32{0, 10, 0, 10, 10, 0, 10, 10, -100, 0, 10, -100},
+		Indices:   []uint32{0, 1, 2, 0, 2, 3}}}, func(m int) bool { return m == road }, 200)
+	const ground = 11.0
+	if h := parkingHeight(ground, 5, 50, rs); h > 10 || h < 9.9 {
+		t.Errorf("under the road: %.3f m, want just under its 10 m", h)
+	}
+	if h := parkingHeight(ground, 10.25, 50, rs); h > 10.05 {
+		t.Errorf("at the road's edge: %.3f m, want the road's height", h)
+	}
+	if h := parkingHeight(ground, 10+parkBlendM+1, 50, rs); math.Abs(h-(ground+parkingLiftM)) > 1e-9 {
+		t.Errorf("away from the road: %.3f m, want the ground's %.2f", h, ground+parkingLiftM)
+	}
+}

@@ -387,7 +387,25 @@ func Build(c *course.Course, o Options) (*World, error) {
 	wg.Wait()
 	// (Terrain + verges) − roads and car parks: nothing of the land lies
 	// over them.
-	lots := parkingLots(&t, o.Scenery, roadMats)
+	lots := parkingLots(&t, o.Scenery, roadMats, roads)
+	if t.cut && len(lots) > 0 {
+		var landPrims, roadPrimsAll []gltf.Primitive
+		landPrims = append(landPrims, meshes...)
+		for _, k := range chunkOrder(roads) {
+			for _, p := range roads[k] {
+				if p.Material == ground {
+					landPrims = append(landPrims, p)
+				} else {
+					roadPrimsAll = append(roadPrimsAll, p)
+				}
+			}
+		}
+		land := newLandSurface(landPrims, func(m int) bool { return m == ground })
+		road := newSurfaceIndex(roadPrimsAll, func(int) bool { return true }, 200)
+		for i := range lots {
+			lots[i].rim = rimMesh(lots[i].outline, lots[i].height, land, road, ground)
+		}
+	}
 	if t.cut {
 		cut := newCutter()
 		t.surfaces = cut
@@ -740,7 +758,11 @@ func mergeByMaterial(ps []gltf.Primitive) []gltf.Primitive {
 // addParking lays the car parks on the terrain.
 func (w *World) addParking(lots []parkingLot) error {
 	for k, l := range lots {
-		if err := w.add(fmt.Sprintf("car park %d", k), l.extras, l.mesh); err != nil {
+		ps := []gltf.Primitive{l.mesh}
+		if len(l.rim.Indices) > 0 {
+			ps = append(ps, l.rim)
+		}
+		if err := w.add(fmt.Sprintf("car park %d", k), l.extras, ps...); err != nil {
 			return err
 		}
 	}
@@ -749,19 +771,33 @@ func (w *World) addParking(lots []parkingLot) error {
 
 // parkingLot is a car park's mesh and its node's extras.
 type parkingLot struct {
-	mesh   gltf.Primitive
-	extras map[string]any
+	mesh    gltf.Primitive
+	rim     gltf.Primitive // its bank face to the land beside it (rims.go)
+	extras  map[string]any
+	height  func(e, n float64) float64
+	outline [][2]float64
 }
 
-// parkingLots are the car parks, laid on the terrain.
-func parkingLots(t *terrain, sc *scenery.Scenery, m roadMaterials) []parkingLot {
+// parkingLots are the car parks, laid on the terrain and meeting the
+// roads beside them (roads: by chunk, as roadPrims made them).
+func parkingLots(t *terrain, sc *scenery.Scenery, m roadMaterials, roads map[[2]int][]gltf.Primitive) []parkingLot {
 	if sc == nil {
 		return nil
 	}
 	s := &surface{t: t, lists: map[[2]int]chunkLists{}}
+	paved := map[int]bool{m.lane: true, m.walk: true}
+	for _, mat := range m.surface {
+		paved[mat] = true
+	}
+	var prims []gltf.Primitive
+	for _, k := range chunkOrder(roads) {
+		prims = append(prims, roads[k]...)
+	}
+	rs := newSurfaceIndex(prims, func(mat int) bool { return paved[mat] }, 200)
+	height := func(e, n float64) float64 { return parkingHeight(s.at(e, n), e, n, rs) }
 	var out []parkingLot
 	for _, lot := range sc.Parking {
-		p := parkingMesh(s, lot.Outline, m.surface[lot.Surface])
+		p := drapedIn(height, lot.Outline, m.surface[lot.Surface], 0, parkCellM)
 		if len(p.Indices) == 0 {
 			continue
 		}
@@ -769,9 +805,48 @@ func parkingLots(t *terrain, sc *scenery.Scenery, m roadMaterials) []parkingLot 
 		if lot.Name != "" {
 			extras["name"] = lot.Name
 		}
-		out = append(out, parkingLot{p, extras})
+		out = append(out, parkingLot{mesh: p, extras: extras, height: height, outline: lot.Outline})
 	}
 	return out
+}
+
+// A car park meets the road it lies against at the road's height
+// (owner, 2026-10-11, marks at Zandvoort, 13.0-15.0 km: car parks along
+// the boulevard lay on the 5 m terrain, 0.15-0.6 m off the road beside
+// them, and the step showed as dark slits and gashes along the road): within
+// parkBlendM of a road surface it takes the road's height, just under it,
+// easing to the ground further in.
+const (
+	parkBlendM = 4.0
+	// parkCellM: a car park's triangles near a road follow it this finely
+	// (4 m rose above the road's edge between their corners).
+	parkCellM = 1.0
+)
+
+// parkingHeight is a car park's surface at e, n over ground g: the nearest
+// road surface (rs) within parkBlendM sets it, eased out to g + the lift.
+func parkingHeight(g, e, n float64, rs *landSurface) float64 {
+	// A road it meets stays on top: a junction's long fan triangles crease,
+	// and a car park on the road's height rose through between creases.
+	const under = 0.05
+	if h, ok := rs.at(e, n); ok {
+		return h - under
+	}
+	for r := 0.25; r <= parkBlendM; r += 0.25 {
+		best, found := 0.0, false
+		for k := range 16 {
+			a := float64(k) * math.Pi / 8
+			if h, ok := rs.at(e+r*math.Cos(a), n+r*math.Sin(a)); ok && (!found || h > best) {
+				best, found = h, true
+			}
+		}
+		if found {
+			w := r / parkBlendM
+			w = w * w * (3 - 2*w)
+			return (best-under)*(1-w) + (g+parkingLiftM)*w
+		}
+	}
+	return g + parkingLiftM
 }
 
 // Write puts the world in dir as world.glb and world.json, each replaced

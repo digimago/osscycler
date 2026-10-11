@@ -191,6 +191,13 @@ const (
 )
 
 func newLandSurface(prims []gltf.Primitive, land func(material int) bool) *landSurface {
+	return newSurfaceIndex(prims, land, landMaxTriM)
+}
+
+// newSurfaceIndex is a landSurface over the triangles of the selected
+// materials up to maxTri across (roads: their junctions' triangles are
+// tens of metres).
+func newSurfaceIndex(prims []gltf.Primitive, land func(material int) bool, maxTri float64) *landSurface {
 	ls := &landSurface{cells: map[[2]int][][2]int32{}}
 	for _, p := range prims {
 		if !land(p.Material) {
@@ -206,7 +213,7 @@ func newLandSurface(prims []gltf.Primitive, land func(material int) bool) *landS
 				x, z := float64(pos[3*v]), float64(pos[3*v+2])
 				lo, hi = [2]float64{math.Min(lo[0], x), math.Min(lo[1], z)}, [2]float64{math.Max(hi[0], x), math.Max(hi[1], z)}
 			}
-			if hi[0]-lo[0] > landMaxTriM || hi[1]-lo[1] > landMaxTriM {
+			if hi[0]-lo[0] > maxTri || hi[1]-lo[1] > maxTri {
 				continue
 			}
 			for gx := int(math.Floor(lo[0] / landCellM)); gx <= int(math.Floor(hi[0]/landCellM)); gx++ {

@@ -94,6 +94,10 @@ func (m Model) rideKey(key string) (Model, tea.Cmd, bool) {
 			if m.tab == tabActivities {
 				return m, m.exportSelected(), true
 			}
+		case "i":
+			if m.tab == tabActivities && n > 0 {
+				return m, m.fetchSummary(m.activities[m.pickIdx[tabActivities]].GetName(), true), true
+			}
 		case "enter":
 			switch {
 			case m.tab == tabActivities:
@@ -251,7 +255,7 @@ func (m Model) pickerPanel(width, height int) string {
 		hint = "↑/↓ choose · enter race that ride again · ★ fastest on that course from that start · tab activities · esc back"
 	case tabActivities:
 		lines = append(lines, m.activityRows(height-6)...)
-		hint = "↑/↓ choose · enter race that ride (course rides) · s save the FIT file to " + m.exportDir + " · tab courses · esc back"
+		hint = "↑/↓ choose · i summary · enter race that ride (course rides) · s save the FIT file to " + m.exportDir + " · tab courses · esc back"
 	case tabCourses:
 		for i, c := range m.courseList {
 			cursor := "  "

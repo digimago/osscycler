@@ -236,6 +236,11 @@ public sealed class HudView
     // digits' size.
     public void Arrange(Layout l) => _layout = l;
 
+    // Summary shows a ride's summary over the rest (null: none); Graph the
+    // ride graph along the bottom (null: none), power by zone from ftp.
+    public void Summary(Osscycler.V1.ActivitySummary? s) => _list.ShowSummary(s);
+    public void Graph(RideHistory? h, double ftp) => _strips.Graph(h, ftp);
+
     // Head sets what the head itself shows: a question waiting for its
     // second key, a notice (a command the core refused) and the key help
     // (null: none). Call it before Update.

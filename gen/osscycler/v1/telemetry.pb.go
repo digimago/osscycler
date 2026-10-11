@@ -1265,9 +1265,12 @@ type Activity struct {
 	Virtual bool   `protobuf:"varint,8,opt,name=virtual,proto3" json:"virtual,omitempty"`
 	Laps    uint32 `protobuf:"varint,9,opt,name=laps,proto3" json:"laps,omitempty"`
 	// Why the file can't be read; the summary is empty then.
-	Error         string `protobuf:"bytes,10,opt,name=error,proto3" json:"error,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Error string `protobuf:"bytes,10,opt,name=error,proto3" json:"error,omitempty"`
+	// The highest heart rate held for 10 s (0: none read): what the rider
+	// has shown, a lower bound on their maximum, never an estimate of it.
+	HeldMaxHeartRateBpm uint32 `protobuf:"varint,11,opt,name=held_max_heart_rate_bpm,json=heldMaxHeartRateBpm,proto3" json:"held_max_heart_rate_bpm,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *Activity) Reset() {
@@ -1368,6 +1371,13 @@ func (x *Activity) GetError() string {
 		return x.Error
 	}
 	return ""
+}
+
+func (x *Activity) GetHeldMaxHeartRateBpm() uint32 {
+	if x != nil {
+		return x.HeldMaxHeartRateBpm
+	}
+	return 0
 }
 
 type ExportActivityRequest struct {
@@ -6169,7 +6179,7 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\x16ListActivitiesResponse\x126\n" +
 	"\n" +
 	"activities\x18\x01 \x03(\v2\x16.osscycler.v1.ActivityR\n" +
-	"activities\"\x9a\x02\n" +
+	"activities\"\xd0\x02\n" +
 	"\bActivity\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1d\n" +
 	"\n" +
@@ -6183,7 +6193,8 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\avirtual\x18\b \x01(\bR\avirtual\x12\x12\n" +
 	"\x04laps\x18\t \x01(\rR\x04laps\x12\x14\n" +
 	"\x05error\x18\n" +
-	" \x01(\tR\x05error\"+\n" +
+	" \x01(\tR\x05error\x124\n" +
+	"\x17held_max_heart_rate_bpm\x18\v \x01(\rR\x13heldMaxHeartRateBpm\"+\n" +
 	"\x15ExportActivityRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\"M\n" +
 	"\x16ExportActivityResponse\x12\x1d\n" +

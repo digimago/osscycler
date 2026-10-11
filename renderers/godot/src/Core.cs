@@ -292,9 +292,11 @@ public sealed class Core : IDisposable, Head.ICommands
     public async Task<RiderProfile> SetView(string view) =>
         (await Call(() => Client().SetProfileAsync(new SetProfileRequest { View = view }, Opts()).ResponseAsync)).Profile;
 
-    public async Task<RiderProfile> SetProfile(double? weightKg, double? ftpW, double? heightCm)
+    public async Task<RiderProfile> SetProfile(double? weightKg, double? ftpW, double? heightCm, double? maxHrBpm)
     {
         var req = new SetProfileRequest();
+        if (maxHrBpm is double hr)
+            req.MaxHrBpm = hr;
         if (weightKg is double w)
             req.WeightKg = w;
         if (ftpW is double f)
@@ -317,6 +319,12 @@ public sealed class Core : IDisposable, Head.ICommands
                 _courses[c.Id] = c;
         return resp.Courses;
     }
+
+    public Task<GetActivityHistoryResponse> ActivityHistory(string name, uint since) =>
+        Call(() => Client().GetActivityHistoryAsync(new GetActivityHistoryRequest { Name = name, SinceS = since }, Opts()).ResponseAsync);
+
+    public async Task<ActivitySummary> ActivitySummary(string name) =>
+        (await Call(() => Client().GetActivitySummaryAsync(new GetActivitySummaryRequest { Name = name }, Opts()).ResponseAsync)).Summary;
 
     public async Task<IList<RideResult>> ListResults() => (await Call(() => Client().ListResultsAsync(new ListResultsRequest(), Opts()).ResponseAsync)).Results;
     public async Task<IList<Activity>> ListActivities() => (await Call(() => Client().ListActivitiesAsync(new ListActivitiesRequest(), Opts()).ResponseAsync)).Activities;

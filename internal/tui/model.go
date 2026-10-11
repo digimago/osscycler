@@ -89,6 +89,13 @@ type Model struct {
 	// screen until askUntil.
 	asking   string
 	askUntil time.Time
+	// The activity being recorded, for the ride graph (graph.go).
+	history         rideHistory
+	fetchingHistory bool
+	// The end-of-ride summary on screen (summary.go); summaryFromTab: it
+	// was opened from ACTIVITIES, and closing it goes back there.
+	summary        *pb.ActivitySummary
+	summaryFromTab bool
 }
 
 // ask shows a request for a confirming key press over the screen.
@@ -168,6 +175,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.onEnded(msg)
 	case profileSavedMsg:
 		return m.onProfileSaved(msg)
+	case summaryMsg:
+		return m.onSummary(msg), nil
+	case historyMsg:
+		m = m.onHistory(msg)
+		return m.needHistory()
 	case countdownMsg:
 		return m.onCountdown(msg)
 	case layoutSavedMsg:
@@ -218,7 +230,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m, c2 := m.needWorkout()
 		m, c3 := m.animate()
 		m, c4 := m.trackLaps(old)
-		return m, tea.Batch(c1, c2, c3, c4)
+		m, c5 := m.needHistory()
+		return m, tea.Batch(c1, c2, c3, c4, c5)
 	case ConnMsg:
 		m.connected, m.connErr = msg.Err == nil, msg.Err
 		if msg.Err != nil {
@@ -301,10 +314,16 @@ func (m Model) handleKey(key string) (tea.Model, tea.Cmd) {
 	if next, cmd, ok := m.layoutKey(key); ok {
 		return next, cmd
 	}
+	if next, cmd, ok := m.graphKey(key); ok {
+		return next, cmd
+	}
 	if key == "q" && m.draft == nil && m.cmds == nil {
 		return m, tea.Quit // a read-only screen has no menu to go back to
 	}
 	if m.cmds != nil {
+		if next, cmd, ok := m.summaryKey(key); ok {
+			return next, cmd
+		}
 		if next, cmd, ok := m.quitKey(key); ok {
 			return next, cmd
 		}
@@ -364,22 +383,29 @@ func (m Model) renderScreen() string {
 
 	// The grade strip (rides) or workout profile (workouts) sits at the
 	// very bottom.
-	var strip string
+	var strip, graph string
 	switch {
-	case m.help || m.arranging != nil || m.draft != nil || m.picking || m.input != nil || m.ending != nil || m.onboarding != nil || m.menu != nil || m.quitting:
+	case m.help || m.arranging != nil || m.draft != nil || m.picking || m.input != nil || m.ending != nil || m.onboarding != nil || m.menu != nil || m.quitting || m.summary != nil:
 	case m.showWorkout() && m.workoutActive():
 		if w := m.workoutDefs[m.wk().GetId()]; w != nil && m.height >= 20 {
 			strip = workoutProfile(w, m.wk().GetElapsedS(), m.width, 4)
 		}
+		graph = m.graphStrip()
 	case m.showRide() && m.rideActive():
 		pos := m.ride().GetDistanceM()
 		strip = gradeStrip(m.courses[m.ride().GetCourseId()], pos, m.loopGhost(pos), m.width)
+		graph = m.graphStrip()
+	default:
+		graph = m.graphStrip()
 	}
 
 	// Big tiles need two rows of label + digits + unit, plus the footer.
 	bodyH := m.height - lipgloss.Height(footer)
 	if strip != "" {
 		bodyH -= lipgloss.Height(strip)
+	}
+	if graph != "" {
+		bodyH -= lipgloss.Height(graph)
 	}
 	var body string
 	switch {
@@ -391,6 +417,8 @@ func (m Model) renderScreen() string {
 		body = m.onboardPanel(m.width, bodyH)
 	case m.quitting:
 		body = m.quitPanel(m.width, bodyH)
+	case m.summary != nil:
+		body = m.summaryPanel(m.width, bodyH)
 	case m.menu != nil:
 		body = m.menuPanel(m.width, bodyH)
 	case m.ending != nil:
@@ -414,10 +442,15 @@ func (m Model) renderScreen() string {
 		body = m.compact(ms)
 	}
 	body = m.withAsk(m.withLaps(body))
-	if strip != "" {
-		return lipgloss.JoinVertical(lipgloss.Left, body, footer, strip)
+	parts := []string{body}
+	if graph != "" {
+		parts = append(parts, graph)
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, body, footer)
+	parts = append(parts, footer)
+	if strip != "" {
+		parts = append(parts, strip)
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
 
 // sizes are the digit sizes tiles may use, largest first: z keeps them

@@ -9,6 +9,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../src/Hud/Format.cs" />
+    <Compile Include="../../src/Hud/RideHistory.cs" />
     <Compile Include="../../src/Hud/Cadence.cs" />
     <Compile Include="../../src/Hud/Tiles.cs" />
     <Compile Include="../../src/Hud/Layout.cs" />
@@ -19,6 +20,7 @@
     <Compile Include="../../src/Head/Controller.Setup.cs" />
     <Compile Include="../../src/Head/Controller.Layout.cs" />
     <Compile Include="../../src/Head/Controller.Form.cs" />
+    <Compile Include="../../src/Head/Controller.Graph.cs" />
     <Compile Include="../../src/Head/Controller.Pause.cs" />
     <Compile Include="../../src/Head/Controller.Quit.cs" />
     <Compile Include="../../src/Head/WorkoutForm.cs" />

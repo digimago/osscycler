@@ -291,6 +291,7 @@ func (s *telemetryServer) ListActivities(context.Context, *pb.ListActivitiesRequ
 		} else {
 			out.StartUnixMs, out.ElapsedS, out.TimerS = a.Start.UnixMilli(), a.Elapsed.Seconds(), a.Timer.Seconds()
 			out.DistanceM, out.AvgPowerW, out.Virtual, out.Laps = a.DistanceM, a.AvgPowerW, a.Virtual, uint32(a.Laps)
+			out.HeldMaxHeartRateBpm = uint32(a.HeldMaxHR)
 		}
 		resp.Activities = append(resp.Activities, out)
 	}

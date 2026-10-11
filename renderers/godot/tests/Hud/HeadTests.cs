@@ -479,7 +479,7 @@ public class LayoutTests
             var l = h.List()!;
             Assert.Equal("COURSE RIDE", l.Subtitle);
             Assert.Equal(new[] { "1", "2", "3", "4", "5" }, l.Rows.Take(5).Select(r => r.Key));
-            Assert.Equal(Layout.Labels[Layout.LookAhead], l.Rows[^3].Label); // then the profile and the graph
+            Assert.Equal(Layout.Labels[Layout.LookAhead], l.Rows[^4].Label); // then the profile, the graph and the minimap
             // Climbed (hidden, the 9th choice) to the second place; power
             // down one; grade hidden; the look-ahead strip hidden.
             for (int i = 0; i < 8; i++)
@@ -494,6 +494,7 @@ public class LayoutTests
             h.Key(" ", st, 0); // grade
             for (int i = 0; i < 20; i++)
                 h.Key("down", st, 0);
+            h.Key("up", st, 0);
             h.Key("up", st, 0);
             h.Key("up", st, 0);
             h.Key(" ", st, 0); // the look-ahead

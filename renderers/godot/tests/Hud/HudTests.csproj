@@ -14,6 +14,7 @@
     <Compile Include="../../src/Hud/Tiles.cs" />
     <Compile Include="../../src/Hud/Layout.cs" />
     <Compile Include="../../src/Hud/Strips.cs" />
+    <Compile Include="../../src/Hud/Minimap.cs" />
     <Compile Include="../../src/Hud/Moments.cs" />
     <Compile Include="../../src/Head/Controller.cs" />
     <Compile Include="../../src/Head/Controller.Menus.cs" />

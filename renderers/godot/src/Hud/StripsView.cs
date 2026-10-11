@@ -1,3 +1,4 @@
+using System;
 using Godot;
 using Osscycler.V1;
 
@@ -23,6 +24,9 @@ public partial class StripsView : Control
     // course's or the workout's profile.
     public bool ShowLookAhead { get; set; } = true;
     public bool ShowProfile { get; set; } = true;
+    public bool ShowMap { get; set; } = true;
+
+    Minimap? _map; // the course's, made when it changes
 
     // The ride graph at the bottom left (null: none): the activity being
     // recorded, power by zone (ftp; one colour without it) and heart rate.
@@ -79,6 +83,13 @@ public partial class StripsView : Control
         }
         if (_course == null)
             return;
+        if (ShowMap)
+        {
+            if (_map?.CourseId != _course.Id)
+                _map = new Minimap(_course);
+            float side = Mathf.Min(280, w * 0.15f);
+            Map(new Rect2(w - Margin - Pad - side, 236, side, side));
+        }
         float profileW = Mathf.Min(400, w * 0.22f);
         float aheadW = Mathf.Min(960, w * 0.5f);
         if (ShowLookAhead)
@@ -226,6 +237,42 @@ public partial class StripsView : Control
         }
         DrawString(_bold, labels + new Vector2(2, 18), $"{top:F0} W", HorizontalAlignment.Left, -1, 18, Color8(Palette.Power));
         DrawString(_regular, new Vector2(r.Position.X, r.End.Y + 22), Format.Clock(h.Count), HorizontalAlignment.Right, r.Size.X, 18, new Color(1, 1, 1, 0.8f));
+    }
+
+    // Map draws the course from above in r, north up: the line ahead
+    // light, the part ridden dim, the start chequered, the ghost and the
+    // rider (an arrow the way the course runs).
+    void Map(Rect2 r)
+    {
+        Panel(r);
+        var m = _map!;
+        if (m.Points.Count < 2)
+            return;
+        var c = _course!;
+        double len = c.DistanceM, pos = c.Loop && len > 0 ? _pos % len : _pos;
+        Vector2 P(double x, double y) => r.Position + new Vector2((float)x, (float)y) * r.Size.X;
+        Color ahead = new(1, 1, 1, 0.9f), ridden = new(1, 1, 1, 0.35f);
+        for (int i = 1; i < m.Points.Count; i++)
+        {
+            var (ax, ay, ad) = m.Points[i - 1];
+            var (bx, by, _) = m.Points[i];
+            DrawLine(P(ax, ay), P(bx, by), ad < pos ? ridden : ahead, 3, true);
+        }
+        var (sx, sy, _) = m.Points[0];
+        var s0 = P(sx, sy);
+        for (int q = 0; q < 4; q++)
+            DrawRect(new Rect2(s0 + new Vector2(q % 2 * 5 - 5, q / 2 * 5 - 5), new Vector2(5, 5)), (q == 0 || q == 3) ? Colors.White : Colors.Black);
+        if (_ghost >= 0)
+        {
+            var (gx, gy, _) = m.At(_ghost);
+            DrawCircle(P(gx, gy), 6, Color8(Palette.Ghost));
+        }
+        var (hx, hy, heading) = m.At(_pos);
+        var at = P(hx, hy);
+        var dir = new Vector2((float)Math.Sin(heading), -(float)Math.Cos(heading));
+        var side = new Vector2(-dir.Y, dir.X);
+        DrawColoredPolygon(new[] { at + dir * 13, at - dir * 7 + side * 8, at - dir * 7 - side * 8 }, Color8(Palette.Power));
+        DrawPolyline(new[] { at + dir * 13, at - dir * 7 + side * 8, at - dir * 7 - side * 8, at + dir * 13 }, Colors.Black, 2, true);
     }
 
     void Diamond(Vector2 at, float s, Color c) =>

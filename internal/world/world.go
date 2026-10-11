@@ -463,7 +463,8 @@ func Build(c *course.Course, o Options) (*World, error) {
 	}
 	near := newRouteGrid(coarse, 400)
 	progress(0.75)
-	ps := plants(&t, &surface{t: &t, lists: map[[2]int]chunkLists{}}, o.Land, keys, o.Buildings, parks, ways, near)
+	drawn := newLandSurface(w.prims, func(m int) bool { return w.doc.MaterialName(m) == "terrain" })
+	ps := plants(&t, &surface{t: &t, lists: map[[2]int]chunkLists{}, drawn: drawn}, o.Land, keys, o.Buildings, parks, ways, near)
 	if len(ps) > 0 {
 		if err := w.addTemplates(); err != nil {
 			return nil, err
@@ -490,7 +491,7 @@ func Build(c *course.Course, o Options) (*World, error) {
 	}
 	progress(0.9)
 	if gm, index := groundMap(newSpots(&t, o.Land, o.Buildings, parks), &t, &surface{t: &t, lists: map[[2]int]chunkLists{}},
-		newLandSurface(w.prims, func(m int) bool { return w.doc.MaterialName(m) == "terrain" }), groundKeys, o.ChunkM, near); len(index) > 0 {
+		drawn, groundKeys, o.ChunkM, near); len(index) > 0 {
 		w.ground = gm
 		g := &w.Manifest.Ground
 		g.File, g.CellM, g.Layout, g.Classes, g.Chunks = GroundFile, groundCellM, GroundLayout, GroundClasses, index

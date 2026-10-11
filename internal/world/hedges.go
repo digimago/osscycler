@@ -174,7 +174,7 @@ func hedges(t *terrain, s *surface, sp *spots, wp *wayPlaces) []plant {
 		// A centimetre or two between neighbours, so overlapping faces
 		// never lie in one plane.
 		scale *= 0.985 + 0.03*unit(h)
-		out = append(out, plant{kind: kHedge + kind, x: float32(e), y: float32(s.at(e, n)), z: float32(-n),
+		out = append(out, plant{kind: kHedge + kind, x: float32(e), y: float32(s.stand(e, n)), z: float32(-n),
 			s: float32(scale), yaw: float32(math.Atan2(dn, de))})
 	}
 	free := func(e, n, margin float64) bool {

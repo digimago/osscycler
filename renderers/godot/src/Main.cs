@@ -679,9 +679,7 @@ public partial class Main : Node3D
         var b = w.InLane(at + BendSpanM) - here;
         a.Y = 0;
         b.Y = 0;
-        float turn = a.LengthSquared() > 0 && b.LengthSquared() > 0 ? (-a).SignedAngleTo(b, Vector3.Up) : 0;
-        float curvature = turn / (2 * (float)BendSpanM); // left positive
-        float roll = HeadLean * Mathf.Atan((float)(_speed * _speed) * curvature / 9.81f);
+        float roll = HeadLean * BikeLean(a, b, (float)_speed);
 
         // Smoothed lightly against the path's 5 m steps; a new world snaps.
         float k = _gaze == Vector3.Zero ? 1 : 1 - Mathf.Exp(-SteerPerS * (float)delta);
@@ -789,6 +787,27 @@ public partial class Main : Node3D
         return _ghost.At(_clock);
     }
 
+    // MaxLeanRad: a bike on a road leans at most this far (racers in a
+    // fast bend about 45°; riders on public roads much less).
+    const float MaxLeanRad = 35 * Mathf.Pi / 180;
+
+    // BikeLean is the bike's lean (tan = v²/(g·r), left positive) at speed
+    // through a bend from a (behind) to b (ahead), both horizontal and
+    // relative to here. The curvature is the turn over the chords' real
+    // length, not the nominal span: where the path's points bunch, the
+    // chords are short and a centimetre's zigzag turned the span's
+    // curvature into a radius of metres, and the rider fell flat at 40 km/h
+    // (owner, 2026-10-11: Amsterdam Water Supply Dunes at 15.14 km).
+    static float BikeLean(Vector3 a, Vector3 b, float speed)
+    {
+        float la = a.Length(), lb = b.Length();
+        if (la < 1f || lb < 1f)
+            return 0;
+        float turn = (-a).SignedAngleTo(b, Vector3.Up);
+        float curvature = turn / (la + lb);
+        return Mathf.Clamp(Mathf.Atan(speed * speed * curvature / 9.81f), -MaxLeanRad, MaxLeanRad);
+    }
+
     // Ride puts a cyclist at distance d on the riding line, aside metres to
     // the right of it: along the road, nose up its grade, leaning into
     // bends as a bike does (tan = v²/(g·r)).
@@ -804,8 +823,7 @@ public partial class Main : Node3D
         float slope = (w.At(d + 2).Y - w.At(d - 2).Y) / 4;
         var a = (w.InLane(d - BendSpanM) - here) with { Y = 0 };
         var b = (w.InLane(d + BendSpanM) - here) with { Y = 0 };
-        float turn = a.LengthSquared() > 0 && b.LengthSquared() > 0 ? (-a).SignedAngleTo(b, Vector3.Up) : 0;
-        float lean = Mathf.Atan(speed * speed * turn / (2 * (float)BendSpanM) / 9.81f);
+        float lean = BikeLean(a, b, speed);
         var basis = Basis.LookingAt(f, Vector3.Up).Rotated(right, Mathf.Atan(slope)).Rotated(f, -lean);
         c.Node.Transform = new Transform3D(basis, here + right * aside);
     }

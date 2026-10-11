@@ -1705,6 +1705,15 @@ func (n *network) path() (d, x, y, z, w, onRoadF []float64) {
 				t := math.Abs(gap-step) * 2
 				if cd.line != pc.line || cd.road != pc.road {
 					t += 4 // a change of road
+					// Onto a road metres above or below: roads that meet
+					// share their node's height (joinHeights), so this is
+					// one passing over or under the other, never a turn
+					// (owner, 2026-10-10: at Zandvoort the rider dropped
+					// 7.5 m in 5 m onto the beach access road below the
+					// boulevard and climbed back up it).
+					if math.Abs(cd.ele-pc.ele) > maxStepUpM+maxStepGrade*step {
+						t += unridableCost
+					}
 				}
 				if v := acc[i-1][k] + t; v < bestCost {
 					bestCost, bestK = v, k
@@ -1780,6 +1789,16 @@ func (n *network) ownHeight(d, e, no float64) float64 {
 // lies this close to it (a cycle path beside it is further than the road's
 // own wobble).
 const snapM = sidepathM + 5
+
+// A change of road between two path points climbs or drops at most
+// maxStepUpM plus maxStepGrade of a step along the course (not of the hop
+// sideways, which can be tens of metres onto a road below); more costs
+// unridableCost (not forbidden, so the match always has a way through).
+const (
+	maxStepUpM    = 0.5
+	maxStepGrade  = 0.25
+	unridableCost = 1000.0
+)
 
 // wrongWayCost: a one-way road against the route's direction costs more
 // than the bonus for the course's road and any offset within parallelM.

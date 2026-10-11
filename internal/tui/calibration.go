@@ -31,7 +31,12 @@ type Commands interface {
 	SetFTP(ctx context.Context, watts float64) (float64, error)
 	EndActivity(ctx context.Context, discard bool) (file string, err error)
 	ListResults(ctx context.Context) ([]*pb.RideResult, error)
-	SetProfile(ctx context.Context, weightKg, ftpW, heightCm *float64) (*pb.RiderProfile, error)
+	SetProfile(ctx context.Context, weightKg, ftpW, heightCm, maxHR *float64) (*pb.RiderProfile, error)
+	// ActivityHistory is an activity's samples from second since on: the
+	// one being recorded (name empty) or a finished one.
+	ActivityHistory(ctx context.Context, name string, since uint32) (*pb.GetActivityHistoryResponse, error)
+	// ActivitySummary sums an activity up, as ActivityHistory names it.
+	ActivitySummary(ctx context.Context, name string) (*pb.ActivitySummary, error)
 	// SetSimulated puts a simulated rider in place of the trainer, or
 	// takes it away.
 	SetSimulated(ctx context.Context, on bool) error

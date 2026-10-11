@@ -37,7 +37,7 @@ public interface ICommands
     Task SetLevel(double pct);
     Task ReleaseControl();
     // SetProfile saves what is given (null: unchanged); the profile now.
-    Task<RiderProfile> SetProfile(double? weightKg, double? ftpW, double? heightCm);
+    Task<RiderProfile> SetProfile(double? weightKg, double? ftpW, double? heightCm, double? maxHrBpm);
     // SetView saves the rider's view in a 3D renderer ("chase" or "eyes").
     Task<RiderProfile> SetView(string view);
     // EndActivity saves (or discards) the recording; the file saved.
@@ -46,6 +46,11 @@ public interface ICommands
     Task CancelCalibration();
     // SaveActivity saves a recording's FIT file on this machine; the path.
     Task<string> SaveActivity(string name);
+    // ActivityHistory is an activity's samples from riding second since on:
+    // the one being recorded (name "") or a finished one.
+    Task<GetActivityHistoryResponse> ActivityHistory(string name, uint since);
+    // ActivitySummary sums an activity up, named as for ActivityHistory.
+    Task<ActivitySummary> ActivitySummary(string name);
 }
 
 // Controller is the renderer as a head (owner, 2026-10-09: a full
@@ -86,7 +91,7 @@ public sealed partial class Controller
     // picker, a prompt, the layout editor, the workout form, onboarding,
     // the end-ride question, a spin-down's countdown): keys of the
     // renderer's own (the debug mark's space) are only for then.
-    public bool Free => Help == null && _arranging == null && _form == null && _onboard == null && !_ending && !_hardwareUp
+    public bool Free => Help == null && _arranging == null && _form == null && _onboard == null && !_ending && !_hardwareUp && Summary == null
         && double.IsNaN(_countdownTo) && _prompt == null && _screen == Screen.None && !_quitting;
 
     // Note shows a notice from the renderer itself (a mark made).
@@ -124,6 +129,8 @@ public sealed partial class Controller
                 : _screen != Screen.None ? ScreenHelp() : HelpFor(st);
             return;
         }
+        if (SummaryKey(key))
+            return;
         if (_arranging != null)
         {
             ArrangeKey(key);
@@ -150,7 +157,7 @@ public sealed partial class Controller
             MenuKey(key, st, now);
             return;
         }
-        if (OpenKey(key, st) || LayoutKey(key, st))
+        if (OpenKey(key, st) || LayoutKey(key, st) || GraphKey(key))
             return;
         var r = st?.Ride;
         var w = st?.Workout;
@@ -250,6 +257,7 @@ public sealed partial class Controller
         var common = new List<(string, string)>
         {
             ("o", "arrange the tiles and strips of this screen"), ("z", "digit size: large or medium"),
+            ("t", "the graph of power and heart rate over the ride: show or hide"),
             ("v", "the view: from the rider's eyes, or from behind the rider"),
             ("? h F1", "this help (any key closes it)"), ("q", "the menu (pauses what is under way); quit from there"),
         };

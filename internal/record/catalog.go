@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/digimago/osscycler/internal/effort"
 	"github.com/digimago/osscycler/internal/fit"
 )
 
@@ -25,6 +26,10 @@ type Activity struct {
 	AvgPowerW float64 // 0 when unknown
 	Virtual   bool    // has course laps
 	Laps      int
+	// HeldMaxHR is the highest heart rate held for HeldHRS seconds (0:
+	// none read): what the rider has shown, not their maximum, and over a
+	// spike of a strap that misreads.
+	HeldMaxHR int
 	Err       error // the file doesn't decode; the rest is empty
 }
 
@@ -130,8 +135,15 @@ func summarise(path string) Activity {
 	}
 	var a Activity
 	found := false
+	var hr []int
 	for _, m := range msgs {
 		switch m.Num {
+		case recordMsg.Num:
+			v, ok := m.Get(3)
+			if !ok {
+				v = 0
+			}
+			hr = append(hr, int(v))
 		case sessionMsg.Num:
 			found = true
 			if v, ok := m.Get(2); ok {
@@ -160,5 +172,69 @@ func summarise(path string) Activity {
 	if !found {
 		return Activity{Err: errors.New("no session summary")}
 	}
+	a.HeldMaxHR = heldMax(hr, HeldHRS)
 	return a
+}
+
+// HeldHRS: a heart rate counts as reached once held this long (seconds of
+// records); a strap that misreads spikes for a second or two.
+const HeldHRS = 10
+
+// heldMax is the highest value held for n consecutive samples (the
+// highest of each window's lowest); 0 for none (no reading counts as 0).
+func heldMax(v []int, n int) int {
+	best := 0
+	for i := 0; i+n <= len(v); i++ {
+		low := v[i]
+		for _, x := range v[i+1 : i+n] {
+			low = min(low, x)
+		}
+		best = max(best, low)
+	}
+	return best
+}
+
+// Samples reads a finished recording's samples, one a second of riding
+// time, and the FTP it was ridden with (0 when it has none). The name is
+// checked as Open checks it.
+func (c *Catalog) Samples(name string) ([]effort.Sample, float64, error) {
+	f, _, err := c.Open(name)
+	if err != nil {
+		return nil, 0, err
+	}
+	b, err := io.ReadAll(f)
+	f.Close()
+	if err != nil {
+		return nil, 0, err
+	}
+	msgs, err := fit.Decode(b)
+	if err != nil {
+		return nil, 0, err
+	}
+	var out []effort.Sample
+	ftp := 0.0
+	reading := func(m fit.Msg, num uint8) int {
+		if v, ok := m.Get(num); ok {
+			return int(v)
+		}
+		return -1
+	}
+	for _, m := range msgs {
+		switch m.Num {
+		case recordMsg.Num:
+			x := effort.Sample{T: float64(len(out)), PowerW: reading(m, 7), HR: reading(m, 3), Cadence: reading(m, 4)}
+			if v, ok := m.Get(6); ok {
+				x.SpeedMS = float64(v) / 1000
+			}
+			if v, ok := m.Get(5); ok {
+				x.DistM = float64(v) / 100
+			}
+			out = append(out, x)
+		case zonesTargetMsg.Num:
+			if v, ok := m.Get(3); ok {
+				ftp = float64(v)
+			}
+		}
+	}
+	return out, ftp, nil
 }

@@ -21,7 +21,9 @@ type Profile struct {
 	WeightKg float64 `json:"weight_kg,omitempty"`
 	FTPW     float64 `json:"ftp_w,omitempty"`
 	// HeightCm sizes the rider's drag; optional (zero: unknown).
-	HeightCm      float64 `json:"height_cm,omitempty"`
+	HeightCm float64 `json:"height_cm,omitempty"`
+	// MaxHRBpm sets the heart rate zones; optional (zero: unknown).
+	MaxHRBpm      float64 `json:"max_hr_bpm,omitempty"`
 	DifficultyPct float64 `json:"difficulty_pct"`
 	BikeKg        float64 `json:"bike_kg"`
 	// View is how a 3D renderer shows the ride (ViewChase, ViewEyes; ""
@@ -80,6 +82,8 @@ const (
 	MaxFTPW     = 600
 	MinHeightCm = 120
 	MaxHeightCm = 220
+	MinMaxHRBpm = 100
+	MaxMaxHRBpm = 230
 )
 
 // Complete reports whether onboarding has what it needs.
@@ -93,6 +97,7 @@ const (
 	FTP
 	Difficulty
 	Height
+	MaxHR
 	numFields
 )
 
@@ -168,6 +173,8 @@ func field(p *Profile, f Field) *float64 {
 		return &p.FTPW
 	case Height:
 		return &p.HeightCm
+	case MaxHR:
+		return &p.MaxHRBpm
 	}
 	return &p.DifficultyPct
 }
@@ -198,6 +205,10 @@ func Check(f Field, v float64) error {
 	case Height:
 		if v < MinHeightCm || v > MaxHeightCm {
 			return rangeError(fmt.Sprintf("height %.0f cm: want %d to %d cm", v, MinHeightCm, MaxHeightCm))
+		}
+	case MaxHR:
+		if v < MinMaxHRBpm || v > MaxMaxHRBpm {
+			return rangeError(fmt.Sprintf("maximum heart rate %.0f bpm: want %d to %d bpm", v, MinMaxHRBpm, MaxMaxHRBpm))
 		}
 	case Difficulty:
 		if v < 0 || v > 100 {

@@ -106,7 +106,7 @@ func (s *Service) applyDrag() {
 // SetProfile changes the weight, FTP, height and/or view (nil leaves one
 // as it is), checking all before applying any, and returns the profile in
 // effect. Out-of-range values match profile.ErrOutOfRange.
-func (s *Service) SetProfile(ctx context.Context, weightKg, ftpW, heightCm *float64, view *string) (telemetry.Profile, error) {
+func (s *Service) SetProfile(ctx context.Context, weightKg, ftpW, heightCm, maxHR *float64, view *string) (telemetry.Profile, error) {
 	if view != nil {
 		if err := profile.CheckView(*view); err != nil {
 			return s.state(), err
@@ -115,7 +115,7 @@ func (s *Service) SetProfile(ctx context.Context, weightKg, ftpW, heightCm *floa
 	for _, c := range []struct {
 		f profile.Field
 		v *float64
-	}{{profile.Weight, weightKg}, {profile.FTP, ftpW}, {profile.Height, heightCm}} {
+	}{{profile.Weight, weightKg}, {profile.FTP, ftpW}, {profile.Height, heightCm}, {profile.MaxHR, maxHR}} {
 		if c.v != nil {
 			if err := profile.Check(c.f, *c.v); err != nil {
 				return s.state(), err
@@ -127,6 +127,12 @@ func (s *Service) SetProfile(ctx context.Context, weightKg, ftpW, heightCm *floa
 			return s.state(), err
 		}
 		s.applyDrag()
+		s.publish()
+	}
+	if maxHR != nil {
+		if err := s.set(profile.MaxHR, *maxHR); err != nil {
+			return s.state(), err
+		}
 		s.publish()
 	}
 	if weightKg != nil {
@@ -191,7 +197,7 @@ func (s *Service) state() telemetry.Profile {
 	return telemetry.Profile{
 		Known: true, Complete: p.Complete(), NeedWeight: p.WeightKg <= 0, NeedFTP: p.FTPW <= 0,
 		WeightKg: p.WeightKg, FTPW: p.FTPW, DifficultyPct: p.DifficultyPct, SuggestedFTPW: SuggestedFTP(p.WeightKg),
-		HeightCm: p.HeightCm, CdA: s.cda(),
+		HeightCm: p.HeightCm, MaxHRBpm: p.MaxHRBpm, CdA: s.cda(),
 		WeightForced: s.m.Forced(profile.Weight), FTPForced: s.m.Forced(profile.FTP),
 		DifficultyForced: s.m.Forced(profile.Difficulty), HeightForced: s.m.Forced(profile.Height),
 		CdAForced: s.cdaForced(), Path: s.m.Path(), View: p.ViewOrDefault(),

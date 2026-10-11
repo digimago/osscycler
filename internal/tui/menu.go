@@ -26,7 +26,7 @@ var menuItems = []menuItem{
 	{"r", "Ride a course", "a GPX course, racing your best time on it"},
 	{"w", "Workout", "a structured workout, or a fixed power (ERG)"},
 	{"a", "Activities", "your recorded rides: save FIT files, race past rides"},
-	{"p", "Profile", "weight, height and FTP"},
+	{"p", "Profile", "weight, height, FTP and maximum heart rate"},
 	{"c", "Calibrate", "spin-down calibration of the trainer"},
 	{"q", "Quit", "close the screen (asks first if a ride is under way)"},
 }

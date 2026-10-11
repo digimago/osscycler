@@ -28,6 +28,7 @@ import (
 	"github.com/digimago/osscycler/internal/ant"
 	"github.com/digimago/osscycler/internal/control"
 	"github.com/digimago/osscycler/internal/course"
+	"github.com/digimago/osscycler/internal/effort"
 	"github.com/digimago/osscycler/internal/history"
 	"github.com/digimago/osscycler/internal/profile"
 	"github.com/digimago/osscycler/internal/record"
@@ -65,6 +66,9 @@ type History interface {
 type Activities interface {
 	List() ([]record.Activity, error)
 	Open(name string) (io.ReadCloser, int64, error)
+	// Samples reads a finished recording's samples and the FTP it was
+	// ridden with (0: none).
+	Samples(name string) ([]effort.Sample, float64, error)
 }
 
 // DownloadActivity fetches a recording from the core into w and returns
@@ -109,7 +113,7 @@ type Control interface {
 
 // Profile changes the rider's settings.
 type Profile interface {
-	SetProfile(ctx context.Context, weightKg, ftpW, heightCm *float64, view *string) (telemetry.Profile, error)
+	SetProfile(ctx context.Context, weightKg, ftpW, heightCm, maxHR *float64, view *string) (telemetry.Profile, error)
 }
 
 // Simulator puts a simulated rider in place of the trainer, or takes it
@@ -121,6 +125,9 @@ type Simulator interface {
 // Recorder ends the recorded activity on the rider's request.
 type Recorder interface {
 	End(ctx context.Context, discard bool) (file string, err error)
+	// History is the activity under way ("" when none) and its samples
+	// from riding second since on.
+	History(since int) (file string, samples []effort.Sample)
 }
 
 // Services are the optional commands behind the API; nil ones answer
@@ -301,6 +308,7 @@ func (s *telemetryServer) ListActivities(context.Context, *pb.ListActivitiesRequ
 		} else {
 			out.StartUnixMs, out.ElapsedS, out.TimerS = a.Start.UnixMilli(), a.Elapsed.Seconds(), a.Timer.Seconds()
 			out.DistanceM, out.AvgPowerW, out.Virtual, out.Laps = a.DistanceM, a.AvgPowerW, a.Virtual, uint32(a.Laps)
+			out.HeldMaxHeartRateBpm = uint32(a.HeldMaxHR)
 		}
 		resp.Activities = append(resp.Activities, out)
 	}
@@ -343,7 +351,7 @@ func (s *telemetryServer) SetProfile(ctx context.Context, req *pb.SetProfileRequ
 	if s.profile == nil {
 		return nil, status.Error(codes.Unimplemented, "this core has no rider profile")
 	}
-	p, err := s.profile.SetProfile(ctx, req.WeightKg, req.FtpW, req.HeightCm, req.View)
+	p, err := s.profile.SetProfile(ctx, req.WeightKg, req.FtpW, req.HeightCm, req.MaxHrBpm, req.View)
 	switch {
 	case errors.Is(err, profile.ErrOutOfRange):
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -370,6 +378,76 @@ func (s *telemetryServer) ListResults(context.Context, *pb.ListResultsRequest) (
 		})
 	}
 	return resp, nil
+}
+
+// samples are an activity's samples from second since on: the one being
+// recorded (name empty, or its name) or a finished one, with its name and
+// the FTP it was ridden with (0: not known).
+func (s *telemetryServer) samples(name string, since int) (string, []effort.Sample, float64, error) {
+	if s.recorder != nil {
+		if cur, ss := s.recorder.History(since); name == "" || name == cur {
+			if cur == "" {
+				return "", nil, 0, status.Error(codes.FailedPrecondition, "no ride is being recorded")
+			}
+			st, _ := s.hub.Latest()
+			return cur, ss, st.Workout.FTPW, nil
+		}
+	}
+	if name == "" {
+		return "", nil, 0, status.Error(codes.FailedPrecondition, "no ride is being recorded")
+	}
+	if s.activities == nil {
+		return "", nil, 0, status.Error(codes.NotFound, "this core has no recordings")
+	}
+	ss, ftp, err := s.activities.Samples(name)
+	switch {
+	case errors.Is(err, record.ErrNoActivity):
+		return "", nil, 0, status.Error(codes.NotFound, err.Error())
+	case err != nil:
+		return "", nil, 0, status.Error(codes.Internal, err.Error())
+	}
+	return name, ss[min(max(0, since), len(ss)):], ftp, nil
+}
+
+func (s *telemetryServer) GetActivityHistory(_ context.Context, req *pb.GetActivityHistoryRequest) (*pb.GetActivityHistoryResponse, error) {
+	name, ss, _, err := s.samples(req.GetName(), int(req.GetSinceS()))
+	if err != nil {
+		return nil, err
+	}
+	resp := &pb.GetActivityHistoryResponse{Name: name, FromS: req.GetSinceS()}
+	for _, x := range ss {
+		resp.PowerW = append(resp.PowerW, int32(x.PowerW))
+		resp.HeartRateBpm = append(resp.HeartRateBpm, int32(x.HR))
+		resp.CadenceRpm = append(resp.CadenceRpm, int32(x.Cadence))
+		resp.SpeedMps = append(resp.SpeedMps, float32(x.SpeedMS))
+	}
+	return resp, nil
+}
+
+func (s *telemetryServer) GetActivitySummary(_ context.Context, req *pb.GetActivitySummaryRequest) (*pb.GetActivitySummaryResponse, error) {
+	name, ss, ftp, err := s.samples(req.GetName(), 0)
+	if err != nil {
+		return nil, err
+	}
+	st, _ := s.hub.Latest()
+	if ftp <= 0 {
+		ftp = st.Profile.FTPW
+	}
+	sum := effort.Summarize(ss, ftp, st.Profile.MaxHRBpm)
+	out := &pb.ActivitySummary{Name: name, TimerS: sum.TimerS, DistanceM: sum.DistanceM,
+		AvgPowerW: sum.AvgPowerW, MaxPowerW: sum.MaxPowerW, NormalizedPowerW: sum.NormPowerW, WorkKj: sum.WorkKJ,
+		AvgHeartRateBpm: sum.AvgHR, MaxHeartRateBpm: sum.MaxHR, AvgCadenceRpm: sum.AvgCadenceRPM,
+		PowerZoneS: sum.PowerZoneS, HeartRateZoneS: sum.HRZoneS, FtpW: sum.FTPW, MaxHrBpm: sum.MaxHRBpm}
+	if sum.PowerZoneS != nil {
+		out.PowerZoneUpper = effort.PowerZones
+	}
+	if sum.HRZoneS != nil {
+		out.HeartRateZoneUpper = effort.HRZones
+	}
+	for _, b := range sum.Curve {
+		out.PowerCurve = append(out.PowerCurve, &pb.PowerBest{DurationS: uint32(b.DurationS), PowerW: b.PowerW})
+	}
+	return &pb.GetActivitySummaryResponse{Summary: out}, nil
 }
 
 func (s *telemetryServer) EndActivity(ctx context.Context, req *pb.EndActivityRequest) (*pb.EndActivityResponse, error) {

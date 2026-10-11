@@ -58,7 +58,8 @@ func run() error {
 		maxHoles = flag.Float64("max-holes", 10, "fail when the check finds more holes than this within 40 m of the path, m²")
 		maxOver  = flag.Float64("max-land-over-road", 1, "fail when the check finds more land over road than this within 40 m of the path, m²")
 		maxOff   = flag.Float64("max-off-road", 1, "fail when the check finds more of the riding line than this with no road surface under it, m per km of course")
-		check    = flag.String("check", "fail", "after a build: fail past -max-holes, -max-land-over-road or -max-off-road, or warn (the world is kept)")
+		maxStep  = flag.Float64("max-path-step", 3, "fail when the rider's height changes more than this between two points of the path (5 m apart), m")
+		check    = flag.String("check", "fail", "after a build: fail past -max-holes, -max-land-over-road, -max-off-road or -max-path-step, or warn (the world is kept)")
 		progress = flag.Bool("progress", false, "print each phase (\""+worlds.PhasePrefix+"…\") and the world's directory (\""+worlds.WorldPrefix+"…\"), for a program running this one")
 		ifStale  = flag.Bool("if-stale", false, "build only when no current world is there (in -out or -prebuilt); a renderer asks this way")
 		preview  = flag.Bool("preview", false, "with -if-stale: before building a world, build a preview to ride meanwhile (no ground model or map data, made-up countryside; seconds) and say where (\""+worlds.PreviewPrefix+"…\")")
@@ -193,14 +194,14 @@ func run() error {
 		}
 		r := w.Check()
 		offPerKm := r.OffRoadM / math.Max(c.Distance/1000, 1e-3)
-		fmt.Printf("%s: check within 40 m of the path: holes %.1f m²%s, land over road %.1f m²%s; riding line off road %.0f m (%.1f m/km)%s (%s)\n",
-			id, r.HolesM2, worst(r.Holes), r.LandOverRoadM2, worst(r.LandOverRoad), r.OffRoadM, offPerKm, worst(r.OffRoad), time.Since(cs).Round(100*time.Millisecond))
-		if r.HolesM2 > *maxHoles || r.LandOverRoadM2 > *maxOver || offPerKm > *maxOff {
+		fmt.Printf("%s: check within 40 m of the path: holes %.1f m²%s, land over road %.1f m²%s; riding line off road %.0f m (%.1f m/km)%s; path height steps at most %.2f m%s (%s)\n",
+			id, r.HolesM2, worst(r.Holes), r.LandOverRoadM2, worst(r.LandOverRoad), r.OffRoadM, offPerKm, worst(r.OffRoad), r.StepM, worst(r.Steps), time.Since(cs).Round(100*time.Millisecond))
+		if r.HolesM2 > *maxHoles || r.LandOverRoadM2 > *maxOver || offPerKm > *maxOff || r.StepM > *maxStep {
 			if *check != "warn" {
-				return fmt.Errorf("%s: the check found more than -max-holes %g m², -max-land-over-road %g m² or -max-off-road %g m/km", id, *maxHoles, *maxOver, *maxOff)
+				return fmt.Errorf("%s: the check found more than -max-holes %g m², -max-land-over-road %g m², -max-off-road %g m/km or -max-path-step %g m", id, *maxHoles, *maxOver, *maxOff, *maxStep)
 			}
-			log.Warn("the check found more than -max-holes, -max-land-over-road or -max-off-road", "course", id,
-				"holes_m2", r.HolesM2, "land_over_road_m2", r.LandOverRoadM2, "off_road_m", r.OffRoadM, "off_road_m_per_km", offPerKm)
+			log.Warn("the check found more than -max-holes, -max-land-over-road, -max-off-road or -max-path-step", "course", id,
+				"holes_m2", r.HolesM2, "land_over_road_m2", r.LandOverRoadM2, "off_road_m", r.OffRoadM, "off_road_m_per_km", offPerKm, "path_step_m", r.StepM)
 		}
 		if *progress {
 			fmt.Println(worlds.WorldPrefix + dir)

@@ -859,6 +859,94 @@ func (x *Announcement) GetUntilUnixMs() int64 {
 	return 0
 }
 
+type SetSimulatedRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Simulated     bool                   `protobuf:"varint,1,opt,name=simulated,proto3" json:"simulated,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetSimulatedRequest) Reset() {
+	*x = SetSimulatedRequest{}
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetSimulatedRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetSimulatedRequest) ProtoMessage() {}
+
+func (x *SetSimulatedRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetSimulatedRequest.ProtoReflect.Descriptor instead.
+func (*SetSimulatedRequest) Descriptor() ([]byte, []int) {
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *SetSimulatedRequest) GetSimulated() bool {
+	if x != nil {
+		return x.Simulated
+	}
+	return false
+}
+
+type SetSimulatedResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Simulated     bool                   `protobuf:"varint,1,opt,name=simulated,proto3" json:"simulated,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetSimulatedResponse) Reset() {
+	*x = SetSimulatedResponse{}
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetSimulatedResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetSimulatedResponse) ProtoMessage() {}
+
+func (x *SetSimulatedResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetSimulatedResponse.ProtoReflect.Descriptor instead.
+func (*SetSimulatedResponse) Descriptor() ([]byte, []int) {
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *SetSimulatedResponse) GetSimulated() bool {
+	if x != nil {
+		return x.Simulated
+	}
+	return false
+}
+
 type SetPausedRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Paused        bool                   `protobuf:"varint,1,opt,name=paused,proto3" json:"paused,omitempty"`
@@ -868,7 +956,7 @@ type SetPausedRequest struct {
 
 func (x *SetPausedRequest) Reset() {
 	*x = SetPausedRequest{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[3]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -880,7 +968,7 @@ func (x *SetPausedRequest) String() string {
 func (*SetPausedRequest) ProtoMessage() {}
 
 func (x *SetPausedRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[3]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -893,7 +981,7 @@ func (x *SetPausedRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetPausedRequest.ProtoReflect.Descriptor instead.
 func (*SetPausedRequest) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{3}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *SetPausedRequest) GetPaused() bool {
@@ -913,7 +1001,7 @@ type SetPausedResponse struct {
 
 func (x *SetPausedResponse) Reset() {
 	*x = SetPausedResponse{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[4]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -925,7 +1013,7 @@ func (x *SetPausedResponse) String() string {
 func (*SetPausedResponse) ProtoMessage() {}
 
 func (x *SetPausedResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[4]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -938,7 +1026,7 @@ func (x *SetPausedResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetPausedResponse.ProtoReflect.Descriptor instead.
 func (*SetPausedResponse) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{4}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *SetPausedResponse) GetPaused() bool {
@@ -962,7 +1050,7 @@ type SetTrainerControlRequest struct {
 
 func (x *SetTrainerControlRequest) Reset() {
 	*x = SetTrainerControlRequest{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[5]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -974,7 +1062,7 @@ func (x *SetTrainerControlRequest) String() string {
 func (*SetTrainerControlRequest) ProtoMessage() {}
 
 func (x *SetTrainerControlRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[5]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -987,7 +1075,7 @@ func (x *SetTrainerControlRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetTrainerControlRequest.ProtoReflect.Descriptor instead.
 func (*SetTrainerControlRequest) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{5}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *SetTrainerControlRequest) GetTarget() isSetTrainerControlRequest_Target {
@@ -1056,7 +1144,7 @@ type SetTrainerControlResponse struct {
 
 func (x *SetTrainerControlResponse) Reset() {
 	*x = SetTrainerControlResponse{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[6]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1068,7 +1156,7 @@ func (x *SetTrainerControlResponse) String() string {
 func (*SetTrainerControlResponse) ProtoMessage() {}
 
 func (x *SetTrainerControlResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[6]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1081,7 +1169,7 @@ func (x *SetTrainerControlResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetTrainerControlResponse.ProtoReflect.Descriptor instead.
 func (*SetTrainerControlResponse) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{6}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *SetTrainerControlResponse) GetMode() ControlMode {
@@ -1106,7 +1194,7 @@ type ReleaseTrainerControlRequest struct {
 
 func (x *ReleaseTrainerControlRequest) Reset() {
 	*x = ReleaseTrainerControlRequest{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[7]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1118,7 +1206,7 @@ func (x *ReleaseTrainerControlRequest) String() string {
 func (*ReleaseTrainerControlRequest) ProtoMessage() {}
 
 func (x *ReleaseTrainerControlRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[7]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1131,7 +1219,7 @@ func (x *ReleaseTrainerControlRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReleaseTrainerControlRequest.ProtoReflect.Descriptor instead.
 func (*ReleaseTrainerControlRequest) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{7}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{9}
 }
 
 type ReleaseTrainerControlResponse struct {
@@ -1142,7 +1230,7 @@ type ReleaseTrainerControlResponse struct {
 
 func (x *ReleaseTrainerControlResponse) Reset() {
 	*x = ReleaseTrainerControlResponse{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[8]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1154,7 +1242,7 @@ func (x *ReleaseTrainerControlResponse) String() string {
 func (*ReleaseTrainerControlResponse) ProtoMessage() {}
 
 func (x *ReleaseTrainerControlResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[8]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1167,7 +1255,7 @@ func (x *ReleaseTrainerControlResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReleaseTrainerControlResponse.ProtoReflect.Descriptor instead.
 func (*ReleaseTrainerControlResponse) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{8}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{10}
 }
 
 type ListActivitiesRequest struct {
@@ -1178,7 +1266,7 @@ type ListActivitiesRequest struct {
 
 func (x *ListActivitiesRequest) Reset() {
 	*x = ListActivitiesRequest{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[9]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1190,7 +1278,7 @@ func (x *ListActivitiesRequest) String() string {
 func (*ListActivitiesRequest) ProtoMessage() {}
 
 func (x *ListActivitiesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[9]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1203,7 +1291,7 @@ func (x *ListActivitiesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListActivitiesRequest.ProtoReflect.Descriptor instead.
 func (*ListActivitiesRequest) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{9}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{11}
 }
 
 type ListActivitiesResponse struct {
@@ -1215,7 +1303,7 @@ type ListActivitiesResponse struct {
 
 func (x *ListActivitiesResponse) Reset() {
 	*x = ListActivitiesResponse{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[10]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1227,7 +1315,7 @@ func (x *ListActivitiesResponse) String() string {
 func (*ListActivitiesResponse) ProtoMessage() {}
 
 func (x *ListActivitiesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[10]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1240,7 +1328,7 @@ func (x *ListActivitiesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListActivitiesResponse.ProtoReflect.Descriptor instead.
 func (*ListActivitiesResponse) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{10}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ListActivitiesResponse) GetActivities() []*Activity {
@@ -1275,7 +1363,7 @@ type Activity struct {
 
 func (x *Activity) Reset() {
 	*x = Activity{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[11]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1287,7 +1375,7 @@ func (x *Activity) String() string {
 func (*Activity) ProtoMessage() {}
 
 func (x *Activity) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[11]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1300,7 +1388,7 @@ func (x *Activity) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Activity.ProtoReflect.Descriptor instead.
 func (*Activity) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{11}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *Activity) GetName() string {
@@ -1389,7 +1477,7 @@ type ExportActivityRequest struct {
 
 func (x *ExportActivityRequest) Reset() {
 	*x = ExportActivityRequest{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[12]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1401,7 +1489,7 @@ func (x *ExportActivityRequest) String() string {
 func (*ExportActivityRequest) ProtoMessage() {}
 
 func (x *ExportActivityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[12]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1414,7 +1502,7 @@ func (x *ExportActivityRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExportActivityRequest.ProtoReflect.Descriptor instead.
 func (*ExportActivityRequest) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{12}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ExportActivityRequest) GetName() string {
@@ -1435,7 +1523,7 @@ type ExportActivityResponse struct {
 
 func (x *ExportActivityResponse) Reset() {
 	*x = ExportActivityResponse{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[13]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1447,7 +1535,7 @@ func (x *ExportActivityResponse) String() string {
 func (*ExportActivityResponse) ProtoMessage() {}
 
 func (x *ExportActivityResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[13]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1460,7 +1548,7 @@ func (x *ExportActivityResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExportActivityResponse.ProtoReflect.Descriptor instead.
 func (*ExportActivityResponse) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{13}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ExportActivityResponse) GetSizeBytes() int64 {
@@ -1490,7 +1578,7 @@ type GetActivityHistoryRequest struct {
 
 func (x *GetActivityHistoryRequest) Reset() {
 	*x = GetActivityHistoryRequest{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[14]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1502,7 +1590,7 @@ func (x *GetActivityHistoryRequest) String() string {
 func (*GetActivityHistoryRequest) ProtoMessage() {}
 
 func (x *GetActivityHistoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[14]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1515,7 +1603,7 @@ func (x *GetActivityHistoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetActivityHistoryRequest.ProtoReflect.Descriptor instead.
 func (*GetActivityHistoryRequest) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{14}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *GetActivityHistoryRequest) GetName() string {
@@ -1550,7 +1638,7 @@ type GetActivityHistoryResponse struct {
 
 func (x *GetActivityHistoryResponse) Reset() {
 	*x = GetActivityHistoryResponse{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[15]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1562,7 +1650,7 @@ func (x *GetActivityHistoryResponse) String() string {
 func (*GetActivityHistoryResponse) ProtoMessage() {}
 
 func (x *GetActivityHistoryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[15]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1575,7 +1663,7 @@ func (x *GetActivityHistoryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetActivityHistoryResponse.ProtoReflect.Descriptor instead.
 func (*GetActivityHistoryResponse) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{15}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *GetActivityHistoryResponse) GetName() string {
@@ -1630,7 +1718,7 @@ type GetActivitySummaryRequest struct {
 
 func (x *GetActivitySummaryRequest) Reset() {
 	*x = GetActivitySummaryRequest{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[16]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1642,7 +1730,7 @@ func (x *GetActivitySummaryRequest) String() string {
 func (*GetActivitySummaryRequest) ProtoMessage() {}
 
 func (x *GetActivitySummaryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[16]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1655,7 +1743,7 @@ func (x *GetActivitySummaryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetActivitySummaryRequest.ProtoReflect.Descriptor instead.
 func (*GetActivitySummaryRequest) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{16}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *GetActivitySummaryRequest) GetName() string {
@@ -1674,7 +1762,7 @@ type GetActivitySummaryResponse struct {
 
 func (x *GetActivitySummaryResponse) Reset() {
 	*x = GetActivitySummaryResponse{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[17]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1686,7 +1774,7 @@ func (x *GetActivitySummaryResponse) String() string {
 func (*GetActivitySummaryResponse) ProtoMessage() {}
 
 func (x *GetActivitySummaryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[17]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1699,7 +1787,7 @@ func (x *GetActivitySummaryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetActivitySummaryResponse.ProtoReflect.Descriptor instead.
 func (*GetActivitySummaryResponse) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{17}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *GetActivitySummaryResponse) GetSummary() *ActivitySummary {
@@ -1747,7 +1835,7 @@ type ActivitySummary struct {
 
 func (x *ActivitySummary) Reset() {
 	*x = ActivitySummary{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[18]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1759,7 +1847,7 @@ func (x *ActivitySummary) String() string {
 func (*ActivitySummary) ProtoMessage() {}
 
 func (x *ActivitySummary) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[18]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1772,7 +1860,7 @@ func (x *ActivitySummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActivitySummary.ProtoReflect.Descriptor instead.
 func (*ActivitySummary) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{18}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ActivitySummary) GetName() string {
@@ -1904,7 +1992,7 @@ type PowerBest struct {
 
 func (x *PowerBest) Reset() {
 	*x = PowerBest{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[19]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1916,7 +2004,7 @@ func (x *PowerBest) String() string {
 func (*PowerBest) ProtoMessage() {}
 
 func (x *PowerBest) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[19]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1929,7 +2017,7 @@ func (x *PowerBest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PowerBest.ProtoReflect.Descriptor instead.
 func (*PowerBest) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{19}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *PowerBest) GetDurationS() uint32 {
@@ -1963,7 +2051,7 @@ type SetProfileRequest struct {
 
 func (x *SetProfileRequest) Reset() {
 	*x = SetProfileRequest{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[20]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1975,7 +2063,7 @@ func (x *SetProfileRequest) String() string {
 func (*SetProfileRequest) ProtoMessage() {}
 
 func (x *SetProfileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[20]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1988,7 +2076,7 @@ func (x *SetProfileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetProfileRequest.ProtoReflect.Descriptor instead.
 func (*SetProfileRequest) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{20}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *SetProfileRequest) GetWeightKg() float64 {
@@ -2035,7 +2123,7 @@ type SetProfileResponse struct {
 
 func (x *SetProfileResponse) Reset() {
 	*x = SetProfileResponse{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[21]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2047,7 +2135,7 @@ func (x *SetProfileResponse) String() string {
 func (*SetProfileResponse) ProtoMessage() {}
 
 func (x *SetProfileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[21]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2060,7 +2148,7 @@ func (x *SetProfileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetProfileResponse.ProtoReflect.Descriptor instead.
 func (*SetProfileResponse) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{21}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *SetProfileResponse) GetProfile() *RiderProfile {
@@ -2078,7 +2166,7 @@ type ListResultsRequest struct {
 
 func (x *ListResultsRequest) Reset() {
 	*x = ListResultsRequest{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[22]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2090,7 +2178,7 @@ func (x *ListResultsRequest) String() string {
 func (*ListResultsRequest) ProtoMessage() {}
 
 func (x *ListResultsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[22]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2103,7 +2191,7 @@ func (x *ListResultsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListResultsRequest.ProtoReflect.Descriptor instead.
 func (*ListResultsRequest) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{22}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{24}
 }
 
 type ListResultsResponse struct {
@@ -2115,7 +2203,7 @@ type ListResultsResponse struct {
 
 func (x *ListResultsResponse) Reset() {
 	*x = ListResultsResponse{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[23]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2127,7 +2215,7 @@ func (x *ListResultsResponse) String() string {
 func (*ListResultsResponse) ProtoMessage() {}
 
 func (x *ListResultsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[23]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2140,7 +2228,7 @@ func (x *ListResultsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListResultsResponse.ProtoReflect.Descriptor instead.
 func (*ListResultsResponse) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{23}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *ListResultsResponse) GetResults() []*RideResult {
@@ -2176,7 +2264,7 @@ type RideResult struct {
 
 func (x *RideResult) Reset() {
 	*x = RideResult{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[24]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2188,7 +2276,7 @@ func (x *RideResult) String() string {
 func (*RideResult) ProtoMessage() {}
 
 func (x *RideResult) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[24]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2201,7 +2289,7 @@ func (x *RideResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RideResult.ProtoReflect.Descriptor instead.
 func (*RideResult) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{24}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *RideResult) GetFinishedUnixMs() int64 {
@@ -2298,7 +2386,7 @@ type EndActivityRequest struct {
 
 func (x *EndActivityRequest) Reset() {
 	*x = EndActivityRequest{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[25]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2310,7 +2398,7 @@ func (x *EndActivityRequest) String() string {
 func (*EndActivityRequest) ProtoMessage() {}
 
 func (x *EndActivityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[25]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2323,7 +2411,7 @@ func (x *EndActivityRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndActivityRequest.ProtoReflect.Descriptor instead.
 func (*EndActivityRequest) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{25}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *EndActivityRequest) GetDiscard() bool {
@@ -2343,7 +2431,7 @@ type EndActivityResponse struct {
 
 func (x *EndActivityResponse) Reset() {
 	*x = EndActivityResponse{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[26]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2355,7 +2443,7 @@ func (x *EndActivityResponse) String() string {
 func (*EndActivityResponse) ProtoMessage() {}
 
 func (x *EndActivityResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[26]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2368,7 +2456,7 @@ func (x *EndActivityResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndActivityResponse.ProtoReflect.Descriptor instead.
 func (*EndActivityResponse) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{26}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *EndActivityResponse) GetFile() string {
@@ -2388,7 +2476,7 @@ type WorkoutText struct {
 
 func (x *WorkoutText) Reset() {
 	*x = WorkoutText{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[27]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2400,7 +2488,7 @@ func (x *WorkoutText) String() string {
 func (*WorkoutText) ProtoMessage() {}
 
 func (x *WorkoutText) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[27]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2413,7 +2501,7 @@ func (x *WorkoutText) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkoutText.ProtoReflect.Descriptor instead.
 func (*WorkoutText) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{27}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *WorkoutText) GetOffsetS() float64 {
@@ -2453,7 +2541,7 @@ type WorkoutBlock struct {
 
 func (x *WorkoutBlock) Reset() {
 	*x = WorkoutBlock{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[28]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2465,7 +2553,7 @@ func (x *WorkoutBlock) String() string {
 func (*WorkoutBlock) ProtoMessage() {}
 
 func (x *WorkoutBlock) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[28]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2478,7 +2566,7 @@ func (x *WorkoutBlock) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkoutBlock.ProtoReflect.Descriptor instead.
 func (*WorkoutBlock) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{28}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *WorkoutBlock) GetType() string {
@@ -2581,7 +2669,7 @@ type WorkoutSegment struct {
 
 func (x *WorkoutSegment) Reset() {
 	*x = WorkoutSegment{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[29]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2593,7 +2681,7 @@ func (x *WorkoutSegment) String() string {
 func (*WorkoutSegment) ProtoMessage() {}
 
 func (x *WorkoutSegment) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[29]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2606,7 +2694,7 @@ func (x *WorkoutSegment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkoutSegment.ProtoReflect.Descriptor instead.
 func (*WorkoutSegment) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{29}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *WorkoutSegment) GetFree() bool {
@@ -2676,7 +2764,7 @@ type WorkoutDef struct {
 
 func (x *WorkoutDef) Reset() {
 	*x = WorkoutDef{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[30]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2688,7 +2776,7 @@ func (x *WorkoutDef) String() string {
 func (*WorkoutDef) ProtoMessage() {}
 
 func (x *WorkoutDef) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[30]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2701,7 +2789,7 @@ func (x *WorkoutDef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkoutDef.ProtoReflect.Descriptor instead.
 func (*WorkoutDef) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{30}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *WorkoutDef) GetId() string {
@@ -2768,7 +2856,7 @@ type ListWorkoutsRequest struct {
 
 func (x *ListWorkoutsRequest) Reset() {
 	*x = ListWorkoutsRequest{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[31]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2780,7 +2868,7 @@ func (x *ListWorkoutsRequest) String() string {
 func (*ListWorkoutsRequest) ProtoMessage() {}
 
 func (x *ListWorkoutsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[31]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2793,7 +2881,7 @@ func (x *ListWorkoutsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListWorkoutsRequest.ProtoReflect.Descriptor instead.
 func (*ListWorkoutsRequest) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{31}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{33}
 }
 
 type ListWorkoutsResponse struct {
@@ -2805,7 +2893,7 @@ type ListWorkoutsResponse struct {
 
 func (x *ListWorkoutsResponse) Reset() {
 	*x = ListWorkoutsResponse{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[32]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2817,7 +2905,7 @@ func (x *ListWorkoutsResponse) String() string {
 func (*ListWorkoutsResponse) ProtoMessage() {}
 
 func (x *ListWorkoutsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[32]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2830,7 +2918,7 @@ func (x *ListWorkoutsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListWorkoutsResponse.ProtoReflect.Descriptor instead.
 func (*ListWorkoutsResponse) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{32}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *ListWorkoutsResponse) GetWorkouts() []*WorkoutDef {
@@ -2850,7 +2938,7 @@ type SaveWorkoutRequest struct {
 
 func (x *SaveWorkoutRequest) Reset() {
 	*x = SaveWorkoutRequest{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[33]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2862,7 +2950,7 @@ func (x *SaveWorkoutRequest) String() string {
 func (*SaveWorkoutRequest) ProtoMessage() {}
 
 func (x *SaveWorkoutRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[33]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2875,7 +2963,7 @@ func (x *SaveWorkoutRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveWorkoutRequest.ProtoReflect.Descriptor instead.
 func (*SaveWorkoutRequest) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{33}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *SaveWorkoutRequest) GetId() string {
@@ -2901,7 +2989,7 @@ type SaveWorkoutResponse struct {
 
 func (x *SaveWorkoutResponse) Reset() {
 	*x = SaveWorkoutResponse{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[34]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2913,7 +3001,7 @@ func (x *SaveWorkoutResponse) String() string {
 func (*SaveWorkoutResponse) ProtoMessage() {}
 
 func (x *SaveWorkoutResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[34]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2926,7 +3014,7 @@ func (x *SaveWorkoutResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveWorkoutResponse.ProtoReflect.Descriptor instead.
 func (*SaveWorkoutResponse) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{34}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *SaveWorkoutResponse) GetId() string {
@@ -2945,7 +3033,7 @@ type StartWorkoutRequest struct {
 
 func (x *StartWorkoutRequest) Reset() {
 	*x = StartWorkoutRequest{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[35]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2957,7 +3045,7 @@ func (x *StartWorkoutRequest) String() string {
 func (*StartWorkoutRequest) ProtoMessage() {}
 
 func (x *StartWorkoutRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[35]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2970,7 +3058,7 @@ func (x *StartWorkoutRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartWorkoutRequest.ProtoReflect.Descriptor instead.
 func (*StartWorkoutRequest) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{35}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *StartWorkoutRequest) GetId() string {
@@ -2988,7 +3076,7 @@ type StartWorkoutResponse struct {
 
 func (x *StartWorkoutResponse) Reset() {
 	*x = StartWorkoutResponse{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[36]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3000,7 +3088,7 @@ func (x *StartWorkoutResponse) String() string {
 func (*StartWorkoutResponse) ProtoMessage() {}
 
 func (x *StartWorkoutResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[36]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3013,7 +3101,7 @@ func (x *StartWorkoutResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartWorkoutResponse.ProtoReflect.Descriptor instead.
 func (*StartWorkoutResponse) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{36}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{38}
 }
 
 type StopWorkoutRequest struct {
@@ -3024,7 +3112,7 @@ type StopWorkoutRequest struct {
 
 func (x *StopWorkoutRequest) Reset() {
 	*x = StopWorkoutRequest{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[37]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3036,7 +3124,7 @@ func (x *StopWorkoutRequest) String() string {
 func (*StopWorkoutRequest) ProtoMessage() {}
 
 func (x *StopWorkoutRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[37]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3049,7 +3137,7 @@ func (x *StopWorkoutRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopWorkoutRequest.ProtoReflect.Descriptor instead.
 func (*StopWorkoutRequest) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{37}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{39}
 }
 
 type StopWorkoutResponse struct {
@@ -3060,7 +3148,7 @@ type StopWorkoutResponse struct {
 
 func (x *StopWorkoutResponse) Reset() {
 	*x = StopWorkoutResponse{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[38]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3072,7 +3160,7 @@ func (x *StopWorkoutResponse) String() string {
 func (*StopWorkoutResponse) ProtoMessage() {}
 
 func (x *StopWorkoutResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[38]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3085,7 +3173,7 @@ func (x *StopWorkoutResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopWorkoutResponse.ProtoReflect.Descriptor instead.
 func (*StopWorkoutResponse) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{38}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{40}
 }
 
 type SkipSegmentRequest struct {
@@ -3096,7 +3184,7 @@ type SkipSegmentRequest struct {
 
 func (x *SkipSegmentRequest) Reset() {
 	*x = SkipSegmentRequest{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[39]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3108,7 +3196,7 @@ func (x *SkipSegmentRequest) String() string {
 func (*SkipSegmentRequest) ProtoMessage() {}
 
 func (x *SkipSegmentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[39]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3121,7 +3209,7 @@ func (x *SkipSegmentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SkipSegmentRequest.ProtoReflect.Descriptor instead.
 func (*SkipSegmentRequest) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{39}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{41}
 }
 
 type SkipSegmentResponse struct {
@@ -3132,7 +3220,7 @@ type SkipSegmentResponse struct {
 
 func (x *SkipSegmentResponse) Reset() {
 	*x = SkipSegmentResponse{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[40]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3144,7 +3232,7 @@ func (x *SkipSegmentResponse) String() string {
 func (*SkipSegmentResponse) ProtoMessage() {}
 
 func (x *SkipSegmentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[40]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3157,7 +3245,7 @@ func (x *SkipSegmentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SkipSegmentResponse.ProtoReflect.Descriptor instead.
 func (*SkipSegmentResponse) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{40}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{42}
 }
 
 type SetIntensityRequest struct {
@@ -3169,7 +3257,7 @@ type SetIntensityRequest struct {
 
 func (x *SetIntensityRequest) Reset() {
 	*x = SetIntensityRequest{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[41]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3181,7 +3269,7 @@ func (x *SetIntensityRequest) String() string {
 func (*SetIntensityRequest) ProtoMessage() {}
 
 func (x *SetIntensityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[41]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3194,7 +3282,7 @@ func (x *SetIntensityRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetIntensityRequest.ProtoReflect.Descriptor instead.
 func (*SetIntensityRequest) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{41}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *SetIntensityRequest) GetIntensityPct() float64 {
@@ -3213,7 +3301,7 @@ type SetIntensityResponse struct {
 
 func (x *SetIntensityResponse) Reset() {
 	*x = SetIntensityResponse{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[42]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3225,7 +3313,7 @@ func (x *SetIntensityResponse) String() string {
 func (*SetIntensityResponse) ProtoMessage() {}
 
 func (x *SetIntensityResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[42]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3238,7 +3326,7 @@ func (x *SetIntensityResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetIntensityResponse.ProtoReflect.Descriptor instead.
 func (*SetIntensityResponse) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{42}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *SetIntensityResponse) GetIntensityPct() float64 {
@@ -3257,7 +3345,7 @@ type SetFtpRequest struct {
 
 func (x *SetFtpRequest) Reset() {
 	*x = SetFtpRequest{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[43]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3269,7 +3357,7 @@ func (x *SetFtpRequest) String() string {
 func (*SetFtpRequest) ProtoMessage() {}
 
 func (x *SetFtpRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[43]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3282,7 +3370,7 @@ func (x *SetFtpRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetFtpRequest.ProtoReflect.Descriptor instead.
 func (*SetFtpRequest) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{43}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *SetFtpRequest) GetFtpW() float64 {
@@ -3301,7 +3389,7 @@ type SetFtpResponse struct {
 
 func (x *SetFtpResponse) Reset() {
 	*x = SetFtpResponse{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[44]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3313,7 +3401,7 @@ func (x *SetFtpResponse) String() string {
 func (*SetFtpResponse) ProtoMessage() {}
 
 func (x *SetFtpResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[44]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3326,7 +3414,7 @@ func (x *SetFtpResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetFtpResponse.ProtoReflect.Descriptor instead.
 func (*SetFtpResponse) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{44}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *SetFtpResponse) GetFtpW() float64 {
@@ -3345,7 +3433,7 @@ type SetDifficultyRequest struct {
 
 func (x *SetDifficultyRequest) Reset() {
 	*x = SetDifficultyRequest{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[45]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3357,7 +3445,7 @@ func (x *SetDifficultyRequest) String() string {
 func (*SetDifficultyRequest) ProtoMessage() {}
 
 func (x *SetDifficultyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[45]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3370,7 +3458,7 @@ func (x *SetDifficultyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetDifficultyRequest.ProtoReflect.Descriptor instead.
 func (*SetDifficultyRequest) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{45}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *SetDifficultyRequest) GetDifficultyPct() float64 {
@@ -3390,7 +3478,7 @@ type SetDifficultyResponse struct {
 
 func (x *SetDifficultyResponse) Reset() {
 	*x = SetDifficultyResponse{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[46]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3402,7 +3490,7 @@ func (x *SetDifficultyResponse) String() string {
 func (*SetDifficultyResponse) ProtoMessage() {}
 
 func (x *SetDifficultyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[46]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3415,7 +3503,7 @@ func (x *SetDifficultyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetDifficultyResponse.ProtoReflect.Descriptor instead.
 func (*SetDifficultyResponse) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{46}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *SetDifficultyResponse) GetDifficultyPct() float64 {
@@ -3433,7 +3521,7 @@ type ListCoursesRequest struct {
 
 func (x *ListCoursesRequest) Reset() {
 	*x = ListCoursesRequest{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[47]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3445,7 +3533,7 @@ func (x *ListCoursesRequest) String() string {
 func (*ListCoursesRequest) ProtoMessage() {}
 
 func (x *ListCoursesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[47]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3458,7 +3546,7 @@ func (x *ListCoursesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListCoursesRequest.ProtoReflect.Descriptor instead.
 func (*ListCoursesRequest) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{47}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{49}
 }
 
 type ListCoursesResponse struct {
@@ -3470,7 +3558,7 @@ type ListCoursesResponse struct {
 
 func (x *ListCoursesResponse) Reset() {
 	*x = ListCoursesResponse{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[48]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3482,7 +3570,7 @@ func (x *ListCoursesResponse) String() string {
 func (*ListCoursesResponse) ProtoMessage() {}
 
 func (x *ListCoursesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[48]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3495,7 +3583,7 @@ func (x *ListCoursesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListCoursesResponse.ProtoReflect.Descriptor instead.
 func (*ListCoursesResponse) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{48}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *ListCoursesResponse) GetCourses() []*Course {
@@ -3553,7 +3641,7 @@ type Course struct {
 
 func (x *Course) Reset() {
 	*x = Course{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[49]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3565,7 +3653,7 @@ func (x *Course) String() string {
 func (*Course) ProtoMessage() {}
 
 func (x *Course) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[49]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3578,7 +3666,7 @@ func (x *Course) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Course.ProtoReflect.Descriptor instead.
 func (*Course) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{49}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *Course) GetId() string {
@@ -3730,7 +3818,7 @@ type GetCourseFileRequest struct {
 
 func (x *GetCourseFileRequest) Reset() {
 	*x = GetCourseFileRequest{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[50]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3742,7 +3830,7 @@ func (x *GetCourseFileRequest) String() string {
 func (*GetCourseFileRequest) ProtoMessage() {}
 
 func (x *GetCourseFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[50]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3755,7 +3843,7 @@ func (x *GetCourseFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCourseFileRequest.ProtoReflect.Descriptor instead.
 func (*GetCourseFileRequest) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{50}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *GetCourseFileRequest) GetCourseId() string {
@@ -3776,7 +3864,7 @@ type GetCourseFileResponse struct {
 
 func (x *GetCourseFileResponse) Reset() {
 	*x = GetCourseFileResponse{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[51]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3788,7 +3876,7 @@ func (x *GetCourseFileResponse) String() string {
 func (*GetCourseFileResponse) ProtoMessage() {}
 
 func (x *GetCourseFileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[51]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3801,7 +3889,7 @@ func (x *GetCourseFileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCourseFileResponse.ProtoReflect.Descriptor instead.
 func (*GetCourseFileResponse) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{51}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *GetCourseFileResponse) GetName() string {
@@ -3830,7 +3918,7 @@ type Junction struct {
 
 func (x *Junction) Reset() {
 	*x = Junction{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[52]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3842,7 +3930,7 @@ func (x *Junction) String() string {
 func (*Junction) ProtoMessage() {}
 
 func (x *Junction) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[52]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3855,7 +3943,7 @@ func (x *Junction) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Junction.ProtoReflect.Descriptor instead.
 func (*Junction) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{52}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *Junction) GetDistanceM() float64 {
@@ -3893,7 +3981,7 @@ type JunctionBranch struct {
 
 func (x *JunctionBranch) Reset() {
 	*x = JunctionBranch{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[53]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3905,7 +3993,7 @@ func (x *JunctionBranch) String() string {
 func (*JunctionBranch) ProtoMessage() {}
 
 func (x *JunctionBranch) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[53]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3918,7 +4006,7 @@ func (x *JunctionBranch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JunctionBranch.ProtoReflect.Descriptor instead.
 func (*JunctionBranch) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{53}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *JunctionBranch) GetBearingDeg() float64 {
@@ -3956,7 +4044,7 @@ type ParkingArea struct {
 
 func (x *ParkingArea) Reset() {
 	*x = ParkingArea{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[54]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3968,7 +4056,7 @@ func (x *ParkingArea) String() string {
 func (*ParkingArea) ProtoMessage() {}
 
 func (x *ParkingArea) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[54]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3981,7 +4069,7 @@ func (x *ParkingArea) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ParkingArea.ProtoReflect.Descriptor instead.
 func (*ParkingArea) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{54}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *ParkingArea) GetDistanceM() float64 {
@@ -4031,7 +4119,7 @@ type PlaceSign struct {
 
 func (x *PlaceSign) Reset() {
 	*x = PlaceSign{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[55]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4043,7 +4131,7 @@ func (x *PlaceSign) String() string {
 func (*PlaceSign) ProtoMessage() {}
 
 func (x *PlaceSign) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[55]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4056,7 +4144,7 @@ func (x *PlaceSign) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlaceSign.ProtoReflect.Descriptor instead.
 func (*PlaceSign) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{55}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *PlaceSign) GetDistanceM() float64 {
@@ -4093,7 +4181,7 @@ type Building struct {
 
 func (x *Building) Reset() {
 	*x = Building{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[56]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4105,7 +4193,7 @@ func (x *Building) String() string {
 func (*Building) ProtoMessage() {}
 
 func (x *Building) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[56]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4118,7 +4206,7 @@ func (x *Building) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Building.ProtoReflect.Descriptor instead.
 func (*Building) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{56}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *Building) GetDistanceM() float64 {
@@ -4176,7 +4264,7 @@ type StartRideRequest struct {
 
 func (x *StartRideRequest) Reset() {
 	*x = StartRideRequest{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[57]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4188,7 +4276,7 @@ func (x *StartRideRequest) String() string {
 func (*StartRideRequest) ProtoMessage() {}
 
 func (x *StartRideRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[57]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4201,7 +4289,7 @@ func (x *StartRideRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartRideRequest.ProtoReflect.Descriptor instead.
 func (*StartRideRequest) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{57}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *StartRideRequest) GetCourseId() string {
@@ -4226,7 +4314,7 @@ type StartRideResponse struct {
 
 func (x *StartRideResponse) Reset() {
 	*x = StartRideResponse{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[58]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4238,7 +4326,7 @@ func (x *StartRideResponse) String() string {
 func (*StartRideResponse) ProtoMessage() {}
 
 func (x *StartRideResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[58]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4251,7 +4339,7 @@ func (x *StartRideResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartRideResponse.ProtoReflect.Descriptor instead.
 func (*StartRideResponse) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{58}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{60}
 }
 
 type StopRideRequest struct {
@@ -4262,7 +4350,7 @@ type StopRideRequest struct {
 
 func (x *StopRideRequest) Reset() {
 	*x = StopRideRequest{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[59]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4274,7 +4362,7 @@ func (x *StopRideRequest) String() string {
 func (*StopRideRequest) ProtoMessage() {}
 
 func (x *StopRideRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[59]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4287,7 +4375,7 @@ func (x *StopRideRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopRideRequest.ProtoReflect.Descriptor instead.
 func (*StopRideRequest) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{59}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{61}
 }
 
 type StopRideResponse struct {
@@ -4298,7 +4386,7 @@ type StopRideResponse struct {
 
 func (x *StopRideResponse) Reset() {
 	*x = StopRideResponse{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[60]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4310,7 +4398,7 @@ func (x *StopRideResponse) String() string {
 func (*StopRideResponse) ProtoMessage() {}
 
 func (x *StopRideResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[60]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4323,7 +4411,7 @@ func (x *StopRideResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopRideResponse.ProtoReflect.Descriptor instead.
 func (*StopRideResponse) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{60}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{62}
 }
 
 type StartCalibrationRequest struct {
@@ -4335,7 +4423,7 @@ type StartCalibrationRequest struct {
 
 func (x *StartCalibrationRequest) Reset() {
 	*x = StartCalibrationRequest{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[61]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4347,7 +4435,7 @@ func (x *StartCalibrationRequest) String() string {
 func (*StartCalibrationRequest) ProtoMessage() {}
 
 func (x *StartCalibrationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[61]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4360,7 +4448,7 @@ func (x *StartCalibrationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartCalibrationRequest.ProtoReflect.Descriptor instead.
 func (*StartCalibrationRequest) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{61}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *StartCalibrationRequest) GetType() CalibrationType {
@@ -4378,7 +4466,7 @@ type StartCalibrationResponse struct {
 
 func (x *StartCalibrationResponse) Reset() {
 	*x = StartCalibrationResponse{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[62]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4390,7 +4478,7 @@ func (x *StartCalibrationResponse) String() string {
 func (*StartCalibrationResponse) ProtoMessage() {}
 
 func (x *StartCalibrationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[62]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4403,7 +4491,7 @@ func (x *StartCalibrationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartCalibrationResponse.ProtoReflect.Descriptor instead.
 func (*StartCalibrationResponse) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{62}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{64}
 }
 
 type CancelCalibrationRequest struct {
@@ -4414,7 +4502,7 @@ type CancelCalibrationRequest struct {
 
 func (x *CancelCalibrationRequest) Reset() {
 	*x = CancelCalibrationRequest{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[63]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4426,7 +4514,7 @@ func (x *CancelCalibrationRequest) String() string {
 func (*CancelCalibrationRequest) ProtoMessage() {}
 
 func (x *CancelCalibrationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[63]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4439,7 +4527,7 @@ func (x *CancelCalibrationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelCalibrationRequest.ProtoReflect.Descriptor instead.
 func (*CancelCalibrationRequest) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{63}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{65}
 }
 
 type CancelCalibrationResponse struct {
@@ -4450,7 +4538,7 @@ type CancelCalibrationResponse struct {
 
 func (x *CancelCalibrationResponse) Reset() {
 	*x = CancelCalibrationResponse{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[64]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4462,7 +4550,7 @@ func (x *CancelCalibrationResponse) String() string {
 func (*CancelCalibrationResponse) ProtoMessage() {}
 
 func (x *CancelCalibrationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[64]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4475,7 +4563,7 @@ func (x *CancelCalibrationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelCalibrationResponse.ProtoReflect.Descriptor instead.
 func (*CancelCalibrationResponse) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{64}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{66}
 }
 
 type StreamStateRequest struct {
@@ -4494,7 +4582,7 @@ type StreamStateRequest struct {
 
 func (x *StreamStateRequest) Reset() {
 	*x = StreamStateRequest{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[65]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4506,7 +4594,7 @@ func (x *StreamStateRequest) String() string {
 func (*StreamStateRequest) ProtoMessage() {}
 
 func (x *StreamStateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[65]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4519,7 +4607,7 @@ func (x *StreamStateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamStateRequest.ProtoReflect.Descriptor instead.
 func (*StreamStateRequest) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{65}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *StreamStateRequest) GetMaxRateHz() uint32 {
@@ -4545,7 +4633,7 @@ type StreamStateResponse struct {
 
 func (x *StreamStateResponse) Reset() {
 	*x = StreamStateResponse{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[66]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4557,7 +4645,7 @@ func (x *StreamStateResponse) String() string {
 func (*StreamStateResponse) ProtoMessage() {}
 
 func (x *StreamStateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[66]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4570,7 +4658,7 @@ func (x *StreamStateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamStateResponse.ProtoReflect.Descriptor instead.
 func (*StreamStateResponse) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{66}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *StreamStateResponse) GetState() *State {
@@ -4602,14 +4690,17 @@ type State struct {
 	// How many heads (StreamStateRequest.head) are connected.
 	Heads uint32 `protobuf:"varint,13,opt,name=heads,proto3" json:"heads,omitempty"`
 	// A message for every screen (Announce), while until_unix_ms is ahead.
-	Announcement  *Announcement `protobuf:"bytes,14,opt,name=announcement,proto3" json:"announcement,omitempty"`
+	Announcement *Announcement `protobuf:"bytes,14,opt,name=announcement,proto3" json:"announcement,omitempty"`
+	// A simulated rider stands in for the trainer and the heart rate strap
+	// (SetSimulated): the readings are made up, and nothing is recorded.
+	Simulated     bool `protobuf:"varint,15,opt,name=simulated,proto3" json:"simulated,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *State) Reset() {
 	*x = State{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[67]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4621,7 +4712,7 @@ func (x *State) String() string {
 func (*State) ProtoMessage() {}
 
 func (x *State) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[67]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4634,7 +4725,7 @@ func (x *State) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use State.ProtoReflect.Descriptor instead.
 func (*State) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{67}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *State) GetSequence() uint64 {
@@ -4735,6 +4826,13 @@ func (x *State) GetAnnouncement() *Announcement {
 	return nil
 }
 
+func (x *State) GetSimulated() bool {
+	if x != nil {
+		return x.Simulated
+	}
+	return false
+}
+
 type Radio struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The stick is open and running.
@@ -4747,7 +4845,7 @@ type Radio struct {
 
 func (x *Radio) Reset() {
 	*x = Radio{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[68]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4759,7 +4857,7 @@ func (x *Radio) String() string {
 func (*Radio) ProtoMessage() {}
 
 func (x *Radio) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[68]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4772,7 +4870,7 @@ func (x *Radio) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Radio.ProtoReflect.Descriptor instead.
 func (*Radio) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{68}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *Radio) GetPresent() bool {
@@ -4801,7 +4899,7 @@ type TrainerControl struct {
 
 func (x *TrainerControl) Reset() {
 	*x = TrainerControl{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[69]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4813,7 +4911,7 @@ func (x *TrainerControl) String() string {
 func (*TrainerControl) ProtoMessage() {}
 
 func (x *TrainerControl) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[69]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4826,7 +4924,7 @@ func (x *TrainerControl) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TrainerControl.ProtoReflect.Descriptor instead.
 func (*TrainerControl) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{69}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *TrainerControl) GetMode() ControlMode {
@@ -4888,7 +4986,7 @@ type RiderProfile struct {
 
 func (x *RiderProfile) Reset() {
 	*x = RiderProfile{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[70]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4900,7 +4998,7 @@ func (x *RiderProfile) String() string {
 func (*RiderProfile) ProtoMessage() {}
 
 func (x *RiderProfile) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[70]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4913,7 +5011,7 @@ func (x *RiderProfile) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RiderProfile.ProtoReflect.Descriptor instead.
 func (*RiderProfile) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{70}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{72}
 }
 
 func (x *RiderProfile) GetComplete() bool {
@@ -5050,7 +5148,7 @@ type Recording struct {
 
 func (x *Recording) Reset() {
 	*x = Recording{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[71]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5062,7 +5160,7 @@ func (x *Recording) String() string {
 func (*Recording) ProtoMessage() {}
 
 func (x *Recording) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[71]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5075,7 +5173,7 @@ func (x *Recording) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Recording.ProtoReflect.Descriptor instead.
 func (*Recording) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{71}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{73}
 }
 
 func (x *Recording) GetActive() bool {
@@ -5158,7 +5256,7 @@ type WorkoutProgress struct {
 
 func (x *WorkoutProgress) Reset() {
 	*x = WorkoutProgress{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[72]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5170,7 +5268,7 @@ func (x *WorkoutProgress) String() string {
 func (*WorkoutProgress) ProtoMessage() {}
 
 func (x *WorkoutProgress) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[72]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5183,7 +5281,7 @@ func (x *WorkoutProgress) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkoutProgress.ProtoReflect.Descriptor instead.
 func (*WorkoutProgress) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{72}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *WorkoutProgress) GetPhase() WorkoutPhase {
@@ -5376,7 +5474,7 @@ type Ride struct {
 
 func (x *Ride) Reset() {
 	*x = Ride{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[73]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5388,7 +5486,7 @@ func (x *Ride) String() string {
 func (*Ride) ProtoMessage() {}
 
 func (x *Ride) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[73]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5401,7 +5499,7 @@ func (x *Ride) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Ride.ProtoReflect.Descriptor instead.
 func (*Ride) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{73}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{75}
 }
 
 func (x *Ride) GetPhase() RidePhase {
@@ -5610,7 +5708,7 @@ type RideLap struct {
 
 func (x *RideLap) Reset() {
 	*x = RideLap{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[74]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5622,7 +5720,7 @@ func (x *RideLap) String() string {
 func (*RideLap) ProtoMessage() {}
 
 func (x *RideLap) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[74]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5635,7 +5733,7 @@ func (x *RideLap) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RideLap.ProtoReflect.Descriptor instead.
 func (*RideLap) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{74}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *RideLap) GetNumber() uint32 {
@@ -5697,7 +5795,7 @@ type RideGhost struct {
 
 func (x *RideGhost) Reset() {
 	*x = RideGhost{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[75]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5709,7 +5807,7 @@ func (x *RideGhost) String() string {
 func (*RideGhost) ProtoMessage() {}
 
 func (x *RideGhost) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[75]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5722,7 +5820,7 @@ func (x *RideGhost) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RideGhost.ProtoReflect.Descriptor instead.
 func (*RideGhost) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{75}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *RideGhost) GetLabel() string {
@@ -5770,7 +5868,7 @@ type Sensor struct {
 
 func (x *Sensor) Reset() {
 	*x = Sensor{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[76]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5782,7 +5880,7 @@ func (x *Sensor) String() string {
 func (*Sensor) ProtoMessage() {}
 
 func (x *Sensor) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[76]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5795,7 +5893,7 @@ func (x *Sensor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Sensor.ProtoReflect.Descriptor instead.
 func (*Sensor) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{76}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{78}
 }
 
 func (x *Sensor) GetStatus() SensorStatus {
@@ -5865,7 +5963,7 @@ type Trainer struct {
 
 func (x *Trainer) Reset() {
 	*x = Trainer{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[77]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[79]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5877,7 +5975,7 @@ func (x *Trainer) String() string {
 func (*Trainer) ProtoMessage() {}
 
 func (x *Trainer) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[77]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[79]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5890,7 +5988,7 @@ func (x *Trainer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Trainer.ProtoReflect.Descriptor instead.
 func (*Trainer) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{77}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *Trainer) GetSensor() *Sensor {
@@ -6005,7 +6103,7 @@ type Calibration struct {
 
 func (x *Calibration) Reset() {
 	*x = Calibration{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[78]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6017,7 +6115,7 @@ func (x *Calibration) String() string {
 func (*Calibration) ProtoMessage() {}
 
 func (x *Calibration) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[78]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6030,7 +6128,7 @@ func (x *Calibration) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Calibration.ProtoReflect.Descriptor instead.
 func (*Calibration) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{78}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{80}
 }
 
 func (x *Calibration) GetPhase() CalibrationPhase {
@@ -6107,7 +6205,7 @@ type HeartRate struct {
 
 func (x *HeartRate) Reset() {
 	*x = HeartRate{}
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[79]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6119,7 +6217,7 @@ func (x *HeartRate) String() string {
 func (*HeartRate) ProtoMessage() {}
 
 func (x *HeartRate) ProtoReflect() protoreflect.Message {
-	mi := &file_osscycler_v1_telemetry_proto_msgTypes[79]
+	mi := &file_osscycler_v1_telemetry_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6132,7 +6230,7 @@ func (x *HeartRate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartRate.ProtoReflect.Descriptor instead.
 func (*HeartRate) Descriptor() ([]byte, []int) {
-	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{79}
+	return file_osscycler_v1_telemetry_proto_rawDescGZIP(), []int{81}
 }
 
 func (x *HeartRate) GetSensor() *Sensor {
@@ -6160,7 +6258,11 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\x10AnnounceResponse\"F\n" +
 	"\fAnnouncement\x12\x12\n" +
 	"\x04text\x18\x01 \x01(\tR\x04text\x12\"\n" +
-	"\runtil_unix_ms\x18\x02 \x01(\x03R\vuntilUnixMs\"*\n" +
+	"\runtil_unix_ms\x18\x02 \x01(\x03R\vuntilUnixMs\"3\n" +
+	"\x13SetSimulatedRequest\x12\x1c\n" +
+	"\tsimulated\x18\x01 \x01(\bR\tsimulated\"4\n" +
+	"\x14SetSimulatedResponse\x12\x1c\n" +
+	"\tsimulated\x18\x01 \x01(\bR\tsimulated\"*\n" +
 	"\x10SetPausedRequest\x12\x16\n" +
 	"\x06paused\x18\x01 \x01(\bR\x06paused\"+\n" +
 	"\x11SetPausedResponse\x12\x16\n" +
@@ -6426,7 +6528,7 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\vmax_rate_hz\x18\x01 \x01(\rR\tmaxRateHz\x12\x12\n" +
 	"\x04head\x18\x02 \x01(\bR\x04head\"@\n" +
 	"\x13StreamStateResponse\x12)\n" +
-	"\x05state\x18\x01 \x01(\v2\x13.osscycler.v1.StateR\x05state\"\xfe\x04\n" +
+	"\x05state\x18\x01 \x01(\v2\x13.osscycler.v1.StateR\x05state\"\x9c\x05\n" +
 	"\x05State\x12\x1a\n" +
 	"\bsequence\x18\x01 \x01(\x04R\bsequence\x12 \n" +
 	"\fcore_time_ns\x18\x02 \x01(\x03R\n" +
@@ -6444,7 +6546,8 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\x06paused\x18\v \x01(\bR\x06paused\x12/\n" +
 	"\x14paused_since_unix_ms\x18\f \x01(\x03R\x11pausedSinceUnixMs\x12\x14\n" +
 	"\x05heads\x18\r \x01(\rR\x05heads\x12>\n" +
-	"\fannouncement\x18\x0e \x01(\v2\x1a.osscycler.v1.AnnouncementR\fannouncement\"7\n" +
+	"\fannouncement\x18\x0e \x01(\v2\x1a.osscycler.v1.AnnouncementR\fannouncement\x12\x1c\n" +
+	"\tsimulated\x18\x0f \x01(\bR\tsimulated\"7\n" +
 	"\x05Radio\x12\x18\n" +
 	"\apresent\x18\x01 \x01(\bR\apresent\x12\x14\n" +
 	"\x05error\x18\x02 \x01(\tR\x05error\"v\n" +
@@ -6677,7 +6780,7 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"!CALIBRATION_CONDITION_UNSPECIFIED\x10\x00\x12!\n" +
 	"\x1dCALIBRATION_CONDITION_TOO_LOW\x10\x01\x12\x1c\n" +
 	"\x18CALIBRATION_CONDITION_OK\x10\x02\x12\"\n" +
-	"\x1eCALIBRATION_CONDITION_TOO_HIGH\x10\x032\x90\x12\n" +
+	"\x1eCALIBRATION_CONDITION_TOO_HIGH\x10\x032\xe7\x12\n" +
 	"\x10TelemetryService\x12T\n" +
 	"\vStreamState\x12 .osscycler.v1.StreamStateRequest\x1a!.osscycler.v1.StreamStateResponse0\x01\x12a\n" +
 	"\x10StartCalibration\x12%.osscycler.v1.StartCalibrationRequest\x1a&.osscycler.v1.StartCalibrationResponse\x12d\n" +
@@ -6704,7 +6807,8 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\rGetCourseFile\x12\".osscycler.v1.GetCourseFileRequest\x1a#.osscycler.v1.GetCourseFileResponse\x12d\n" +
 	"\x11SetTrainerControl\x12&.osscycler.v1.SetTrainerControlRequest\x1a'.osscycler.v1.SetTrainerControlResponse\x12p\n" +
 	"\x15ReleaseTrainerControl\x12*.osscycler.v1.ReleaseTrainerControlRequest\x1a+.osscycler.v1.ReleaseTrainerControlResponse\x12L\n" +
-	"\tSetPaused\x12\x1e.osscycler.v1.SetPausedRequest\x1a\x1f.osscycler.v1.SetPausedResponse\x12I\n" +
+	"\tSetPaused\x12\x1e.osscycler.v1.SetPausedRequest\x1a\x1f.osscycler.v1.SetPausedResponse\x12U\n" +
+	"\fSetSimulated\x12!.osscycler.v1.SetSimulatedRequest\x1a\".osscycler.v1.SetSimulatedResponse\x12I\n" +
 	"\bAnnounce\x12\x1d.osscycler.v1.AnnounceRequest\x1a\x1e.osscycler.v1.AnnounceResponseB<Z:github.com/digimago/osscycler/gen/osscycler/v1;osscyclerv1b\x06proto3"
 
 var (
@@ -6720,7 +6824,7 @@ func file_osscycler_v1_telemetry_proto_rawDescGZIP() []byte {
 }
 
 var file_osscycler_v1_telemetry_proto_enumTypes = make([]protoimpl.EnumInfo, 12)
-var file_osscycler_v1_telemetry_proto_msgTypes = make([]protoimpl.MessageInfo, 80)
+var file_osscycler_v1_telemetry_proto_msgTypes = make([]protoimpl.MessageInfo, 82)
 var file_osscycler_v1_telemetry_proto_goTypes = []any{
 	(JunctionKind)(0),                     // 0: osscycler.v1.JunctionKind
 	(LandUse)(0),                          // 1: osscycler.v1.LandUse
@@ -6737,184 +6841,188 @@ var file_osscycler_v1_telemetry_proto_goTypes = []any{
 	(*AnnounceRequest)(nil),               // 12: osscycler.v1.AnnounceRequest
 	(*AnnounceResponse)(nil),              // 13: osscycler.v1.AnnounceResponse
 	(*Announcement)(nil),                  // 14: osscycler.v1.Announcement
-	(*SetPausedRequest)(nil),              // 15: osscycler.v1.SetPausedRequest
-	(*SetPausedResponse)(nil),             // 16: osscycler.v1.SetPausedResponse
-	(*SetTrainerControlRequest)(nil),      // 17: osscycler.v1.SetTrainerControlRequest
-	(*SetTrainerControlResponse)(nil),     // 18: osscycler.v1.SetTrainerControlResponse
-	(*ReleaseTrainerControlRequest)(nil),  // 19: osscycler.v1.ReleaseTrainerControlRequest
-	(*ReleaseTrainerControlResponse)(nil), // 20: osscycler.v1.ReleaseTrainerControlResponse
-	(*ListActivitiesRequest)(nil),         // 21: osscycler.v1.ListActivitiesRequest
-	(*ListActivitiesResponse)(nil),        // 22: osscycler.v1.ListActivitiesResponse
-	(*Activity)(nil),                      // 23: osscycler.v1.Activity
-	(*ExportActivityRequest)(nil),         // 24: osscycler.v1.ExportActivityRequest
-	(*ExportActivityResponse)(nil),        // 25: osscycler.v1.ExportActivityResponse
-	(*GetActivityHistoryRequest)(nil),     // 26: osscycler.v1.GetActivityHistoryRequest
-	(*GetActivityHistoryResponse)(nil),    // 27: osscycler.v1.GetActivityHistoryResponse
-	(*GetActivitySummaryRequest)(nil),     // 28: osscycler.v1.GetActivitySummaryRequest
-	(*GetActivitySummaryResponse)(nil),    // 29: osscycler.v1.GetActivitySummaryResponse
-	(*ActivitySummary)(nil),               // 30: osscycler.v1.ActivitySummary
-	(*PowerBest)(nil),                     // 31: osscycler.v1.PowerBest
-	(*SetProfileRequest)(nil),             // 32: osscycler.v1.SetProfileRequest
-	(*SetProfileResponse)(nil),            // 33: osscycler.v1.SetProfileResponse
-	(*ListResultsRequest)(nil),            // 34: osscycler.v1.ListResultsRequest
-	(*ListResultsResponse)(nil),           // 35: osscycler.v1.ListResultsResponse
-	(*RideResult)(nil),                    // 36: osscycler.v1.RideResult
-	(*EndActivityRequest)(nil),            // 37: osscycler.v1.EndActivityRequest
-	(*EndActivityResponse)(nil),           // 38: osscycler.v1.EndActivityResponse
-	(*WorkoutText)(nil),                   // 39: osscycler.v1.WorkoutText
-	(*WorkoutBlock)(nil),                  // 40: osscycler.v1.WorkoutBlock
-	(*WorkoutSegment)(nil),                // 41: osscycler.v1.WorkoutSegment
-	(*WorkoutDef)(nil),                    // 42: osscycler.v1.WorkoutDef
-	(*ListWorkoutsRequest)(nil),           // 43: osscycler.v1.ListWorkoutsRequest
-	(*ListWorkoutsResponse)(nil),          // 44: osscycler.v1.ListWorkoutsResponse
-	(*SaveWorkoutRequest)(nil),            // 45: osscycler.v1.SaveWorkoutRequest
-	(*SaveWorkoutResponse)(nil),           // 46: osscycler.v1.SaveWorkoutResponse
-	(*StartWorkoutRequest)(nil),           // 47: osscycler.v1.StartWorkoutRequest
-	(*StartWorkoutResponse)(nil),          // 48: osscycler.v1.StartWorkoutResponse
-	(*StopWorkoutRequest)(nil),            // 49: osscycler.v1.StopWorkoutRequest
-	(*StopWorkoutResponse)(nil),           // 50: osscycler.v1.StopWorkoutResponse
-	(*SkipSegmentRequest)(nil),            // 51: osscycler.v1.SkipSegmentRequest
-	(*SkipSegmentResponse)(nil),           // 52: osscycler.v1.SkipSegmentResponse
-	(*SetIntensityRequest)(nil),           // 53: osscycler.v1.SetIntensityRequest
-	(*SetIntensityResponse)(nil),          // 54: osscycler.v1.SetIntensityResponse
-	(*SetFtpRequest)(nil),                 // 55: osscycler.v1.SetFtpRequest
-	(*SetFtpResponse)(nil),                // 56: osscycler.v1.SetFtpResponse
-	(*SetDifficultyRequest)(nil),          // 57: osscycler.v1.SetDifficultyRequest
-	(*SetDifficultyResponse)(nil),         // 58: osscycler.v1.SetDifficultyResponse
-	(*ListCoursesRequest)(nil),            // 59: osscycler.v1.ListCoursesRequest
-	(*ListCoursesResponse)(nil),           // 60: osscycler.v1.ListCoursesResponse
-	(*Course)(nil),                        // 61: osscycler.v1.Course
-	(*GetCourseFileRequest)(nil),          // 62: osscycler.v1.GetCourseFileRequest
-	(*GetCourseFileResponse)(nil),         // 63: osscycler.v1.GetCourseFileResponse
-	(*Junction)(nil),                      // 64: osscycler.v1.Junction
-	(*JunctionBranch)(nil),                // 65: osscycler.v1.JunctionBranch
-	(*ParkingArea)(nil),                   // 66: osscycler.v1.ParkingArea
-	(*PlaceSign)(nil),                     // 67: osscycler.v1.PlaceSign
-	(*Building)(nil),                      // 68: osscycler.v1.Building
-	(*StartRideRequest)(nil),              // 69: osscycler.v1.StartRideRequest
-	(*StartRideResponse)(nil),             // 70: osscycler.v1.StartRideResponse
-	(*StopRideRequest)(nil),               // 71: osscycler.v1.StopRideRequest
-	(*StopRideResponse)(nil),              // 72: osscycler.v1.StopRideResponse
-	(*StartCalibrationRequest)(nil),       // 73: osscycler.v1.StartCalibrationRequest
-	(*StartCalibrationResponse)(nil),      // 74: osscycler.v1.StartCalibrationResponse
-	(*CancelCalibrationRequest)(nil),      // 75: osscycler.v1.CancelCalibrationRequest
-	(*CancelCalibrationResponse)(nil),     // 76: osscycler.v1.CancelCalibrationResponse
-	(*StreamStateRequest)(nil),            // 77: osscycler.v1.StreamStateRequest
-	(*StreamStateResponse)(nil),           // 78: osscycler.v1.StreamStateResponse
-	(*State)(nil),                         // 79: osscycler.v1.State
-	(*Radio)(nil),                         // 80: osscycler.v1.Radio
-	(*TrainerControl)(nil),                // 81: osscycler.v1.TrainerControl
-	(*RiderProfile)(nil),                  // 82: osscycler.v1.RiderProfile
-	(*Recording)(nil),                     // 83: osscycler.v1.Recording
-	(*WorkoutProgress)(nil),               // 84: osscycler.v1.WorkoutProgress
-	(*Ride)(nil),                          // 85: osscycler.v1.Ride
-	(*RideLap)(nil),                       // 86: osscycler.v1.RideLap
-	(*RideGhost)(nil),                     // 87: osscycler.v1.RideGhost
-	(*Sensor)(nil),                        // 88: osscycler.v1.Sensor
-	(*Trainer)(nil),                       // 89: osscycler.v1.Trainer
-	(*Calibration)(nil),                   // 90: osscycler.v1.Calibration
-	(*HeartRate)(nil),                     // 91: osscycler.v1.HeartRate
+	(*SetSimulatedRequest)(nil),           // 15: osscycler.v1.SetSimulatedRequest
+	(*SetSimulatedResponse)(nil),          // 16: osscycler.v1.SetSimulatedResponse
+	(*SetPausedRequest)(nil),              // 17: osscycler.v1.SetPausedRequest
+	(*SetPausedResponse)(nil),             // 18: osscycler.v1.SetPausedResponse
+	(*SetTrainerControlRequest)(nil),      // 19: osscycler.v1.SetTrainerControlRequest
+	(*SetTrainerControlResponse)(nil),     // 20: osscycler.v1.SetTrainerControlResponse
+	(*ReleaseTrainerControlRequest)(nil),  // 21: osscycler.v1.ReleaseTrainerControlRequest
+	(*ReleaseTrainerControlResponse)(nil), // 22: osscycler.v1.ReleaseTrainerControlResponse
+	(*ListActivitiesRequest)(nil),         // 23: osscycler.v1.ListActivitiesRequest
+	(*ListActivitiesResponse)(nil),        // 24: osscycler.v1.ListActivitiesResponse
+	(*Activity)(nil),                      // 25: osscycler.v1.Activity
+	(*ExportActivityRequest)(nil),         // 26: osscycler.v1.ExportActivityRequest
+	(*ExportActivityResponse)(nil),        // 27: osscycler.v1.ExportActivityResponse
+	(*GetActivityHistoryRequest)(nil),     // 28: osscycler.v1.GetActivityHistoryRequest
+	(*GetActivityHistoryResponse)(nil),    // 29: osscycler.v1.GetActivityHistoryResponse
+	(*GetActivitySummaryRequest)(nil),     // 30: osscycler.v1.GetActivitySummaryRequest
+	(*GetActivitySummaryResponse)(nil),    // 31: osscycler.v1.GetActivitySummaryResponse
+	(*ActivitySummary)(nil),               // 32: osscycler.v1.ActivitySummary
+	(*PowerBest)(nil),                     // 33: osscycler.v1.PowerBest
+	(*SetProfileRequest)(nil),             // 34: osscycler.v1.SetProfileRequest
+	(*SetProfileResponse)(nil),            // 35: osscycler.v1.SetProfileResponse
+	(*ListResultsRequest)(nil),            // 36: osscycler.v1.ListResultsRequest
+	(*ListResultsResponse)(nil),           // 37: osscycler.v1.ListResultsResponse
+	(*RideResult)(nil),                    // 38: osscycler.v1.RideResult
+	(*EndActivityRequest)(nil),            // 39: osscycler.v1.EndActivityRequest
+	(*EndActivityResponse)(nil),           // 40: osscycler.v1.EndActivityResponse
+	(*WorkoutText)(nil),                   // 41: osscycler.v1.WorkoutText
+	(*WorkoutBlock)(nil),                  // 42: osscycler.v1.WorkoutBlock
+	(*WorkoutSegment)(nil),                // 43: osscycler.v1.WorkoutSegment
+	(*WorkoutDef)(nil),                    // 44: osscycler.v1.WorkoutDef
+	(*ListWorkoutsRequest)(nil),           // 45: osscycler.v1.ListWorkoutsRequest
+	(*ListWorkoutsResponse)(nil),          // 46: osscycler.v1.ListWorkoutsResponse
+	(*SaveWorkoutRequest)(nil),            // 47: osscycler.v1.SaveWorkoutRequest
+	(*SaveWorkoutResponse)(nil),           // 48: osscycler.v1.SaveWorkoutResponse
+	(*StartWorkoutRequest)(nil),           // 49: osscycler.v1.StartWorkoutRequest
+	(*StartWorkoutResponse)(nil),          // 50: osscycler.v1.StartWorkoutResponse
+	(*StopWorkoutRequest)(nil),            // 51: osscycler.v1.StopWorkoutRequest
+	(*StopWorkoutResponse)(nil),           // 52: osscycler.v1.StopWorkoutResponse
+	(*SkipSegmentRequest)(nil),            // 53: osscycler.v1.SkipSegmentRequest
+	(*SkipSegmentResponse)(nil),           // 54: osscycler.v1.SkipSegmentResponse
+	(*SetIntensityRequest)(nil),           // 55: osscycler.v1.SetIntensityRequest
+	(*SetIntensityResponse)(nil),          // 56: osscycler.v1.SetIntensityResponse
+	(*SetFtpRequest)(nil),                 // 57: osscycler.v1.SetFtpRequest
+	(*SetFtpResponse)(nil),                // 58: osscycler.v1.SetFtpResponse
+	(*SetDifficultyRequest)(nil),          // 59: osscycler.v1.SetDifficultyRequest
+	(*SetDifficultyResponse)(nil),         // 60: osscycler.v1.SetDifficultyResponse
+	(*ListCoursesRequest)(nil),            // 61: osscycler.v1.ListCoursesRequest
+	(*ListCoursesResponse)(nil),           // 62: osscycler.v1.ListCoursesResponse
+	(*Course)(nil),                        // 63: osscycler.v1.Course
+	(*GetCourseFileRequest)(nil),          // 64: osscycler.v1.GetCourseFileRequest
+	(*GetCourseFileResponse)(nil),         // 65: osscycler.v1.GetCourseFileResponse
+	(*Junction)(nil),                      // 66: osscycler.v1.Junction
+	(*JunctionBranch)(nil),                // 67: osscycler.v1.JunctionBranch
+	(*ParkingArea)(nil),                   // 68: osscycler.v1.ParkingArea
+	(*PlaceSign)(nil),                     // 69: osscycler.v1.PlaceSign
+	(*Building)(nil),                      // 70: osscycler.v1.Building
+	(*StartRideRequest)(nil),              // 71: osscycler.v1.StartRideRequest
+	(*StartRideResponse)(nil),             // 72: osscycler.v1.StartRideResponse
+	(*StopRideRequest)(nil),               // 73: osscycler.v1.StopRideRequest
+	(*StopRideResponse)(nil),              // 74: osscycler.v1.StopRideResponse
+	(*StartCalibrationRequest)(nil),       // 75: osscycler.v1.StartCalibrationRequest
+	(*StartCalibrationResponse)(nil),      // 76: osscycler.v1.StartCalibrationResponse
+	(*CancelCalibrationRequest)(nil),      // 77: osscycler.v1.CancelCalibrationRequest
+	(*CancelCalibrationResponse)(nil),     // 78: osscycler.v1.CancelCalibrationResponse
+	(*StreamStateRequest)(nil),            // 79: osscycler.v1.StreamStateRequest
+	(*StreamStateResponse)(nil),           // 80: osscycler.v1.StreamStateResponse
+	(*State)(nil),                         // 81: osscycler.v1.State
+	(*Radio)(nil),                         // 82: osscycler.v1.Radio
+	(*TrainerControl)(nil),                // 83: osscycler.v1.TrainerControl
+	(*RiderProfile)(nil),                  // 84: osscycler.v1.RiderProfile
+	(*Recording)(nil),                     // 85: osscycler.v1.Recording
+	(*WorkoutProgress)(nil),               // 86: osscycler.v1.WorkoutProgress
+	(*Ride)(nil),                          // 87: osscycler.v1.Ride
+	(*RideLap)(nil),                       // 88: osscycler.v1.RideLap
+	(*RideGhost)(nil),                     // 89: osscycler.v1.RideGhost
+	(*Sensor)(nil),                        // 90: osscycler.v1.Sensor
+	(*Trainer)(nil),                       // 91: osscycler.v1.Trainer
+	(*Calibration)(nil),                   // 92: osscycler.v1.Calibration
+	(*HeartRate)(nil),                     // 93: osscycler.v1.HeartRate
 }
 var file_osscycler_v1_telemetry_proto_depIdxs = []int32{
 	4,  // 0: osscycler.v1.SetTrainerControlResponse.mode:type_name -> osscycler.v1.ControlMode
-	23, // 1: osscycler.v1.ListActivitiesResponse.activities:type_name -> osscycler.v1.Activity
-	30, // 2: osscycler.v1.GetActivitySummaryResponse.summary:type_name -> osscycler.v1.ActivitySummary
-	31, // 3: osscycler.v1.ActivitySummary.power_curve:type_name -> osscycler.v1.PowerBest
-	82, // 4: osscycler.v1.SetProfileResponse.profile:type_name -> osscycler.v1.RiderProfile
-	36, // 5: osscycler.v1.ListResultsResponse.results:type_name -> osscycler.v1.RideResult
-	39, // 6: osscycler.v1.WorkoutBlock.texts:type_name -> osscycler.v1.WorkoutText
-	40, // 7: osscycler.v1.WorkoutDef.blocks:type_name -> osscycler.v1.WorkoutBlock
-	41, // 8: osscycler.v1.WorkoutDef.timeline:type_name -> osscycler.v1.WorkoutSegment
-	42, // 9: osscycler.v1.ListWorkoutsResponse.workouts:type_name -> osscycler.v1.WorkoutDef
-	42, // 10: osscycler.v1.SaveWorkoutRequest.workout:type_name -> osscycler.v1.WorkoutDef
-	61, // 11: osscycler.v1.ListCoursesResponse.courses:type_name -> osscycler.v1.Course
-	68, // 12: osscycler.v1.Course.buildings:type_name -> osscycler.v1.Building
-	64, // 13: osscycler.v1.Course.junctions:type_name -> osscycler.v1.Junction
-	66, // 14: osscycler.v1.Course.parking:type_name -> osscycler.v1.ParkingArea
-	67, // 15: osscycler.v1.Course.place_signs:type_name -> osscycler.v1.PlaceSign
+	25, // 1: osscycler.v1.ListActivitiesResponse.activities:type_name -> osscycler.v1.Activity
+	32, // 2: osscycler.v1.GetActivitySummaryResponse.summary:type_name -> osscycler.v1.ActivitySummary
+	33, // 3: osscycler.v1.ActivitySummary.power_curve:type_name -> osscycler.v1.PowerBest
+	84, // 4: osscycler.v1.SetProfileResponse.profile:type_name -> osscycler.v1.RiderProfile
+	38, // 5: osscycler.v1.ListResultsResponse.results:type_name -> osscycler.v1.RideResult
+	41, // 6: osscycler.v1.WorkoutBlock.texts:type_name -> osscycler.v1.WorkoutText
+	42, // 7: osscycler.v1.WorkoutDef.blocks:type_name -> osscycler.v1.WorkoutBlock
+	43, // 8: osscycler.v1.WorkoutDef.timeline:type_name -> osscycler.v1.WorkoutSegment
+	44, // 9: osscycler.v1.ListWorkoutsResponse.workouts:type_name -> osscycler.v1.WorkoutDef
+	44, // 10: osscycler.v1.SaveWorkoutRequest.workout:type_name -> osscycler.v1.WorkoutDef
+	63, // 11: osscycler.v1.ListCoursesResponse.courses:type_name -> osscycler.v1.Course
+	70, // 12: osscycler.v1.Course.buildings:type_name -> osscycler.v1.Building
+	66, // 13: osscycler.v1.Course.junctions:type_name -> osscycler.v1.Junction
+	68, // 14: osscycler.v1.Course.parking:type_name -> osscycler.v1.ParkingArea
+	69, // 15: osscycler.v1.Course.place_signs:type_name -> osscycler.v1.PlaceSign
 	0,  // 16: osscycler.v1.Junction.kind:type_name -> osscycler.v1.JunctionKind
-	65, // 17: osscycler.v1.Junction.branches:type_name -> osscycler.v1.JunctionBranch
+	67, // 17: osscycler.v1.Junction.branches:type_name -> osscycler.v1.JunctionBranch
 	2,  // 18: osscycler.v1.Building.kind:type_name -> osscycler.v1.BuildingKind
 	3,  // 19: osscycler.v1.StartCalibrationRequest.type:type_name -> osscycler.v1.CalibrationType
-	79, // 20: osscycler.v1.StreamStateResponse.state:type_name -> osscycler.v1.State
-	89, // 21: osscycler.v1.State.trainer:type_name -> osscycler.v1.Trainer
-	91, // 22: osscycler.v1.State.heart_rate:type_name -> osscycler.v1.HeartRate
-	85, // 23: osscycler.v1.State.ride:type_name -> osscycler.v1.Ride
-	84, // 24: osscycler.v1.State.workout:type_name -> osscycler.v1.WorkoutProgress
-	83, // 25: osscycler.v1.State.recording:type_name -> osscycler.v1.Recording
-	82, // 26: osscycler.v1.State.profile:type_name -> osscycler.v1.RiderProfile
-	81, // 27: osscycler.v1.State.control:type_name -> osscycler.v1.TrainerControl
-	80, // 28: osscycler.v1.State.radio:type_name -> osscycler.v1.Radio
+	81, // 20: osscycler.v1.StreamStateResponse.state:type_name -> osscycler.v1.State
+	91, // 21: osscycler.v1.State.trainer:type_name -> osscycler.v1.Trainer
+	93, // 22: osscycler.v1.State.heart_rate:type_name -> osscycler.v1.HeartRate
+	87, // 23: osscycler.v1.State.ride:type_name -> osscycler.v1.Ride
+	86, // 24: osscycler.v1.State.workout:type_name -> osscycler.v1.WorkoutProgress
+	85, // 25: osscycler.v1.State.recording:type_name -> osscycler.v1.Recording
+	84, // 26: osscycler.v1.State.profile:type_name -> osscycler.v1.RiderProfile
+	83, // 27: osscycler.v1.State.control:type_name -> osscycler.v1.TrainerControl
+	82, // 28: osscycler.v1.State.radio:type_name -> osscycler.v1.Radio
 	14, // 29: osscycler.v1.State.announcement:type_name -> osscycler.v1.Announcement
 	4,  // 30: osscycler.v1.TrainerControl.mode:type_name -> osscycler.v1.ControlMode
 	5,  // 31: osscycler.v1.WorkoutProgress.phase:type_name -> osscycler.v1.WorkoutPhase
 	6,  // 32: osscycler.v1.Ride.phase:type_name -> osscycler.v1.RidePhase
-	87, // 33: osscycler.v1.Ride.ghost:type_name -> osscycler.v1.RideGhost
-	86, // 34: osscycler.v1.Ride.last_lap:type_name -> osscycler.v1.RideLap
-	86, // 35: osscycler.v1.Ride.best_lap:type_name -> osscycler.v1.RideLap
+	89, // 33: osscycler.v1.Ride.ghost:type_name -> osscycler.v1.RideGhost
+	88, // 34: osscycler.v1.Ride.last_lap:type_name -> osscycler.v1.RideLap
+	88, // 35: osscycler.v1.Ride.best_lap:type_name -> osscycler.v1.RideLap
 	7,  // 36: osscycler.v1.Sensor.status:type_name -> osscycler.v1.SensorStatus
-	88, // 37: osscycler.v1.Trainer.sensor:type_name -> osscycler.v1.Sensor
+	90, // 37: osscycler.v1.Trainer.sensor:type_name -> osscycler.v1.Sensor
 	8,  // 38: osscycler.v1.Trainer.state:type_name -> osscycler.v1.TrainerState
 	9,  // 39: osscycler.v1.Trainer.target_power_limit:type_name -> osscycler.v1.TargetPowerLimit
-	90, // 40: osscycler.v1.Trainer.calibration:type_name -> osscycler.v1.Calibration
+	92, // 40: osscycler.v1.Trainer.calibration:type_name -> osscycler.v1.Calibration
 	10, // 41: osscycler.v1.Calibration.phase:type_name -> osscycler.v1.CalibrationPhase
 	11, // 42: osscycler.v1.Calibration.speed_condition:type_name -> osscycler.v1.CalibrationCondition
 	11, // 43: osscycler.v1.Calibration.temperature_condition:type_name -> osscycler.v1.CalibrationCondition
-	88, // 44: osscycler.v1.HeartRate.sensor:type_name -> osscycler.v1.Sensor
-	77, // 45: osscycler.v1.TelemetryService.StreamState:input_type -> osscycler.v1.StreamStateRequest
-	73, // 46: osscycler.v1.TelemetryService.StartCalibration:input_type -> osscycler.v1.StartCalibrationRequest
-	75, // 47: osscycler.v1.TelemetryService.CancelCalibration:input_type -> osscycler.v1.CancelCalibrationRequest
-	59, // 48: osscycler.v1.TelemetryService.ListCourses:input_type -> osscycler.v1.ListCoursesRequest
-	69, // 49: osscycler.v1.TelemetryService.StartRide:input_type -> osscycler.v1.StartRideRequest
-	71, // 50: osscycler.v1.TelemetryService.StopRide:input_type -> osscycler.v1.StopRideRequest
-	57, // 51: osscycler.v1.TelemetryService.SetDifficulty:input_type -> osscycler.v1.SetDifficultyRequest
-	43, // 52: osscycler.v1.TelemetryService.ListWorkouts:input_type -> osscycler.v1.ListWorkoutsRequest
-	45, // 53: osscycler.v1.TelemetryService.SaveWorkout:input_type -> osscycler.v1.SaveWorkoutRequest
-	47, // 54: osscycler.v1.TelemetryService.StartWorkout:input_type -> osscycler.v1.StartWorkoutRequest
-	49, // 55: osscycler.v1.TelemetryService.StopWorkout:input_type -> osscycler.v1.StopWorkoutRequest
-	51, // 56: osscycler.v1.TelemetryService.SkipSegment:input_type -> osscycler.v1.SkipSegmentRequest
-	53, // 57: osscycler.v1.TelemetryService.SetIntensity:input_type -> osscycler.v1.SetIntensityRequest
-	55, // 58: osscycler.v1.TelemetryService.SetFtp:input_type -> osscycler.v1.SetFtpRequest
-	37, // 59: osscycler.v1.TelemetryService.EndActivity:input_type -> osscycler.v1.EndActivityRequest
-	34, // 60: osscycler.v1.TelemetryService.ListResults:input_type -> osscycler.v1.ListResultsRequest
-	32, // 61: osscycler.v1.TelemetryService.SetProfile:input_type -> osscycler.v1.SetProfileRequest
-	21, // 62: osscycler.v1.TelemetryService.ListActivities:input_type -> osscycler.v1.ListActivitiesRequest
-	24, // 63: osscycler.v1.TelemetryService.ExportActivity:input_type -> osscycler.v1.ExportActivityRequest
-	26, // 64: osscycler.v1.TelemetryService.GetActivityHistory:input_type -> osscycler.v1.GetActivityHistoryRequest
-	28, // 65: osscycler.v1.TelemetryService.GetActivitySummary:input_type -> osscycler.v1.GetActivitySummaryRequest
-	62, // 66: osscycler.v1.TelemetryService.GetCourseFile:input_type -> osscycler.v1.GetCourseFileRequest
-	17, // 67: osscycler.v1.TelemetryService.SetTrainerControl:input_type -> osscycler.v1.SetTrainerControlRequest
-	19, // 68: osscycler.v1.TelemetryService.ReleaseTrainerControl:input_type -> osscycler.v1.ReleaseTrainerControlRequest
-	15, // 69: osscycler.v1.TelemetryService.SetPaused:input_type -> osscycler.v1.SetPausedRequest
-	12, // 70: osscycler.v1.TelemetryService.Announce:input_type -> osscycler.v1.AnnounceRequest
-	78, // 71: osscycler.v1.TelemetryService.StreamState:output_type -> osscycler.v1.StreamStateResponse
-	74, // 72: osscycler.v1.TelemetryService.StartCalibration:output_type -> osscycler.v1.StartCalibrationResponse
-	76, // 73: osscycler.v1.TelemetryService.CancelCalibration:output_type -> osscycler.v1.CancelCalibrationResponse
-	60, // 74: osscycler.v1.TelemetryService.ListCourses:output_type -> osscycler.v1.ListCoursesResponse
-	70, // 75: osscycler.v1.TelemetryService.StartRide:output_type -> osscycler.v1.StartRideResponse
-	72, // 76: osscycler.v1.TelemetryService.StopRide:output_type -> osscycler.v1.StopRideResponse
-	58, // 77: osscycler.v1.TelemetryService.SetDifficulty:output_type -> osscycler.v1.SetDifficultyResponse
-	44, // 78: osscycler.v1.TelemetryService.ListWorkouts:output_type -> osscycler.v1.ListWorkoutsResponse
-	46, // 79: osscycler.v1.TelemetryService.SaveWorkout:output_type -> osscycler.v1.SaveWorkoutResponse
-	48, // 80: osscycler.v1.TelemetryService.StartWorkout:output_type -> osscycler.v1.StartWorkoutResponse
-	50, // 81: osscycler.v1.TelemetryService.StopWorkout:output_type -> osscycler.v1.StopWorkoutResponse
-	52, // 82: osscycler.v1.TelemetryService.SkipSegment:output_type -> osscycler.v1.SkipSegmentResponse
-	54, // 83: osscycler.v1.TelemetryService.SetIntensity:output_type -> osscycler.v1.SetIntensityResponse
-	56, // 84: osscycler.v1.TelemetryService.SetFtp:output_type -> osscycler.v1.SetFtpResponse
-	38, // 85: osscycler.v1.TelemetryService.EndActivity:output_type -> osscycler.v1.EndActivityResponse
-	35, // 86: osscycler.v1.TelemetryService.ListResults:output_type -> osscycler.v1.ListResultsResponse
-	33, // 87: osscycler.v1.TelemetryService.SetProfile:output_type -> osscycler.v1.SetProfileResponse
-	22, // 88: osscycler.v1.TelemetryService.ListActivities:output_type -> osscycler.v1.ListActivitiesResponse
-	25, // 89: osscycler.v1.TelemetryService.ExportActivity:output_type -> osscycler.v1.ExportActivityResponse
-	27, // 90: osscycler.v1.TelemetryService.GetActivityHistory:output_type -> osscycler.v1.GetActivityHistoryResponse
-	29, // 91: osscycler.v1.TelemetryService.GetActivitySummary:output_type -> osscycler.v1.GetActivitySummaryResponse
-	63, // 92: osscycler.v1.TelemetryService.GetCourseFile:output_type -> osscycler.v1.GetCourseFileResponse
-	18, // 93: osscycler.v1.TelemetryService.SetTrainerControl:output_type -> osscycler.v1.SetTrainerControlResponse
-	20, // 94: osscycler.v1.TelemetryService.ReleaseTrainerControl:output_type -> osscycler.v1.ReleaseTrainerControlResponse
-	16, // 95: osscycler.v1.TelemetryService.SetPaused:output_type -> osscycler.v1.SetPausedResponse
-	13, // 96: osscycler.v1.TelemetryService.Announce:output_type -> osscycler.v1.AnnounceResponse
-	71, // [71:97] is the sub-list for method output_type
-	45, // [45:71] is the sub-list for method input_type
+	90, // 44: osscycler.v1.HeartRate.sensor:type_name -> osscycler.v1.Sensor
+	79, // 45: osscycler.v1.TelemetryService.StreamState:input_type -> osscycler.v1.StreamStateRequest
+	75, // 46: osscycler.v1.TelemetryService.StartCalibration:input_type -> osscycler.v1.StartCalibrationRequest
+	77, // 47: osscycler.v1.TelemetryService.CancelCalibration:input_type -> osscycler.v1.CancelCalibrationRequest
+	61, // 48: osscycler.v1.TelemetryService.ListCourses:input_type -> osscycler.v1.ListCoursesRequest
+	71, // 49: osscycler.v1.TelemetryService.StartRide:input_type -> osscycler.v1.StartRideRequest
+	73, // 50: osscycler.v1.TelemetryService.StopRide:input_type -> osscycler.v1.StopRideRequest
+	59, // 51: osscycler.v1.TelemetryService.SetDifficulty:input_type -> osscycler.v1.SetDifficultyRequest
+	45, // 52: osscycler.v1.TelemetryService.ListWorkouts:input_type -> osscycler.v1.ListWorkoutsRequest
+	47, // 53: osscycler.v1.TelemetryService.SaveWorkout:input_type -> osscycler.v1.SaveWorkoutRequest
+	49, // 54: osscycler.v1.TelemetryService.StartWorkout:input_type -> osscycler.v1.StartWorkoutRequest
+	51, // 55: osscycler.v1.TelemetryService.StopWorkout:input_type -> osscycler.v1.StopWorkoutRequest
+	53, // 56: osscycler.v1.TelemetryService.SkipSegment:input_type -> osscycler.v1.SkipSegmentRequest
+	55, // 57: osscycler.v1.TelemetryService.SetIntensity:input_type -> osscycler.v1.SetIntensityRequest
+	57, // 58: osscycler.v1.TelemetryService.SetFtp:input_type -> osscycler.v1.SetFtpRequest
+	39, // 59: osscycler.v1.TelemetryService.EndActivity:input_type -> osscycler.v1.EndActivityRequest
+	36, // 60: osscycler.v1.TelemetryService.ListResults:input_type -> osscycler.v1.ListResultsRequest
+	34, // 61: osscycler.v1.TelemetryService.SetProfile:input_type -> osscycler.v1.SetProfileRequest
+	23, // 62: osscycler.v1.TelemetryService.ListActivities:input_type -> osscycler.v1.ListActivitiesRequest
+	26, // 63: osscycler.v1.TelemetryService.ExportActivity:input_type -> osscycler.v1.ExportActivityRequest
+	28, // 64: osscycler.v1.TelemetryService.GetActivityHistory:input_type -> osscycler.v1.GetActivityHistoryRequest
+	30, // 65: osscycler.v1.TelemetryService.GetActivitySummary:input_type -> osscycler.v1.GetActivitySummaryRequest
+	64, // 66: osscycler.v1.TelemetryService.GetCourseFile:input_type -> osscycler.v1.GetCourseFileRequest
+	19, // 67: osscycler.v1.TelemetryService.SetTrainerControl:input_type -> osscycler.v1.SetTrainerControlRequest
+	21, // 68: osscycler.v1.TelemetryService.ReleaseTrainerControl:input_type -> osscycler.v1.ReleaseTrainerControlRequest
+	17, // 69: osscycler.v1.TelemetryService.SetPaused:input_type -> osscycler.v1.SetPausedRequest
+	15, // 70: osscycler.v1.TelemetryService.SetSimulated:input_type -> osscycler.v1.SetSimulatedRequest
+	12, // 71: osscycler.v1.TelemetryService.Announce:input_type -> osscycler.v1.AnnounceRequest
+	80, // 72: osscycler.v1.TelemetryService.StreamState:output_type -> osscycler.v1.StreamStateResponse
+	76, // 73: osscycler.v1.TelemetryService.StartCalibration:output_type -> osscycler.v1.StartCalibrationResponse
+	78, // 74: osscycler.v1.TelemetryService.CancelCalibration:output_type -> osscycler.v1.CancelCalibrationResponse
+	62, // 75: osscycler.v1.TelemetryService.ListCourses:output_type -> osscycler.v1.ListCoursesResponse
+	72, // 76: osscycler.v1.TelemetryService.StartRide:output_type -> osscycler.v1.StartRideResponse
+	74, // 77: osscycler.v1.TelemetryService.StopRide:output_type -> osscycler.v1.StopRideResponse
+	60, // 78: osscycler.v1.TelemetryService.SetDifficulty:output_type -> osscycler.v1.SetDifficultyResponse
+	46, // 79: osscycler.v1.TelemetryService.ListWorkouts:output_type -> osscycler.v1.ListWorkoutsResponse
+	48, // 80: osscycler.v1.TelemetryService.SaveWorkout:output_type -> osscycler.v1.SaveWorkoutResponse
+	50, // 81: osscycler.v1.TelemetryService.StartWorkout:output_type -> osscycler.v1.StartWorkoutResponse
+	52, // 82: osscycler.v1.TelemetryService.StopWorkout:output_type -> osscycler.v1.StopWorkoutResponse
+	54, // 83: osscycler.v1.TelemetryService.SkipSegment:output_type -> osscycler.v1.SkipSegmentResponse
+	56, // 84: osscycler.v1.TelemetryService.SetIntensity:output_type -> osscycler.v1.SetIntensityResponse
+	58, // 85: osscycler.v1.TelemetryService.SetFtp:output_type -> osscycler.v1.SetFtpResponse
+	40, // 86: osscycler.v1.TelemetryService.EndActivity:output_type -> osscycler.v1.EndActivityResponse
+	37, // 87: osscycler.v1.TelemetryService.ListResults:output_type -> osscycler.v1.ListResultsResponse
+	35, // 88: osscycler.v1.TelemetryService.SetProfile:output_type -> osscycler.v1.SetProfileResponse
+	24, // 89: osscycler.v1.TelemetryService.ListActivities:output_type -> osscycler.v1.ListActivitiesResponse
+	27, // 90: osscycler.v1.TelemetryService.ExportActivity:output_type -> osscycler.v1.ExportActivityResponse
+	29, // 91: osscycler.v1.TelemetryService.GetActivityHistory:output_type -> osscycler.v1.GetActivityHistoryResponse
+	31, // 92: osscycler.v1.TelemetryService.GetActivitySummary:output_type -> osscycler.v1.GetActivitySummaryResponse
+	65, // 93: osscycler.v1.TelemetryService.GetCourseFile:output_type -> osscycler.v1.GetCourseFileResponse
+	20, // 94: osscycler.v1.TelemetryService.SetTrainerControl:output_type -> osscycler.v1.SetTrainerControlResponse
+	22, // 95: osscycler.v1.TelemetryService.ReleaseTrainerControl:output_type -> osscycler.v1.ReleaseTrainerControlResponse
+	18, // 96: osscycler.v1.TelemetryService.SetPaused:output_type -> osscycler.v1.SetPausedResponse
+	16, // 97: osscycler.v1.TelemetryService.SetSimulated:output_type -> osscycler.v1.SetSimulatedResponse
+	13, // 98: osscycler.v1.TelemetryService.Announce:output_type -> osscycler.v1.AnnounceResponse
+	72, // [72:99] is the sub-list for method output_type
+	45, // [45:72] is the sub-list for method input_type
 	45, // [45:45] is the sub-list for extension type_name
 	45, // [45:45] is the sub-list for extension extendee
 	0,  // [0:45] is the sub-list for field type_name
@@ -6925,23 +7033,23 @@ func file_osscycler_v1_telemetry_proto_init() {
 	if File_osscycler_v1_telemetry_proto != nil {
 		return
 	}
-	file_osscycler_v1_telemetry_proto_msgTypes[5].OneofWrappers = []any{
+	file_osscycler_v1_telemetry_proto_msgTypes[7].OneofWrappers = []any{
 		(*SetTrainerControlRequest_PowerW)(nil),
 		(*SetTrainerControlRequest_GradePct)(nil),
 		(*SetTrainerControlRequest_LevelPct)(nil),
 	}
-	file_osscycler_v1_telemetry_proto_msgTypes[20].OneofWrappers = []any{}
-	file_osscycler_v1_telemetry_proto_msgTypes[57].OneofWrappers = []any{}
-	file_osscycler_v1_telemetry_proto_msgTypes[77].OneofWrappers = []any{}
-	file_osscycler_v1_telemetry_proto_msgTypes[78].OneofWrappers = []any{}
+	file_osscycler_v1_telemetry_proto_msgTypes[22].OneofWrappers = []any{}
+	file_osscycler_v1_telemetry_proto_msgTypes[59].OneofWrappers = []any{}
 	file_osscycler_v1_telemetry_proto_msgTypes[79].OneofWrappers = []any{}
+	file_osscycler_v1_telemetry_proto_msgTypes[80].OneofWrappers = []any{}
+	file_osscycler_v1_telemetry_proto_msgTypes[81].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_osscycler_v1_telemetry_proto_rawDesc), len(file_osscycler_v1_telemetry_proto_rawDesc)),
 			NumEnums:      12,
-			NumMessages:   80,
+			NumMessages:   82,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -22,6 +22,7 @@
     <Compile Include="../../src/Head/Controller.Layout.cs" />
     <Compile Include="../../src/Head/Controller.Form.cs" />
     <Compile Include="../../src/Head/Controller.Graph.cs" />
+    <Compile Include="../../src/Head/Controller.Hardware.cs" />
     <Compile Include="../../src/Head/Controller.Pause.cs" />
     <Compile Include="../../src/Head/Controller.Quit.cs" />
     <Compile Include="../../src/Head/WorkoutForm.cs" />

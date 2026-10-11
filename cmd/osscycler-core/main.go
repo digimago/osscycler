@@ -219,6 +219,7 @@ func run() error {
 		Run(context.Context) error
 	}
 	var stats metrics.StatsSource // the stick's counters; none when faking
+	var sw *telemetry.Switch      // nil when faking
 	if *fake {
 		log.Info("serving a synthetic ride")
 		source = telemetry.NewFake(hub)
@@ -237,8 +238,10 @@ func run() error {
 		stick := telemetry.NewStick(func() (*ant.Node, func(), error) {
 			return openStick(*port, *debug, *rawPath, log)
 		}, hub, cfg, log)
-		source = stick
-		stats = stick
+		// A simulated rider can stand in for it at the rider's request.
+		sw = telemetry.NewSwitch(stick, hub)
+		source = sw
+		stats = sw
 	}
 
 	// History (results, PBs, ghosts) reads the recording directory, also
@@ -268,6 +271,9 @@ func run() error {
 	}
 	manual := control.New(hub, source, *maxGrade, log)
 	svc := api.Services{Calibrator: source, Rides: riders.Rides(), Profile: riders, Control: manual}
+	if sw != nil {
+		svc.Simulator = sw
+	}
 	var scenes *scenery.Store
 	if *courseDir != "" {
 		scenes = scenery.NewStore(scenery.Config{

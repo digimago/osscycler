@@ -252,6 +252,11 @@ func defaultExportDir() string {
 	return home
 }
 
+func (c commands) SetSimulated(ctx context.Context, on bool) error {
+	_, err := c.c.SetSimulated(ctx, &pb.SetSimulatedRequest{Simulated: on})
+	return err
+}
+
 func (c commands) SetProfile(ctx context.Context, weightKg, ftpW, heightCm, maxHR *float64) (*pb.RiderProfile, error) {
 	resp, err := c.c.SetProfile(ctx, &pb.SetProfileRequest{WeightKg: weightKg, FtpW: ftpW, HeightCm: heightCm, MaxHrBpm: maxHR})
 	return resp.GetProfile(), err

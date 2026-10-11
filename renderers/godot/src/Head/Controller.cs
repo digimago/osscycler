@@ -29,6 +29,9 @@ public interface ICommands
     // SetPaused parks the core or carries on (it holds rides, workouts and
     // the trainer; a start carries on).
     Task SetPaused(bool paused);
+    // SetSimulated puts a simulated rider in place of the trainer, or
+    // takes it away.
+    Task SetSimulated(bool on);
     Task SetFtp(double watts);
     Task SetGrade(double pct);
     Task SetLevel(double pct);
@@ -88,7 +91,7 @@ public sealed partial class Controller
     // picker, a prompt, the layout editor, the workout form, onboarding,
     // the end-ride question, a spin-down's countdown): keys of the
     // renderer's own (the debug mark's space) are only for then.
-    public bool Free => Help == null && _arranging == null && _form == null && _onboard == null && !_ending && Summary == null
+    public bool Free => Help == null && _arranging == null && _form == null && _onboard == null && !_ending && !_hardwareUp && Summary == null
         && double.IsNaN(_countdownTo) && _prompt == null && _screen == Screen.None && !_quitting;
 
     // Note shows a notice from the renderer itself (a mark made).
@@ -133,6 +136,8 @@ public sealed partial class Controller
             ArrangeKey(key);
             return;
         }
+        if (HardwareKey(key, st))
+            return;
         if (_form != null)
         {
             FormKey(key, now);

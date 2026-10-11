@@ -37,6 +37,9 @@ type Commands interface {
 	ActivityHistory(ctx context.Context, name string, since uint32) (*pb.GetActivityHistoryResponse, error)
 	// ActivitySummary sums an activity up, as ActivityHistory names it.
 	ActivitySummary(ctx context.Context, name string) (*pb.ActivitySummary, error)
+	// SetSimulated puts a simulated rider in place of the trainer, or
+	// takes it away.
+	SetSimulated(ctx context.Context, on bool) error
 	ListActivities(ctx context.Context) ([]*pb.Activity, error)
 	ExportActivity(ctx context.Context, name string, w io.Writer) (int64, error)
 	SetTrainerControl(ctx context.Context, mode pb.ControlMode, v float64) (float64, error)

@@ -13,6 +13,7 @@ public sealed class NoCore : ICommands
 
     public Task StopRide() => None();
     public Task SetPaused(bool paused) => None();
+    public Task SetSimulated(bool on) => None();
     public Task SetDifficulty(double pct) => None();
     public Task StopWorkout() => None();
     public Task SkipSegment() => None();

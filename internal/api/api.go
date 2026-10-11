@@ -116,6 +116,12 @@ type Profile interface {
 	SetProfile(ctx context.Context, weightKg, ftpW, heightCm, maxHR *float64, view *string) (telemetry.Profile, error)
 }
 
+// Simulator puts a simulated rider in place of the trainer, or takes it
+// away (telemetry.Switch).
+type Simulator interface {
+	SetSimulated(on bool)
+}
+
 // Recorder ends the recorded activity on the rider's request.
 type Recorder interface {
 	End(ctx context.Context, discard bool) (file string, err error)
@@ -136,6 +142,8 @@ type Services struct {
 	Activities Activities
 	Control    Control
 	Scenery    Scenery
+	// Simulator: nil for a core without a stick (-fake).
+	Simulator Simulator
 	// CourseFiles reads a course's GPX file (for clients that build its
 	// world); nil: none to give.
 	CourseFiles CourseFiles
@@ -178,7 +186,7 @@ func NewServer(hub *telemetry.Hub, svc Services, token string, opts ...grpc.Serv
 		}),
 	)
 	s := grpc.NewServer(opts...)
-	pb.RegisterTelemetryServiceServer(s, &telemetryServer{hub: hub, cal: svc.Calibrator, rides: svc.Rides, workouts: svc.Workouts, recorder: svc.Recorder, history: svc.History, profile: svc.Profile, activities: svc.Activities, control: svc.Control, scenery: svc.Scenery, courseFiles: svc.CourseFiles, maxHz: DefaultRateHz})
+	pb.RegisterTelemetryServiceServer(s, &telemetryServer{hub: hub, cal: svc.Calibrator, rides: svc.Rides, workouts: svc.Workouts, recorder: svc.Recorder, history: svc.History, profile: svc.Profile, activities: svc.Activities, control: svc.Control, scenery: svc.Scenery, courseFiles: svc.CourseFiles, simulator: svc.Simulator, maxHz: DefaultRateHz})
 	return s, nil
 }
 
@@ -206,6 +214,7 @@ type telemetryServer struct {
 	scenery     Scenery              // nil: no map data
 	courseFiles CourseFiles          // nil: no course files to give
 	maxHz       uint32
+	simulator   Simulator
 }
 
 func (s *telemetryServer) SetTrainerControl(_ context.Context, req *pb.SetTrainerControlRequest) (*pb.SetTrainerControlResponse, error) {
@@ -237,6 +246,14 @@ func (s *telemetryServer) SetTrainerControl(_ context.Context, req *pb.SetTraine
 
 // SetPaused parks the core or carries on (telemetry.Hub.SetPaused); the
 // rides, workouts, manual control and recorder each hold while paused.
+func (s *telemetryServer) SetSimulated(_ context.Context, req *pb.SetSimulatedRequest) (*pb.SetSimulatedResponse, error) {
+	if s.simulator == nil {
+		return nil, status.Error(codes.Unimplemented, "this core has no trainer to simulate (it runs -fake)")
+	}
+	s.simulator.SetSimulated(req.GetSimulated())
+	return &pb.SetSimulatedResponse{Simulated: req.GetSimulated()}, nil
+}
+
 func (s *telemetryServer) SetPaused(_ context.Context, req *pb.SetPausedRequest) (*pb.SetPausedResponse, error) {
 	s.hub.SetPaused(req.GetPaused())
 	st, _ := s.hub.Latest()

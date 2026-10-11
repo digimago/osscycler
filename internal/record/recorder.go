@@ -245,8 +245,11 @@ func speedOf(st telemetry.State) float64 {
 func (r *Recorder) step(st telemetry.State, now time.Time) {
 	speed := speedOf(st)
 	// Parked (State.Paused): still, whatever the trainer says, so the timer
-	// stops; and never ended for it (below).
-	mov := moving(st, speed) && !st.Paused
+	// stops; and never ended for it (below). A simulated rider (State.
+	// Simulated) is made up: nothing of it is recorded, and an activity
+	// already open waits as when parked.
+	parked := st.Paused || st.Simulated
+	mov := moving(st, speed) && !parked
 	dt := time.Duration(0)
 	if !r.lastStep.IsZero() {
 		dt = min(now.Sub(r.lastStep), 2*time.Second)
@@ -298,7 +301,7 @@ func (r *Recorder) step(st telemetry.State, now time.Time) {
 	switch {
 	case mov && !a.running:
 		a.resume(now)
-	case !mov && a.running && (st.Paused || now.Sub(r.stillSince) >= r.cfg.PauseAfter): // a pause stops it at once
+	case !mov && a.running && (parked || now.Sub(r.stillSince) >= r.cfg.PauseAfter): // a pause stops it at once
 		a.pause(now, typeStop)
 	}
 	if a.running {
@@ -314,7 +317,7 @@ func (r *Recorder) step(st telemetry.State, now time.Time) {
 		r.fail(err)
 		return
 	}
-	if st.Paused {
+	if parked {
 		r.lastMoving = now // the idle time counts from the end of the pause
 	}
 	if !mov && now.Sub(r.lastMoving) >= r.cfg.EndAfter {

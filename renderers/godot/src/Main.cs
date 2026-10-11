@@ -393,6 +393,8 @@ public partial class Main : Node3D
         Lap("head");
         _hud.Arrange(_head.Layout);
         _hud.Head(_head.Asking(_clock), _head.Notice(_clock), _head.Help, _head.List(), _head.Prompt, _head.Dialog(now, _clock), _head.Form(now));
+        _hud.Summary(_head.Summary);
+        _hud.Graph(_head.Graph(now), now?.Profile?.FtpW ?? 0);
         if (_core != null)
         {
             var st = _core.Latest().State;

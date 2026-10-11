@@ -52,6 +52,8 @@ type Layout struct {
 	Tiles map[string][]string `json:"tiles,omitempty"`
 	// Digits is "medium" to keep the numbers medium-sized; large otherwise.
 	Digits string `json:"digits,omitempty"`
+	// Graph is "off" to hide the ride graph (t); shown otherwise.
+	Graph string `json:"graph,omitempty"`
 }
 
 // LoadLayout reads the arrangement; a missing file is the defaults.

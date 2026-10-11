@@ -192,6 +192,9 @@ message Activity {
   uint32 laps = 9;
   // Why the file can't be read; the summary is empty then.
   string error = 10;
+  // The highest heart rate held for 10 s (0: none read): what the rider
+  // has shown, a lower bound on their maximum, never an estimate of it.
+  uint32 held_max_heart_rate_bpm = 11;
 }
 
 message ExportActivityRequest {

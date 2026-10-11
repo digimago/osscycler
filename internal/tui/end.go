@@ -73,6 +73,9 @@ func (m Model) onEnded(msg endedMsg) (Model, tea.Cmd) {
 		m.notice = "ride discarded"
 	default:
 		m.notice = "ride saved: " + msg.file
+		if msg.file != "" {
+			return m, m.fetchSummary(msg.file, false)
+		}
 	}
 	return m, nil
 }

@@ -49,3 +49,31 @@ func TestHistory(t *testing.T) {
 		t.Error("a path was read")
 	}
 }
+
+// The catalog tells the highest heart rate held for 10 s: a strap's
+// one-second spike doesn't count.
+func TestHeldMaxHeartRate(t *testing.T) {
+	r := newRecorder(t)
+	play(r, []step{{60, func(i int) telemetry.State {
+		st := state(200, 90, 8)
+		hr := 150
+		if i >= 20 && i < 32 {
+			hr = 172 // held 12 s
+		}
+		if i == 45 {
+			hr = 205 // a spike
+		}
+		st.HeartRate.BPM = telemetry.Some(uint8(hr))
+		return st
+	}}})
+	if _, err := r.endByRider(state(0, 0, 0), false); err != nil {
+		t.Fatal(err)
+	}
+	as, err := (&Catalog{Dir: r.cfg.Dir}).List()
+	if err != nil || len(as) != 1 || as[0].HeldMaxHR != 172 {
+		t.Errorf("held max HR %+v, %v; want 172 (the spike to 205 left out)", as, err)
+	}
+	if got := heldMax([]int{100, 0, 180, 180}, 2); got != 180 {
+		t.Errorf("heldMax %d", got)
+	}
+}

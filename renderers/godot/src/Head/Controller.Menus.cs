@@ -42,7 +42,7 @@ public sealed partial class Controller
         ("r", "Ride a course", "a GPX course, racing your best time on it"),
         ("w", "Workout", "a structured workout, or a fixed power (ERG)"),
         ("a", "Activities", "your recorded rides: save FIT files, race past rides"),
-        ("p", "Profile", "weight, height and FTP"),
+        ("p", "Profile", "weight, height, FTP and maximum heart rate"),
         ("c", "Calibrate", "spin-down calibration of the trainer"),
         ("q", "Quit", "close the screen (the core keeps running)"),
     };
@@ -299,6 +299,9 @@ public sealed partial class Controller
             case "s" when _tab == Tab.Activities:
                 SaveSelected();
                 return;
+            case "i" when _tab == Tab.Activities && _activities != null && _pick[(int)Tab.Activities] < _activities.Count:
+                OpenSummary(_activities[_pick[(int)Tab.Activities]].Name, true);
+                return;
             case "n" when _tab == Tab.Workouts:
                 OpenForm("", null);
                 return;
@@ -481,7 +484,7 @@ public sealed partial class Controller
                     foreach (var a in _activities ?? new List<Activity>())
                         rows.Add(new("", When(a.StartUnixMs), a.Error != "" ? a.Error :
                             $"{Hud.Format.Clock(a.TimerS)} · {Hud.Format.Fixed(a.DistanceM / 1000, 1)} km · {Hud.Format.Fixed(a.AvgPowerW, 0)} W · {(a.Virtual ? "course" : "indoor")}" + (a.Laps > 1 ? $" · {a.Laps} laps" : "")));
-                    hint = "enter race the course ride in it, or save the FIT file · s save · esc back";
+                    hint = "enter race the course ride in it, or save the FIT file · i summary · s save · esc back";
                     break;
                 default:
                     rows.Add(new("", "Fixed power (ERG)", "hold one power: type the watts"));
@@ -510,6 +513,7 @@ public sealed partial class Controller
         {
             ("tab ← →", "COURSES, HISTORY, ACTIVITIES"), ("↑ ↓  k j", "choose"),
             ("enter", "ride the course; race a past ride again; an activity: race it, else save its FIT file"),
+            ("i", "an activity's summary: power curve, time in power and heart rate zones"),
             ("s", "save the activity's FIT file to Downloads"), ("esc  r", "back"),
         }),
         _ => ("MENU", new() { ("↑ ↓", "choose"), ("enter  1-7", "do it"), ("the letter", "the same as its key from the dashboard"), ("esc  m", "close") }),

@@ -589,8 +589,9 @@ func Build(c *course.Course, o Options) (*World, error) {
 	}
 	limitDrift(lanes, pathStep)
 	evenPace(px, py, pz, pw, lanes, c.Loop)
+	unfold(px, py, c.Loop)
 	despike(px, py, c.Loop)
-	settleOnRoad(px, py, lanes, c.Loop, newRoadIndex(w.prims, func(mat int) bool { return riddenMaterials[w.doc.MaterialName(mat)] }))
+	settleOnRoad(px, py, lanes, c.Loop, newRoadIndex(w.prims, func(mat int) bool { return carriageway[w.doc.MaterialName(mat)] }))
 	limitDrift(lanes, pathStep) // a lane settling narrowed eases there (it only narrows)
 	m.Path.XYZ = m.Path.XYZ[:0]
 	for i := range pd {

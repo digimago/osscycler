@@ -33,8 +33,71 @@ func TestPlantsStandOnTheLandAsDrawn(t *testing.T) {
 // A path across a junction's corner is on the junction, not on open
 // ground: no road of the course's own is laid over the corner (it lay
 // under the junction's sidewalk, onto the grass, and the rider rode the
+// sidewalk).
+func TestNoOwnRoadAcrossAJunctionCorner(t *testing.T) {
+	line := func(from, to [2]float64, node int64, at float64) *roadLine {
+		l := &roadLine{nodes: map[int64][]float64{node: {at}}}
+		length := math.Hypot(to[0]-from[0], to[1]-from[1])
+		for k := 0; ; k++ {
+			d := math.Min(float64(k)*fineStep, length)
+			f := d / length
+			l.samples = append(l.samples, sample{d: d, e: from[0] + f*(to[0]-from[0]), n: from[1] + f*(to[1]-from[1]), hw: 3})
+			if d == length {
+				break
+			}
+		}
+		return l
+	}
+	// East along n = 0 to the node at the origin, then north: two roads
+	// 6 m wide meeting there.
+	n := &network{lines: []*roadLine{
+		line([2]float64{-100, 0}, [2]float64{0, 0}, 7, 100),
+		line([2]float64{0, 0}, [2]float64{0, 100}, 7, 0),
+	}}
+	// The path cuts the corner: 6 m inside it at the bend, off both roads.
+	var d, x, y []float64
+	add := func(e, no float64) {
+		if len(x) > 0 {
+			d = append(d, d[len(d)-1]+math.Hypot(e-x[len(x)-1], no-y[len(y)-1]))
+		} else {
+			d = append(d, 0)
+		}
+		x, y = append(x, e), append(y, no)
+	}
+	for e := -60.0; e <= -12; e += 5 {
+		add(e, 0)
+	}
+	add(-7, 2)
+	add(-4.2, 4.2) // 6 m from the node, inside the corner
+	add(-2, 7)
+	for no := 12.0; no <= 60; no += 5 {
+		add(0, no)
+	}
+	if _, any := n.openRuns(d, x, y, nil); any {
+		t.Error("a road of the course's own laid across the junction's corner")
+	}
+}
+
 // Settling looks both ways across the path for the road: at a junction's
 // inside corner the nearest carriageway lies ahead, and a move towards it
+// came short onto the sidewalk.
+func TestSettleLooksBothWaysAcross(t *testing.T) {
+	const road = 1
+	// The path heads east at the origin; a road 2 m ahead (east), and a
+	// road 4 m to the north, alongside.
+	ahead := gltf.Primitive{Material: road,
+		Positions: []float32{2, 0, -1, 10, 0, -1, 10, 0, 1, 2, 0, 1}, // x east, z south
+		Indices:   []uint32{0, 2, 1, 0, 3, 2}}
+	north := gltf.Primitive{Material: road,
+		Positions: []float32{-20, 0, -4, 20, 0, -4, 20, 0, -12, -20, 0, -12},
+		Indices:   []uint32{0, 1, 2, 0, 2, 3}}
+	ix := newRoadIndex([]gltf.Primitive{ahead, north}, func(m int) bool { return m == road })
+	s, ok := ix.sideways(0, 0, 0, -1) // right of east is south
+	if !ok || s > -4 || s < -5 {
+		t.Errorf("the move across: %.2f m (found %v), want about 4.4 m to the north (negative: left)", s, ok)
+	}
+}
+
 // A small piece of land shut in by roads is paved; a larger one stays.
 func TestSmallEnclosedLandIsPaved(t *testing.T) {
 	const ground, asphalt = 0, 1
@@ -249,3 +312,14 @@ func TestSidewalksAndLanesEndInATaper(t *testing.T) {
 }
 
 // The rider's path never steps back against its way: a point past its
+// next neighbour is put between them.
+func TestPathHasNoFolds(t *testing.T) {
+	x := []float64{0, 5, 10, 15, 14.5, 20, 25}
+	y := make([]float64, len(x))
+	unfold(x, y, false)
+	for i := 1; i < len(x); i++ {
+		if x[i] <= x[i-1] {
+			t.Errorf("point %d at %.2f m, behind point %d at %.2f m", i, x[i], i-1, x[i-1])
+		}
+	}
+}

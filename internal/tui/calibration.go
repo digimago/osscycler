@@ -32,6 +32,9 @@ type Commands interface {
 	EndActivity(ctx context.Context, discard bool) (file string, err error)
 	ListResults(ctx context.Context) ([]*pb.RideResult, error)
 	SetProfile(ctx context.Context, weightKg, ftpW, heightCm *float64) (*pb.RiderProfile, error)
+	// SetSimulated puts a simulated rider in place of the trainer, or
+	// takes it away.
+	SetSimulated(ctx context.Context, on bool) error
 	ListActivities(ctx context.Context) ([]*pb.Activity, error)
 	ExportActivity(ctx context.Context, name string, w io.Writer) (int64, error)
 	SetTrainerControl(ctx context.Context, mode pb.ControlMode, v float64) (float64, error)

@@ -42,6 +42,7 @@ const (
 	TelemetryService_SetTrainerControl_FullMethodName     = "/osscycler.v1.TelemetryService/SetTrainerControl"
 	TelemetryService_ReleaseTrainerControl_FullMethodName = "/osscycler.v1.TelemetryService/ReleaseTrainerControl"
 	TelemetryService_SetPaused_FullMethodName             = "/osscycler.v1.TelemetryService/SetPaused"
+	TelemetryService_SetSimulated_FullMethodName          = "/osscycler.v1.TelemetryService/SetSimulated"
 	TelemetryService_Announce_FullMethodName              = "/osscycler.v1.TelemetryService/Announce"
 )
 
@@ -137,6 +138,11 @@ type TelemetryServiceClient interface {
 	// that was paused keeps its riding time but is never a personal best or
 	// a ghost. Starting a ride, a workout or manual control carries on.
 	SetPaused(ctx context.Context, in *SetPausedRequest, opts ...grpc.CallOption) (*SetPausedResponse, error)
+	// SetSimulated puts a simulated rider in place of the trainer and the
+	// heart rate strap, or takes it away (State.simulated): for riding on
+	// without the hardware at hand. Nothing is recorded meanwhile.
+	// UNIMPLEMENTED for a core without a stick to stand in for (-fake).
+	SetSimulated(ctx context.Context, in *SetSimulatedRequest, opts ...grpc.CallOption) (*SetSimulatedResponse, error)
 	// Announce puts a short message on every screen for a while (State.
 	// announcement): a script running a session, a coach on another screen.
 	// Empty text takes the current one off.
@@ -399,6 +405,16 @@ func (c *telemetryServiceClient) SetPaused(ctx context.Context, in *SetPausedReq
 	return out, nil
 }
 
+func (c *telemetryServiceClient) SetSimulated(ctx context.Context, in *SetSimulatedRequest, opts ...grpc.CallOption) (*SetSimulatedResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetSimulatedResponse)
+	err := c.cc.Invoke(ctx, TelemetryService_SetSimulated_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *telemetryServiceClient) Announce(ctx context.Context, in *AnnounceRequest, opts ...grpc.CallOption) (*AnnounceResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(AnnounceResponse)
@@ -501,6 +517,11 @@ type TelemetryServiceServer interface {
 	// that was paused keeps its riding time but is never a personal best or
 	// a ghost. Starting a ride, a workout or manual control carries on.
 	SetPaused(context.Context, *SetPausedRequest) (*SetPausedResponse, error)
+	// SetSimulated puts a simulated rider in place of the trainer and the
+	// heart rate strap, or takes it away (State.simulated): for riding on
+	// without the hardware at hand. Nothing is recorded meanwhile.
+	// UNIMPLEMENTED for a core without a stick to stand in for (-fake).
+	SetSimulated(context.Context, *SetSimulatedRequest) (*SetSimulatedResponse, error)
 	// Announce puts a short message on every screen for a while (State.
 	// announcement): a script running a session, a coach on another screen.
 	// Empty text takes the current one off.
@@ -583,6 +604,9 @@ func (UnimplementedTelemetryServiceServer) ReleaseTrainerControl(context.Context
 }
 func (UnimplementedTelemetryServiceServer) SetPaused(context.Context, *SetPausedRequest) (*SetPausedResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetPaused not implemented")
+}
+func (UnimplementedTelemetryServiceServer) SetSimulated(context.Context, *SetSimulatedRequest) (*SetSimulatedResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetSimulated not implemented")
 }
 func (UnimplementedTelemetryServiceServer) Announce(context.Context, *AnnounceRequest) (*AnnounceResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Announce not implemented")
@@ -1008,6 +1032,24 @@ func _TelemetryService_SetPaused_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _TelemetryService_SetSimulated_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetSimulatedRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TelemetryServiceServer).SetSimulated(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TelemetryService_SetSimulated_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TelemetryServiceServer).SetSimulated(ctx, req.(*SetSimulatedRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _TelemetryService_Announce_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(AnnounceRequest)
 	if err := dec(in); err != nil {
@@ -1116,6 +1158,10 @@ var TelemetryService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetPaused",
 			Handler:    _TelemetryService_SetPaused_Handler,
+		},
+		{
+			MethodName: "SetSimulated",
+			Handler:    _TelemetryService_SetSimulated_Handler,
 		},
 		{
 			MethodName: "Announce",

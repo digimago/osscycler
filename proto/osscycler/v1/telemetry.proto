@@ -114,6 +114,11 @@ service TelemetryService {
   // that was paused keeps its riding time but is never a personal best or
   // a ghost. Starting a ride, a workout or manual control carries on.
   rpc SetPaused(SetPausedRequest) returns (SetPausedResponse);
+  // SetSimulated puts a simulated rider in place of the trainer and the
+  // heart rate strap, or takes it away (State.simulated): for riding on
+  // without the hardware at hand. Nothing is recorded meanwhile.
+  // UNIMPLEMENTED for a core without a stick to stand in for (-fake).
+  rpc SetSimulated(SetSimulatedRequest) returns (SetSimulatedResponse);
   // Announce puts a short message on every screen for a while (State.
   // announcement): a script running a session, a coach on another screen.
   // Empty text takes the current one off.
@@ -134,6 +139,14 @@ message AnnounceResponse {}
 message Announcement {
   string text = 1;
   int64 until_unix_ms = 2;
+}
+
+message SetSimulatedRequest {
+  bool simulated = 1;
+}
+
+message SetSimulatedResponse {
+  bool simulated = 1;
 }
 
 message SetPausedRequest {
@@ -561,6 +574,9 @@ message State {
   uint32 heads = 13;
   // A message for every screen (Announce), while until_unix_ms is ahead.
   Announcement announcement = 14;
+  // A simulated rider stands in for the trainer and the heart rate strap
+  // (SetSimulated): the readings are made up, and nothing is recorded.
+  bool simulated = 15;
 }
 
 message Radio {

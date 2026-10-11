@@ -137,6 +137,12 @@ type stubCommands struct {
 	fitBytes           []byte
 	profileCalls       [][2]*float64
 	pauses             []bool
+	simulated          []bool
+}
+
+func (s *stubCommands) SetSimulated(_ context.Context, on bool) error {
+	s.simulated = append(s.simulated, on)
+	return nil
 }
 
 func (s *stubCommands) SetProfile(_ context.Context, w, f, h *float64) (*pb.RiderProfile, error) {

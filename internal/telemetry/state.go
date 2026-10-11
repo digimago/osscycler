@@ -139,6 +139,10 @@ type State struct {
 	// (Announce): a script running a session, a coach.
 	Announcement   string
 	AnnouncedUntil time.Time
+	// Simulated: a simulated rider stands in for the trainer and heart
+	// rate strap (Switch.SetSimulated), at the rider's request when they
+	// have none at hand. Nothing is recorded meanwhile.
+	Simulated bool
 }
 
 // SetPaused parks the core or carries on; whether that changed anything.

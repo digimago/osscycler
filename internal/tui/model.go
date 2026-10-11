@@ -89,6 +89,11 @@ type Model struct {
 	// screen until askUntil.
 	asking   string
 	askUntil time.Time
+	// firstState is when the first state came; hardwareLater: the rider
+	// carried on without a trainer, or chose the simulated rider
+	// (hardware.go).
+	firstState    time.Time
+	hardwareLater bool
 }
 
 // ask shows a request for a confirming key press over the screen.
@@ -188,6 +193,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case StateMsg:
 		shown, old, wasPaused := m.ridePos(), m.ride(), m.paused()
 		m.st, m.connected, m.connErr = msg.State, true, nil
+		if m.firstState.IsZero() {
+			m.firstState = m.now()
+		}
 		m = m.withCadence(m.now())
 		if r := m.ride(); r.GetDistanceM() != old.GetDistanceM() || r.GetPhase() != old.GetPhase() {
 			// Carry the position forward from here; blend out the difference
@@ -305,6 +313,9 @@ func (m Model) handleKey(key string) (tea.Model, tea.Cmd) {
 		return m, tea.Quit // a read-only screen has no menu to go back to
 	}
 	if m.cmds != nil {
+		if next, cmd, ok := m.hardwareKey(key); ok {
+			return next, cmd
+		}
 		if next, cmd, ok := m.quitKey(key); ok {
 			return next, cmd
 		}
@@ -366,7 +377,7 @@ func (m Model) renderScreen() string {
 	// very bottom.
 	var strip string
 	switch {
-	case m.help || m.arranging != nil || m.draft != nil || m.picking || m.input != nil || m.ending != nil || m.onboarding != nil || m.menu != nil || m.quitting:
+	case m.help || m.arranging != nil || m.draft != nil || m.picking || m.input != nil || m.ending != nil || m.onboarding != nil || m.menu != nil || m.quitting || m.askHardware():
 	case m.showWorkout() && m.workoutActive():
 		if w := m.workoutDefs[m.wk().GetId()]; w != nil && m.height >= 20 {
 			strip = workoutProfile(w, m.wk().GetElapsedS(), m.width, 4)
@@ -389,6 +400,8 @@ func (m Model) renderScreen() string {
 		body = m.arrangePanel(m.width, bodyH)
 	case m.onboarding != nil:
 		body = m.onboardPanel(m.width, bodyH)
+	case m.askHardware():
+		body = m.hardwarePanel(m.width, bodyH)
 	case m.quitting:
 		body = m.quitPanel(m.width, bodyH)
 	case m.menu != nil:
@@ -496,8 +509,11 @@ func (m Model) footer() string {
 	}
 	sensors := fmt.Sprintf("%s   %s   %s", core,
 		sensorLine("trainer", tr.GetSensor()), sensorLine("hrm", m.st.GetHeartRate().GetSensor()))
-	if r := m.st.GetRadio(); r != nil && !r.GetPresent() {
-		sensors = core + "   " + badStyle.Render("✕ ANT+ stick not found: plug it in (the core keeps looking)")
+	switch r := m.st.GetRadio(); {
+	case m.st.GetSimulated():
+		sensors = core + "   " + warnStyle.Render("◆ simulated rider: made-up numbers, nothing recorded (s stops it)")
+	case r != nil && !r.GetPresent():
+		sensors = core + "   " + badStyle.Render("✕ ANT+ stick not found: plug it in (the core keeps looking) · s simulated rider")
 	}
 	if rec := recordingLine(m.st.GetRecording()); rec != "" {
 		sensors += "   " + rec

@@ -43,6 +43,7 @@ func ToProto(s telemetry.State) *pb.State {
 		PausedSinceUnixMs: unixMs(s.PausedSince),
 		Announcement:      announcement(s),
 		Heads:             uint32(s.Heads),
+		Simulated:         s.Simulated,
 		Control: &pb.TrainerControl{
 			Mode:   pb.ControlMode(s.Control.Mode) + 1, // proto reserves 0 for unspecified
 			Target: s.Control.Target, ChangedNs: int64(s.Control.Changed),

@@ -200,12 +200,16 @@ type sample struct {
 	open           [2]bool    // a junction's patch on that side: no sidewalk or lane
 	again          bool       // an earlier pass of the route rides the same road here: drawn once, by it
 	wide           [2]float64 // the carriageway reaches this much further left and right, to a road alongside
-	onPatch        bool       // within a junction's span: the junction draws the surface
-	underPatch     bool       // a road not of the junction, lying on its patch
-	aloft          bool       // on a bridge or viaduct, off the ground (cut terrain)
-	oneway         int8       // traffic only along the line (1), only against it (-1), or both (0)
-	way            int        // the map's way it belongs to (network roads)
-	line           int        // the road line it belongs to (the terrain's samples)
+	// butt: another road's surface continues at that edge (joinAlongside):
+	// no skirt there, whose face showed as a dark line along the seam
+	// (owner, 2026-10-11: two carriageways side by side, 1 cm apart).
+	butt       [2]bool
+	onPatch    bool // within a junction's span: the junction draws the surface
+	underPatch bool // a road not of the junction, lying on its patch
+	aloft      bool // on a bridge or viaduct, off the ground (cut terrain)
+	oneway     int8 // traffic only along the line (1), only against it (-1), or both (0)
+	way        int  // the map's way it belongs to (network roads)
+	line       int  // the road line it belongs to (the terrain's samples)
 }
 
 const (

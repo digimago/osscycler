@@ -33,6 +33,26 @@ func TestPlantsStandOnTheLandAsDrawn(t *testing.T) {
 // Settling looks both ways across the path for the road: at a junction's
 // inside corner the nearest carriageway lies ahead, and a move towards it
 // Roads joined side by side have no skirt along the edge they share: its
+// face showed as a dark line along the seam.
+func TestJoinedRoadsHaveNoSkirtBetween(t *testing.T) {
+	strip := func(e float64) *roadLine {
+		l := &roadLine{}
+		for k := 0; k <= 50; k++ {
+			l.samples = append(l.samples, sample{d: float64(k) * 2, e: e, n: float64(k) * 2, hw: 2})
+		}
+		return l
+	}
+	a, b := strip(0), strip(4.5) // edges 0.5 m apart
+	joinAlongside([]*roadLine{a, b}, 5)
+	mid := 25
+	if !a.samples[mid].butt[1] || !b.samples[mid].butt[0] {
+		t.Errorf("the facing edges: butt %v and %v, want no skirt on either", a.samples[mid].butt, b.samples[mid].butt)
+	}
+	if a.samples[mid].butt[0] || b.samples[mid].butt[1] {
+		t.Error("an outer edge lost its skirt")
+	}
+}
+
 // A sidewalk never runs into a building: houses at the street had it
 // Water is drawn from its own outline, the land cut away under it: no
 // ground stands up into it (green triangles stood in the ditches along

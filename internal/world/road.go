@@ -132,8 +132,8 @@ func roadMesh(seg, all []sample, from int, line *smoothLine, loop bool, m roadMa
 			{on: s.walk[1], a: s.hw + walkM, b: s.hw + walkM, ya: -walkFootM, yb: kerbM, material: m.kerb, wall: true},
 			// Without a sidewalk, the edge goes on into the ground: the road
 			// sits in the landscape, not on it.
-			{on: !s.walk[0], a: -s.hw - s.wide[0], b: -s.hw - s.wide[0], ya: -skirtM, yb: 0, material: m.surface[s.surface], wall: true, wallLeft: true},
-			{on: !s.walk[1], a: s.hw + s.wide[1], b: s.hw + s.wide[1], ya: -skirtM, yb: 0, material: m.surface[s.surface], wall: true},
+			{on: !s.walk[0] && !s.butt[0], a: -s.hw - s.wide[0], b: -s.hw - s.wide[0], ya: -skirtM, yb: 0, material: m.surface[s.surface], wall: true, wallLeft: true},
+			{on: !s.walk[1] && !s.butt[1], a: s.hw + s.wide[1], b: s.hw + s.wide[1], ya: -skirtM, yb: 0, material: m.surface[s.surface], wall: true},
 		}
 	}
 	type frame struct {

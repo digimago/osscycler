@@ -2182,6 +2182,9 @@ func joinAlongside(ls []*roadLine, cell float64) {
 			if bestLine < 0 || bestGap >= mergeGapM {
 				continue
 			}
+			if !s.walk[bestSide] {
+				s.butt[bestSide] = true
+			}
 			if bestGap > 0 && !s.walk[bestSide] {
 				s.wide[bestSide] = bestGap + 0.1 // just under the other's edge
 				s.lane[bestSide] = false

@@ -39,7 +39,18 @@ type CheckResult struct {
 	// it, in metres (OffRoad: by stretch, Area in metres too).
 	OffRoadM float64
 	OffRoad  []CheckSpot
+	// StepM is the most the rider's height changes between two points of
+	// the path (pathStep apart), in metres; Steps the stretches where it
+	// changes more than checkStepM, Area their worst step in metres (owner,
+	// 2026-10-10: at Zandvoort the rider dropped 7.5 m in 5 m onto a road
+	// below, which the other measures don't see).
+	StepM float64
+	Steps []CheckSpot
 }
+
+// checkStepM: a change in the path's height between two of its points
+// worth naming (a 20 % grade over a 5 m step).
+const checkStepM = 1.0
 
 // CheckSpot is a stretch of the course from D metres, with Area m² found.
 type CheckSpot struct {
@@ -276,5 +287,30 @@ func (w *World) Check() CheckResult {
 	r.Holes = list(holes, &r.HolesM2)
 	r.LandOverRoad = list(over, &r.LandOverRoadM2)
 	r.OffRoad = list(off, &r.OffRoadM)
+	r.StepM, r.Steps = w.pathSteps()
 	return r
+}
+
+// pathSteps is the most the path's height changes from one point to the
+// next, and the stretches where it changes more than checkStepM.
+func (w *World) pathSteps() (float64, []CheckSpot) {
+	xyz, step := w.Manifest.Path.XYZ, w.Manifest.Path.StepM
+	worst := 0.0
+	bySpot := map[int]float64{}
+	for i := 1; 3*i+2 < len(xyz); i++ {
+		dz := math.Abs(xyz[3*i+1] - xyz[3*i-2])
+		worst = math.Max(worst, dz)
+		if dz > checkStepM {
+			s := int(float64(i) * step / checkSpotM)
+			bySpot[s] = math.Max(bySpot[s], dz)
+		}
+	}
+	var out []CheckSpot
+	for s, v := range bySpot {
+		out = append(out, CheckSpot{D: float64(s) * checkSpotM, Area: v})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Area > out[j].Area || out[i].Area == out[j].Area && out[i].D < out[j].D
+	})
+	return worst, out
 }

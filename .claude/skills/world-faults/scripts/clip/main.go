@@ -132,8 +132,8 @@ func main() {
 		log.Fatal(err)
 	}
 	r := w.Check()
-	fmt.Printf("%s %.0f-%.0f m: %d map elements, %d triangles; check: holes %.2f m² %v, land over road %.2f m² %v, off road %.0f m %v → %s\n",
-		*id, *from, end, len(d.Elements), w.Triangles, r.HolesM2, r.Holes, r.LandOverRoadM2, r.LandOverRoad, r.OffRoadM, r.OffRoad, *out)
+	fmt.Printf("%s %.0f-%.0f m: %d map elements, %d triangles; check: holes %.2f m² %v, land over road %.2f m² %v, off road %.0f m %v, path height steps at most %.2f m %v → %s\n",
+		*id, *from, end, len(d.Elements), w.Triangles, r.HolesM2, r.Holes, r.LandOverRoadM2, r.LandOverRoad, r.OffRoadM, r.OffRoad, r.StepM, r.Steps, *out)
 }
 
 // find is course id: an included one, or the .gpx of that name in dir.

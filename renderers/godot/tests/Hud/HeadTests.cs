@@ -24,6 +24,7 @@ sealed class Calls : ICommands
 
     public Task StopRide() => Add("stop ride");
     public Task SetPaused(bool paused) => Add($"paused {paused}");
+    public Task SetSimulated(bool on) => Add($"simulated {on}");
     public Task SetDifficulty(double pct) => Add($"difficulty {pct}");
     public Task StopWorkout() => Add("stop workout");
     public Task SkipSegment() => Add("skip");

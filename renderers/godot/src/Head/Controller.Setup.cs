@@ -82,6 +82,7 @@ public sealed partial class Controller
     {
         FormDone();
         Others(st);
+        HardwareTick(st, now);
         var p = st?.Profile;
         if (_onboard == null && !_onboardLater && p != null && p.Missing.Count > 0 && !Busy(st) &&
             _prompt == null && _form == null && !_ending && _screen != Screen.Picker && double.IsNaN(_countdownTo))
@@ -369,6 +370,8 @@ public sealed partial class Controller
     {
         if (QuitDialog(st) is { } q)
             return q;
+        if (HardwareDialog(st) is { } hw)
+            return hw;
         if (_onboard is { Step: Step.View } ov)
         {
             bool chase = ov.Value != "eyes";

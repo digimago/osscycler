@@ -817,8 +817,9 @@ public partial class Main : Node3D
             var (st, status) = _core.Latest();
             if (st == null)
                 return status;
+            string sim = st.Simulated ? "simulated rider: made-up numbers, nothing recorded (s stops it)   " : "";
             if (_ride == null)
-                return Head.Controller.ControlText(st) is { Length: > 0 } ctl ? $"{ctl}   + / - step   x free riding   ? keys" : "free riding   m menu   ? keys";
+                return sim + (Head.Controller.ControlText(st) is { Length: > 0 } ctl ? $"{ctl}   + / - step   x free riding   ? keys" : "free riding   m menu   ? keys");
             if (_world == null || _world.Manifest.Course.Id != _ride.CourseId)
                 return $"{_ride.CourseName}: {(_worldStatus != "" ? _worldStatus : _loadingDir != "" || _swapIn != null ? "loading the 3D world" : "no 3D world")}";
             conn = _ride.Phase switch

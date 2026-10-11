@@ -279,6 +279,7 @@ public sealed class Core : IDisposable, Head.ICommands
     }
 
     public Task StartWorkout(string id) => Call(() => Client().StartWorkoutAsync(new StartWorkoutRequest { Id = id }, Opts()).ResponseAsync);
+    public Task SetSimulated(bool on) => Call(() => Client().SetSimulatedAsync(new SetSimulatedRequest { Simulated = on }, Opts()).ResponseAsync);
     public Task SetPaused(bool paused) => Call(() => Client().SetPausedAsync(new SetPausedRequest { Paused = paused }, Opts()).ResponseAsync);
     public Task SetPower(double watts) => Call(() => Client().SetTrainerControlAsync(new SetTrainerControlRequest { PowerW = watts }, Opts()).ResponseAsync);
     public Task SetFtp(double watts) => Call(() => Client().SetFtpAsync(new SetFtpRequest { FtpW = watts }, Opts()).ResponseAsync);

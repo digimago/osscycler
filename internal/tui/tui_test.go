@@ -137,9 +137,13 @@ type stubCommands struct {
 	fitBytes           []byte
 	profileCalls       [][2]*float64
 	pauses             []bool
+	history            *pb.GetActivityHistoryResponse // the activity being recorded
+	historyCalls       []uint32
+	summary            *pb.ActivitySummary
+	summaryNames       []string
 }
 
-func (s *stubCommands) SetProfile(_ context.Context, w, f, h *float64) (*pb.RiderProfile, error) {
+func (s *stubCommands) SetProfile(_ context.Context, w, f, h, hr *float64) (*pb.RiderProfile, error) {
 	p := s.profile
 	if p == nil {
 		p = &pb.RiderProfile{}
@@ -154,9 +158,33 @@ func (s *stubCommands) SetProfile(_ context.Context, w, f, h *float64) (*pb.Ride
 		p.HeightCm = *h
 		s.heights = append(s.heights, *h)
 	}
+	if hr != nil {
+		p.MaxHrBpm = *hr
+	}
 	s.profile = p
 	s.profileCalls = append(s.profileCalls, [2]*float64{w, f})
 	return p, nil
+}
+
+func (s *stubCommands) ActivityHistory(_ context.Context, name string, since uint32) (*pb.GetActivityHistoryResponse, error) {
+	s.historyCalls = append(s.historyCalls, since)
+	h := s.history
+	if h == nil {
+		return nil, errors.New("no ride is being recorded")
+	}
+	out := &pb.GetActivityHistoryResponse{Name: h.GetName(), FromS: since}
+	if int(since) < len(h.GetPowerW()) {
+		out.PowerW, out.HeartRateBpm = h.GetPowerW()[since:], h.GetHeartRateBpm()[since:]
+	}
+	return out, nil
+}
+
+func (s *stubCommands) ActivitySummary(_ context.Context, name string) (*pb.ActivitySummary, error) {
+	s.summaryNames = append(s.summaryNames, name)
+	if s.summary == nil {
+		return nil, errors.New("no such activity")
+	}
+	return s.summary, nil
 }
 
 func (s *stubCommands) SetTrainerControl(_ context.Context, mode pb.ControlMode, v float64) (float64, error) {
@@ -1189,7 +1217,7 @@ func TestOnboarding(t *testing.T) {
 	next, _ := m0.Update(StateMsg{State: st})
 	m := next.(Model)
 	out := plain(m.render())
-	for _, want := range []string{"WELCOME TO OSSCYCLER", "1/3  Your weight:", "kg", "climbs feel", "profile.json", "esc later"} {
+	for _, want := range []string{"WELCOME TO OSSCYCLER", "1/4  Your weight:", "kg", "climbs feel", "profile.json", "esc later"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("onboarding lacks %q:\n%s", want, out)
 		}
@@ -1208,20 +1236,28 @@ func TestOnboarding(t *testing.T) {
 		t.Fatalf("calls %v", cmds.profileCalls)
 	}
 	// Height is optional: enter on the empty field skips it.
-	if out := plain(m.render()); !strings.Contains(out, "2/3  Your height:") || !strings.Contains(out, "Optional") {
+	if out := plain(m.render()); !strings.Contains(out, "2/4  Your height:") || !strings.Contains(out, "Optional") {
 		t.Errorf("height step:\n%s", out)
 	}
 	m = pressAll(m, "enter")
 	if len(cmds.profileCalls) != 1 || len(cmds.heights) != 0 {
 		t.Errorf("skipping the height sent %v", cmds.heights)
 	}
-	if out := plain(m.render()); !strings.Contains(out, "3/3  Your FTP: 220") || !strings.Contains(out, "2.5 W/kg") {
+	if out := plain(m.render()); !strings.Contains(out, "3/4  Your FTP: 220") || !strings.Contains(out, "2.5 W/kg") {
 		t.Errorf("FTP step:\n%s", out)
 	}
 	m, cmd = press(m, "enter")
 	m = run(m, cmd)
-	if len(cmds.profileCalls) != 2 || *cmds.profileCalls[1][1] != 220 || m.onboarding != nil || m.notice != "profile saved" {
-		t.Errorf("after FTP: calls %d, onboarding %v, notice %q", len(cmds.profileCalls), m.onboarding, m.notice)
+	if len(cmds.profileCalls) != 2 || *cmds.profileCalls[1][1] != 220 {
+		t.Errorf("after FTP: calls %d", len(cmds.profileCalls))
+	}
+	// The maximum heart rate is optional too, and the last step.
+	if out := plain(m.render()); !strings.Contains(out, "4/4  Your maximum heart rate:") || !strings.Contains(out, "heart rate zones") {
+		t.Errorf("max HR step:\n%s", out)
+	}
+	m = pressAll(m, "enter")
+	if len(cmds.profileCalls) != 2 || m.onboarding != nil || m.notice != "profile saved" {
+		t.Errorf("skipping the max HR: calls %d, onboarding %v, notice %q", len(cmds.profileCalls), m.onboarding, m.notice)
 	}
 
 	// The core says it's complete: nothing more to ask; the menu's Profile
@@ -1251,12 +1287,25 @@ func TestOnboarding(t *testing.T) {
 	m = pressAll(m, "backspace", "backspace", "backspace", "183")
 	m, cmd = press(m, "enter")
 	m = run(m, cmd)
-	if fmt.Sprint(cmds.heights) != "[183]" || !strings.Contains(plain(m.render()), "3/3  Your FTP: 220") {
+	if fmt.Sprint(cmds.heights) != "[183]" || !strings.Contains(plain(m.render()), "3/4  Your FTP: 220") {
 		t.Errorf("height 183: sent %v\n%s", cmds.heights, plain(m.render()))
 	}
 	// esc goes back a step while editing, with the value in the profile.
-	if out := plain(pressAll(m, "esc").render()); !strings.Contains(out, "2/3  Your height: 183") {
+	if out := plain(pressAll(m, "esc").render()); !strings.Contains(out, "2/4  Your height: 183") {
 		t.Errorf("back to height:\n%s", out)
+	}
+	// On to the maximum heart rate: out of range caught, then saved.
+	m, cmd = press(m, "enter")
+	m = run(m, cmd)
+	m = pressAll(m, "300", "enter")
+	if !strings.Contains(m.notice, "100 to 230") {
+		t.Errorf("300 bpm: notice %q", m.notice)
+	}
+	m = pressAll(m, "backspace", "backspace", "backspace", "188")
+	m, cmd = press(m, "enter")
+	m = run(m, cmd)
+	if cmds.profile.GetMaxHrBpm() != 188 || m.onboarding != nil {
+		t.Errorf("max HR 188: profile %v, onboarding %v", cmds.profile, m.onboarding)
 	}
 }
 

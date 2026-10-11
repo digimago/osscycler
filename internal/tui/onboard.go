@@ -15,13 +15,15 @@ import (
 // Onboarding is the stack's: the core says what the rider profile lacks
 // (RiderProfile.missing) and holds rides and workouts back until it has
 // it. This is the TUI's form for it: weight, height (optional: it sizes
-// the rider's drag), then FTP, each saved through SetProfile as it is
-// entered. p opens it later to change any of them.
+// the rider's drag), FTP, then maximum heart rate (optional: it sets the
+// heart rate zones of ride summaries), each saved through SetProfile as it
+// is entered. The menu's Profile opens it later to change any of them.
 
 const (
 	stepWeight = iota
 	stepHeight
 	stepFTP
+	stepMaxHR
 	numSteps
 )
 
@@ -90,6 +92,10 @@ func (m Model) onboardKey(key string) (Model, tea.Cmd, bool) {
 			o.step, o.value = stepFTP, m.stepValue(stepFTP)
 			return m, nil, true
 		}
+		if o.step == stepMaxHR && o.value == "" { // optional, and the last
+			m.onboarding, m.notice = nil, "profile saved"
+			return m, nil, true
+		}
 		v, err := strconv.ParseFloat(o.value, 64)
 		lo, hi, what := 30.0, 200.0, "weight in kg"
 		switch o.step {
@@ -97,6 +103,8 @@ func (m Model) onboardKey(key string) (Model, tea.Cmd, bool) {
 			lo, hi, what = 120, 220, "height in cm"
 		case stepFTP:
 			lo, hi, what = 50, 600, "FTP in watts"
+		case stepMaxHR:
+			lo, hi, what = 100, 230, "maximum heart rate in bpm"
 		}
 		if err != nil || v < lo || v > hi {
 			m.notice = fmt.Sprintf("%s: %.0f to %.0f", what, lo, hi)
@@ -114,16 +122,18 @@ func (m Model) saveProfile(step int, v float64) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
 		defer cancel()
-		var weight, ftp, height *float64
+		var weight, ftp, height, maxHR *float64
 		switch step {
 		case stepWeight:
 			weight = &v
 		case stepHeight:
 			height = &v
+		case stepMaxHR:
+			maxHR = &v
 		default:
 			ftp = &v
 		}
-		p, err := cmds.SetProfile(ctx, weight, ftp, height)
+		p, err := cmds.SetProfile(ctx, weight, ftp, height, maxHR)
 		return profileSavedMsg{profile: p, step: step, err: err}
 	}
 }
@@ -137,7 +147,7 @@ func (m Model) onProfileSaved(msg profileSavedMsg) (Model, tea.Cmd) {
 	if o == nil {
 		return m, nil
 	}
-	if msg.step < stepFTP {
+	if msg.step < stepMaxHR {
 		next := *o
 		next.step, next.saved = msg.step+1, msg.profile
 		next.value = stepValueFrom(msg.profile, next.step)
@@ -174,6 +184,9 @@ func (m Model) onboardPanel(width, height int) string {
 		if p.GetCdaForced() {
 			why += "\nThe core runs with -cda: a fixed drag area this run."
 		}
+	case stepMaxHR:
+		prompt, unit = "Your maximum heart rate", "bpm"
+		why = "Optional: it sets the heart rate zones of your ride summaries.\nThe highest you have seen in an all-out effort; leave it empty to skip."
 	default:
 		prompt, unit, forced = "Your FTP", "W", p.GetFtpForced()
 		why = fmt.Sprintf("It sets the targets of ERG workouts. Not sure? %.0f W is 2.5 W/kg,\na fair start; change it any time (f, or p here).", p.GetSuggestedFtpW())
@@ -186,9 +199,9 @@ func (m Model) onboardPanel(width, height int) string {
 	}
 	hint := "enter next · esc later"
 	switch {
-	case o.step == stepFTP && o.edit:
+	case o.step == stepMaxHR && o.edit:
 		hint = "enter save · esc back"
-	case o.step == stepFTP:
+	case o.step == stepMaxHR:
 		hint = "enter save · esc later"
 	case o.edit:
 		hint = "enter next · esc cancel"
@@ -221,6 +234,8 @@ func stepValueFrom(p *pb.RiderProfile, step int) string {
 		if v = p.GetFtpW(); v <= 0 {
 			v = p.GetSuggestedFtpW()
 		}
+	case stepMaxHR:
+		v = p.GetMaxHrBpm()
 	}
 	if v <= 0 {
 		return ""

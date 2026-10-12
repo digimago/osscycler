@@ -361,7 +361,7 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 				h := splitmix(splitmix(key) ^ uint64(int64(k))<<1 ^ uint64(wside))
 				off := edge + 2 + 1.5*unit(h)
 				e, n := pe+sign*dn/l*off, pn-sign*de/l*off
-				if lnd, _ := landAt(e, n); lnd != scenery.LandNone && lnd != scenery.LandMeadow && lnd != scenery.LandFarmland {
+				if lnd, _ := landAt(e, n); lnd != scenery.LandNone && lnd != scenery.LandMeadow && !scenery.Arable(lnd) {
 					continue
 				}
 				if unit(h>>32) > 0.45 || onRoad(e, n) || inArea(e, n) {
@@ -459,7 +459,7 @@ func willows(land *scenery.LandMap, keys [][2]int, chunkM float64, onRoad func(e
 					continue
 				}
 				pe, pn := e+nx*willowBankM, n+ny*willowBankM
-				if lnd, _ := landAt(pe, pn); lnd != scenery.LandFarmland && lnd != scenery.LandMeadow {
+				if lnd, _ := landAt(pe, pn); !scenery.Arable(lnd) && lnd != scenery.LandMeadow {
 					continue
 				}
 				if !inKeys[[2]int{int(math.Floor(pe / chunkM)), int(math.Floor(pn / chunkM))}] || routeDist(pe, pn) > willowReachM || onRoad(pe, pn) || inArea(pe, pn) {

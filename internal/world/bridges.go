@@ -230,6 +230,28 @@ func deck(prim func(e, n float64) *gltf.Primitive, s *surface, l *roadLine, i, j
 			}
 		}
 	}
+	// The edge beams' ends (owner, 2026-10-12, the figure 8's overpass:
+	// the beams stood open at the deck's ends, their inner and outer faces
+	// with nothing across them): a face across each, from the beam's foot
+	// (on a full deck the abutment's top, which closes the rest) to its
+	// top, facing away from the span.
+	foot := -deckDepthM
+	if full {
+		foot = -0.02
+	}
+	for _, end := range []struct {
+		f   deckFrame
+		dir float64 // along the road, away from the span
+	}{{frames[0], -1}, {frames[len(frames)-1], 1}} {
+		f := end.f
+		n := scale3(f.along, end.dir)
+		for si, side := range [][2]float64{{-f.left, -f.left - edgeBeamW}, {f.right, f.right + edgeBeamW}} {
+			if f.butt[si] {
+				continue
+			}
+			quad(p, at(f, side[0], foot), at(f, side[1], foot), at(f, side[1], edgeBeamH), at(f, side[0], edgeBeamH), n, concrete)
+		}
+	}
 	// Railing posts along each side, every railPostM.
 	var run float64
 	for k := range frames {

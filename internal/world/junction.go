@@ -168,10 +168,33 @@ func walkMesh(p patch, w walkChain, walk, kerb *gltf.Primitive) {
 		return uint32(len(q.Positions)/3 - 1)
 	}
 	up := [3]float64{0, 1, 0}
+	// The slab's short ends: a face across each (the road's sidewalk going
+	// on from it hides it; where it stops halfway round, it closes the
+	// hollow: owner, 2026-10-12, sidewalk ends to look into).
+	capAt := func(i, j int, dir float64) {
+		a, oa, ha := k[i], outer[i], y(i)
+		dx, dy := k[j][0]-k[i][0], k[j][1]-k[i][1]
+		l := math.Hypot(dx, dy)
+		if l == 0 {
+			return
+		}
+		n := [3]float64{dir * dx / l, 0, -dir * dy / l}
+		c0 := vert(kerb, a[0], ha, a[1], n)
+		c1 := vert(kerb, a[0], ha+kerbM, a[1], n)
+		c2 := vert(kerb, oa[0], ha+kerbM, oa[1], n)
+		c3 := vert(kerb, oa[0], ha-walkFootM, oa[1], n)
+		tri(kerb, c0, c1, c2, n)
+		tri(kerb, c0, c2, c3, n)
+	}
+	first, last := -1, -1
 	for i := 0; i+1 < len(k); i++ {
 		if at[i+1] <= from+1e-9 || at[i] >= to-1e-9 {
 			continue
 		}
+		if first < 0 {
+			first = i
+		}
+		last = i
 		a, b := k[i], k[i+1]
 		oa, ob := outer[i], outer[i+1]
 		ha, hb := y(i), y(i+1)
@@ -203,6 +226,10 @@ func walkMesh(p patch, w walkChain, walk, kerb *gltf.Primitive) {
 		o3 := vert(kerb, ob[0], hb+kerbM, ob[1], out)
 		tri(kerb, o0, o1, o2, out)
 		tri(kerb, o1, o3, o2, out)
+	}
+	if first >= 0 {
+		capAt(first, first+1, -1)
+		capAt(last+1, last, -1)
 	}
 }
 

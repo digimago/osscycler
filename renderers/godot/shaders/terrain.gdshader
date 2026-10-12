@@ -62,8 +62,8 @@ void fragment() {
 		float inside = smoothstep(0.0, 0.12, min(edge.x, edge.y));
 		if (inside > 0.0) {
 			int g = int(round(texture(ground_map, uv).r * 255.0));
-			// A sown field beyond its grass headland along the road (2.5 m,
-			// as ground.gdshaderinc's HEADLAND).
+			// A sown field away from a road's edge (the world builder makes
+			// its 8 m headland grass; this as ground.gdshaderinc's HEADLAND).
 			float head = 0.0;
 			if (g >= 16 && g < 48) {
 				float a = float((g - 16) % 8) * 3.14159265 / 8.0;

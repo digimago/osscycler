@@ -452,7 +452,7 @@ func TestGroundMapNamesFields(t *testing.T) {
 	fields := map[string]int{}
 	for e := -2000.0; e < 2000; e += 10 {
 		for n := -800.0; n < 800; n += 10 {
-			v, land := groundValue(sp, e, n)
+			v, land := groundValue(sp, e, n, nil)
 			if scenery.Arable(land) && land != scenery.LandFarmland {
 				fields[GroundClasses[v]]++
 			} else if int(v) >= groundFieldBase {
@@ -463,6 +463,16 @@ func TestGroundMapNamesFields(t *testing.T) {
 	for _, want := range []string{"ploughed 4", "maize 4", "wheat 4", "potatoes 4"} {
 		if fields[want] == 0 {
 			t.Errorf("no %q in the polder: %v", want, fields)
+		}
+	}
+	// Within fieldHeadlandM of a road's edge a field is its grass headland
+	// (owner, 2026-10-12: crops never grow that close to the rider).
+	everywhere := func(e, n float64) bool { return true }
+	for e := -2000.0; e < 2000; e += 25 {
+		for n := -800.0; n < 800; n += 25 {
+			if v, _ := groundValue(sp, e, n, everywhere); int(v) >= groundFieldBase {
+				t.Fatalf("a field's value %d (%s) beside a road", v, GroundClasses[v])
+			}
 		}
 	}
 }

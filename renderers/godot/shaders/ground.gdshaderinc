@@ -134,9 +134,10 @@ bool spot(int id, out Spot s) {
 	return true;
 }
 
-// A field keeps a headland of grass this wide along the road (the strip
-// a field's edge leaves unsown; crops at the road's edge stood against the
-// chase camera, magnified into blocks).
+// A crop keeps at least this far from a road's edge, wall or car park
+// here too (the world builder already makes a field's 8 m along the road
+// grass, its headland; the clearance the ground map gives reaches a few
+// metres only).
 const float HEADLAND = 2.5;
 
 // A sown field's crop (0 ploughed, 1 maize, 2 wheat, 3 potatoes), -1

@@ -67,14 +67,24 @@ var groundCrops = []string{"ploughed", "maize", "wheat", "potatoes"}
 const (
 	groundFieldBase = 13 // the first sown field's value
 	groundRowDirs   = 8  // row directions per crop
+	// fieldHeadlandM: a field is grass this far from a road's edge, as far
+	// as its entrance's gate stands off the road (scenery's entryGateM;
+	// owner, 2026-10-12: crops never grow that close to the rider; potatoes
+	// had grown right beside the road).
+	fieldHeadlandM = 8.0
 )
 
-// groundValue is the ground map's land value at e, n.
-func groundValue(sp *spots, e, n float64) (byte, scenery.Land) {
+// groundValue is the ground map's land value at e, n; nearRoad (nil: no
+// roads) tells whether a road's edge lies within fieldHeadlandM, where a
+// field is its grass headland.
+func groundValue(sp *spots, e, n float64, nearRoad func(e, n float64) bool) (byte, scenery.Land) {
 	if sp.land == nil {
 		return byte(scenery.LandNone) + 1, scenery.LandNone
 	}
 	l, id := sp.land.Area(e, n)
+	if l >= scenery.LandPloughed && l <= scenery.LandPotatoes && nearRoad != nil && nearRoad(e, n) {
+		return byte(scenery.LandNone) + 1, scenery.LandNone // the headland: grass
+	}
 	if l >= scenery.LandPloughed && l <= scenery.LandPotatoes {
 		d := int(math.Round(sp.land.RowDir(id)/(math.Pi/groundRowDirs))) % groundRowDirs
 		return byte(groundFieldBase + int(l-scenery.LandPloughed)*groundRowDirs + d), l
@@ -97,6 +107,29 @@ func groundMap(sp *spots, t *terrain, s *surface, drawn *landSurface, keys [][2]
 	// has 400 m cells, and a cell's worth of samples was scanned for
 	// every metre of the map.
 	route = newRouteGrid(route.fine, groundReachM)
+	// A field's headland: within fieldHeadlandM of any drawn road's edge
+	// (its samples, a road's edge at most 8 m off its line).
+	roads := newRouteGrid(t.fine, fieldHeadlandM+8)
+	headland := func(e, n float64) bool {
+		near := false
+		roads.within(e, n, fieldHeadlandM+8, func(i int) {
+			// To the road's line between its samples, its edge there.
+			a := t.fine[i]
+			for _, j := range []int{i - 1, i + 1} {
+				if near || j < 0 || j >= len(t.fine) || t.fine[j].line != a.line {
+					continue
+				}
+				b := t.fine[j]
+				de, dn := b.e-a.e, b.n-a.n
+				f := 0.0
+				if l2 := de*de + dn*dn; l2 > 0 {
+					f = math.Max(0, math.Min(1, ((e-a.e)*de+(n-a.n)*dn)/l2))
+				}
+				near = math.Hypot(e-a.e-f*de, n-a.n-f*dn)-(a.edge+f*(b.edge-a.edge)) < fieldHeadlandM
+			}
+		})
+		return near
+	}
 	near := func(e, no float64) bool {
 		hit := false
 		route.within(e, no, groundReachM, func(int) { hit = true })
@@ -118,7 +151,7 @@ func groundMap(sp *spots, t *terrain, s *surface, drawn *landSurface, keys [][2]
 						if !near(e, no) {
 							continue
 						}
-						v, land := groundValue(sp, e, no)
+						v, land := groundValue(sp, e, no, headland)
 						cells[j*n+i] = v
 						// The land as drawn; the ground model only where
 						// nothing is drawn (a hole), as it costs a road search.

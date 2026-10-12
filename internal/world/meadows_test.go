@@ -27,6 +27,7 @@ func TestMeadowsAreFencedAlongTheRoad(t *testing.T) {
 		rect(2, -200, 100, 0, 400, "landuse", "meadow"),                 // west: meadow
 		rect(3, -6, 100, -4, 400, "natural", "water", "water", "ditch"), // west: a ditch between
 		rect(4, 0, 500, 200, 700, "landuse", "farmland"),                // east further on: a field
+		rect(5, 8, 250, 9.5, 400, "natural", "water", "water", "ditch"), // east from n 250: a roadside ditch 5.5-7 m off the edge
 	}})
 	tr := testTerrain(c, Options{Land: lm})
 	fences := meadowFences(tr, lm, nil, nil)
@@ -49,7 +50,7 @@ func TestMeadowsAreFencedAlongTheRoad(t *testing.T) {
 			gates++
 		}
 	}
-	if east < 250 || west > 0 || gates == 0 {
-		t.Errorf("fenced %.0f m east (want most of 300), %.0f m west (want none: the ditch), %d gates", east, west, gates)
+	if east < 120 || east > 160 || west > 0 || gates == 0 {
+		t.Errorf("fenced %.0f m east (want most of the 150 m without a ditch), %.0f m west (want none: the ditch), %d gates", east, west, gates)
 	}
 }

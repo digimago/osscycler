@@ -22,6 +22,11 @@ const (
 	// meadowNearM: only within this of the route (thin wire further off
 	// is lost in the haze, and the Posbank Loop's corridor had 13 km of it).
 	meadowNearM = 60.0
+	// meadowDitchM: water this far from the road's edge on a side is its
+	// ditch, and the meadow behind it needs no fence (owner, 2026-10-12:
+	// fences only where there is no ditch; a roadside ditch lies a few
+	// metres beyond the verge).
+	meadowDitchM = 8.0
 )
 
 // meadowFences are the fences along the roads where a meadow lies beside
@@ -71,9 +76,9 @@ func meadowFences(t *terrain, land *scenery.LandMap, fps []scenery.Footprint, pa
 			off := edge + meadowFenceOffM
 			e, n := a.e+rx*off, a.n+rn*off
 			ok := is(e+rx*meadowDeepM, n+rn*meadowDeepM, scenery.LandMeadow) && is(e+rx, n+rn, scenery.LandMeadow)
-			// No water between the road and the meadow (a ditch: the fence
-			// it is), no building, car park or entrance, no other road.
-			for d := edge + 0.3; ok && d <= off+1.5; d += 0.6 {
+			// No ditch along the road on this side (the fence it is), no
+			// building, car park or entrance, no other road.
+			for d := edge + 0.3; ok && d <= edge+meadowDitchM; d += 0.6 {
 				ok = !is(a.e+rx*d, a.n+rn*d, scenery.LandWater)
 			}
 			ok = ok && nearRoute(e, n) && !sp.inArea(e, n) && sp.roadNear(e, n, 0.5, a.line) < 0 &&

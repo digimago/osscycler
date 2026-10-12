@@ -68,11 +68,13 @@ public sealed class Grass
         _relief = relief;
         _groundCell = map.CellM;
         // The shaders' codes: 1 grass, 2 meadow, 3 forest, 4 built-up,
-        // 5 farmland, 6 orchard, 7 heath, 8 grey dune, 9 dune thicket;
-        // anything else (bare dune sand, the beach) grows nothing here.
+        // 5 farmland, 6 orchard, 7 heath, 8 grey dune, 9 dune thicket; a
+        // sown field ("maize 3": the crop and the way its rows run) from 16
+        // (Plants.Fields.Code); anything else (bare dune sand, the beach) grows
+        // nothing here.
         _codes = new byte[256];
         for (int i = 0; i < map.Classes.Length && i < 256; i++)
-            _codes[i] = map.Classes[i] switch
+            _codes[i] = Plants.Fields.Code(map.Classes[i]) ?? (byte)(map.Classes[i] switch
             {
                 "grass" => 1,
                 "meadow" => 2,
@@ -84,7 +86,7 @@ public sealed class Grass
                 "dune grass" => 8,
                 "dune scrub" => 9,
                 _ => 0,
-            };
+            });
         int gn = (int)(WindowM / _groundCell), hn = (int)(WindowM / HeightCellM);
         _groundBuf = new byte[gn * gn];
         _clearBuf = new byte[gn * gn];
@@ -302,7 +304,7 @@ public sealed class Grass
     static Texture2DArray Atlas()
     {
         const int T = 128;
-        var imgs = new Image[6];
+        var imgs = new Image[9];
         for (int i = 0; i < imgs.Length; i++)
         {
             imgs[i] = Image.CreateEmpty(T, T, false, Image.Format.Rgba8);
@@ -381,6 +383,90 @@ public sealed class Grass
                                 imgs[tile].SetPixel(cx + dx, cy + dy, c);
                 }
             }
+        }
+        // 6: maize, two plants in a row: a stalk, long leaves arching out
+        // and down from it all the way up, a cob halfway, a pale tassel on
+        // top.
+        var stalk = new Color(0.36f, 0.50f, 0.16f);
+        var maizeLeaf = new Color(0.30f, 0.48f, 0.13f);
+        var maizeTip = new Color(0.50f, 0.66f, 0.26f);
+        foreach (float x0 in new[] { 0.3f, 0.72f })
+        {
+            Blade(6, x0, 0.9f, 0.02f, 0.05f, stalk, stalk.Lightened(0.15f));
+            for (float f = 0.12f; f < 0.82f; f += 0.09f)
+                foreach (var side in new[] { -1f, 1f })
+                    Blade(6, x0 + side * 0.01f, 0.34f * (1.1f - f), side * rng.RandfRange(0.18f, 0.3f), 0.1f, maizeLeaf, maizeTip);
+            // The cob, its sheath.
+            for (int dy = 0; dy < 14; dy++)
+                for (int dx = -3; dx <= 3; dx++)
+                {
+                    int cx = (int)((x0 + 0.04f) * T) + dx, cy = (int)(T * 0.5f) + dy;
+                    if (cx >= 0 && cx < T)
+                        imgs[6].SetPixel(cx, cy, new Color(0.58f, 0.62f, 0.3f));
+                }
+            // The tassel.
+            for (int k = 0; k < 7; k++)
+                Blade(6, x0 + rng.RandfRange(-0.03f, 0.03f), 0.12f, rng.RandfRange(-0.08f, 0.08f), 0.015f,
+                    new Color(0.72f, 0.66f, 0.42f), new Color(0.85f, 0.78f, 0.5f));
+        }
+        // The tassels sit on top: Blade draws from the foot, so move them up.
+        {
+            var img = imgs[6];
+            var top = Image.CreateEmpty(T, T, false, Image.Format.Rgba8);
+            top.Fill(new Color(0, 0, 0, 0));
+            for (int y = 0; y < T; y++)
+                for (int x = 0; x < T; x++)
+                {
+                    var c = img.GetPixel(x, y);
+                    // Tassel pixels were drawn at the foot (the bottom 12 %):
+                    // put them above the stalks' tops.
+                    if (y >= T - (int)(0.12f * T) && c.A > 0 && c.R > 0.6f)
+                        top.SetPixel(x, y - (int)(0.88f * T), c);
+                    else if (c.A > 0)
+                        top.SetPixel(x, y, c);
+                }
+            imgs[6] = top;
+        }
+        // 7: wheat, ripe: dense straw-coloured stalks, each with its ear.
+        var straw = new Color(0.62f, 0.52f, 0.26f);
+        var strawTip = new Color(0.86f, 0.74f, 0.42f);
+        var ear = new Color(0.80f, 0.66f, 0.32f);
+        for (int k = 0; k < 70; k++)
+        {
+            float x = rng.RandfRange(0.04f, 0.96f), height = rng.RandfRange(0.8f, 0.97f), bend = rng.RandfRange(-0.06f, 0.06f);
+            Blade(7, x, height, bend, 0.02f, straw, strawTip);
+            int cx = (int)((x + bend) * T), cy = (int)(T * (1 - height));
+            for (int dy = 0; dy < 12; dy++)
+                for (int dx = -1; dx <= 1; dx++)
+                    if (cx + dx >= 0 && cx + dx < T && cy + dy >= 0 && cy + dy < T)
+                        imgs[7].SetPixel(cx + dx, cy + dy, ear.Lightened(0.1f * (dy % 3 == 0 ? 1 : 0)));
+        }
+        // 8: potatoes: a bushy haulm of leafy stems, dark green, a few small
+        // white and lilac flowers on top.
+        var haulm = new Color(0.16f, 0.30f, 0.08f);
+        var haulmTip = new Color(0.30f, 0.48f, 0.14f);
+        for (int k = 0; k < 16; k++)
+        {
+            float x0 = 0.5f + rng.RandfRange(-0.12f, 0.12f), lean = rng.RandfRange(-0.4f, 0.4f), len = rng.RandfRange(0.55f, 0.95f);
+            Blade(8, x0, len, lean, 0.04f, haulm, haulmTip);
+            for (float f = 0.25f; f < 0.95f; f += 0.12f)
+                foreach (var side in new[] { -1f, 1f })
+                {
+                    int cx = (int)((x0 + lean * f * f + side * 0.04f) * T), cy = (int)(T - 1 - f * len * T);
+                    for (int dy = -4; dy <= 4; dy++)
+                        for (int dx = -5; dx <= 5; dx++)
+                            if (dx * dx * 0.6f + dy * dy <= 14 && cx + dx >= 0 && cx + dx < T && cy + dy >= 0 && cy + dy < T)
+                                imgs[8].SetPixel(cx + dx, cy + dy, haulm.Lerp(haulmTip, f));
+                }
+        }
+        var potatoFlowers = new[] { new Color(0.95f, 0.95f, 0.92f), new Color(0.72f, 0.6f, 0.85f) };
+        for (int k = 0; k < 6; k++)
+        {
+            int cx = (int)(rng.RandfRange(0.25f, 0.75f) * T), cy = (int)(rng.RandfRange(0.05f, 0.25f) * T);
+            for (int dy = -2; dy <= 2; dy++)
+                for (int dx = -2; dx <= 2; dx++)
+                    if (dx * dx + dy * dy <= 4 && cx + dx >= 0 && cx + dx < T && cy + dy >= 0 && cy + dy < T)
+                        imgs[8].SetPixel(cx + dx, cy + dy, potatoFlowers[k % 2]);
         }
         var layers = new Godot.Collections.Array<Image>();
         foreach (var img in imgs)

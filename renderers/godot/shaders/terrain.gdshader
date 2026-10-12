@@ -17,6 +17,22 @@ uniform float bloom = 0.0;    // the heather in flower (Grass.cs)
 
 varying vec3 wpos;
 
+// field_colour is a sown field's ground (linear): ridge 1 on a ridge or
+// row, 0 in the furrow between, 0.5 the average. Ploughed: furrows of
+// turned soil, the ridges catching the light; maize: soil between rows of
+// green; wheat: straw-coloured, close drilled; potatoes: ridges under
+// dark haulm.
+vec3 field_colour(int crop, float ridge, vec3 soil) {
+	if (crop == 0) {
+		return soil * (0.55 + 0.9 * ridge);
+	} else if (crop == 1) {
+		return mix(soil * 0.9, vec3(0.05, 0.10, 0.02), 0.65 * ridge);
+	} else if (crop == 2) {
+		return vec3(0.34, 0.27, 0.11) * (0.85 + 0.3 * ridge);
+	}
+	return mix(soil * (0.6 + 0.4 * ridge), vec3(0.045, 0.09, 0.02), 0.7 * ridge);
+}
+
 #include "res://shaders/noise.gdshaderinc"
 
 void vertex() {
@@ -38,6 +54,7 @@ void fragment() {
 	// Grassy ground: how much grows here (as ground.gdshaderinc's look),
 	// fading out towards the window's edge.
 	float grassy = 0.0;
+	vec4 field = vec4(0.0); // a sown field: how much (the window's fade), its crop, across its rows
 	vec3 under = vec3(0.13, 0.29, 0.035); // the cards' average, linear
 	if (win_size > 0.0) {
 		vec2 uv = (p - win_origin) / win_size;
@@ -45,6 +62,14 @@ void fragment() {
 		float inside = smoothstep(0.0, 0.12, min(edge.x, edge.y));
 		if (inside > 0.0) {
 			int g = int(round(texture(ground_map, uv).r * 255.0));
+			// A sown field beyond its grass headland along the road (2.5 m,
+			// as ground.gdshaderinc's HEADLAND).
+			float head = 0.0;
+			if (g >= 16 && g < 48) {
+				float a = float((g - 16) % 8) * 3.14159265 / 8.0;
+				head = smoothstep(2.0, 2.5, texture(clear_map, uv).r * 25.5);
+				field = vec4(inside * head, float((g - 16) / 8), sin(a), cos(a));
+			}
 			float room = smoothstep(0.05, 0.5, texture(clear_map, uv).r * 25.5);
 			float share = g == 1 ? 0.9 : g == 2 ? 0.95 : g == 4 ? 0.5 : g == 6 ? 0.8
 				: g == 3 ? 0.6 : g == 7 ? 0.9 : g == 5 ? 0.15 : g == 8 ? 0.75 : g == 9 ? 0.45 : 0.0;
@@ -56,13 +81,32 @@ void fragment() {
 				// heather: dark green twigs, purple in flower
 				under = mix(vec3(0.07, 0.075, 0.035), vec3(0.24, 0.09, 0.2), 0.7 * bloom);
 			}
-			grassy = share * room * inside;
+			grassy = (g >= 16 && g < 48 ? 0.9 * (1.0 - head) : share) * room * inside;
 		}
 	}
 	// Streaks along no particular way: blades in clumps, seen from above.
 	float streak = 0.5 * vnoise(p * vec2(6.0, 2.5)) + 0.5 * vnoise(p * vec2(2.2, 7.0));
 	vec3 lawn = under * (0.75 + 0.5 * mix(0.5, streak, near) + 0.3 * (broad - 0.5));
 	c = mix(c, lawn, 0.75 * grassy);
+	// A sown field near the rider: its furrows or rows on the soil, the
+	// ridges lit as ridges (the normal tilted across them), fading to the
+	// field's average colour further out (the stripes would shimmer).
+	if (field.x > 0.0) {
+		int crop = int(field.y);
+		vec2 across = field.zw;
+		float sp = crop == 2 ? 0.25 : 0.75;
+		float q = dot(p, across) / sp;
+		float ridge = 0.5 + 0.5 * cos(6.2831853 * q);
+		float rows = (1.0 - smoothstep(20.0, 55.0, d)) * field.x;
+		vec3 soil = vec3(0.085, 0.062, 0.038) * (0.85 + 0.3 * fine);
+		vec3 fc = field_colour(crop, mix(0.5, ridge, rows), soil);
+		c = mix(c, fc, field.x);
+		if (crop != 2) {
+			float slope = -sin(6.2831853 * q) * 0.45 * rows;
+			vec3 tilt = (VIEW_MATRIX * vec4(across.x, 0.0, across.y, 0.0)).xyz;
+			NORMAL = normalize(NORMAL + tilt * slope);
+		}
+	}
 	ALBEDO = c;
 	ROUGHNESS = 1.0;
 	SPECULAR = 0.2;

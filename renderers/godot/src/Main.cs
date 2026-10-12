@@ -603,10 +603,10 @@ public partial class Main : Node3D
         }
         // Here, or built here: a preview first while the world is built,
         // then the world itself in its place.
-        var (dir, status) = _source!.For(r.CourseId);
+        var (dir, stamp, status) = _source!.For(r.CourseId);
         _worldStatus = status;
-        if (dir != null && dir != _shownDir && dir != _loadingDir && dir != _missing && _swapIn == null)
-            LoadInBackground(dir); // a failure sets _missing: not tried every frame
+        if (Head.WorldPick.NeedsLoad(dir, stamp, _shownDir, _world?.Manifest.Stamp ?? "", _loadingDir, _missing, _swapIn != null))
+            LoadInBackground(dir!); // a failure sets _missing: not tried every frame
         if (_ride == null || r.DistanceM != _ride.DistanceM || r.Phase != _ride.Phase)
         {
             // Where the last report puts the rider now, not where the last

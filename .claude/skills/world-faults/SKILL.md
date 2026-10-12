@@ -226,6 +226,12 @@ meant for it. Its own stages, in order, and what goes wrong where:
    of `matchCourse` for a stretch of a clip (and `cands[i]` with `acc` for
    one step: why one won). Hops, U-turns, loops round a roundabout: a
    transition cost; stalls: projections stepping back (`gJitterM`).
+   Hairpins (180° in a step) and spurs: `gnet.hairpins` (arrival and
+   departure directions for a zero-length leg), `gNodeSlackM` (a node a
+   hair past a line's end), `gAgainstCos` (no leg or net move against the
+   route's way), `gSpurM` (spurs out and back removed in `trace`); dump
+   the states (`st`) and `out.pts` round a spot, and the candidates with
+   `acc` and `trans` for one step, to see which rule should have bitten.
 4. `gpathOut.place` (graph.go): the turns of the line through the
    network (a road change at a node, a road's own kink, the step across
    where the course leaves a road for a path beside it) rounded as wide

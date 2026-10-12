@@ -40,6 +40,7 @@ The renderer's own arguments come after `--`:
 | `--keys K@N,...` | press these keys at these frames, e.g. `"?@60,x@120"` (checking the head) |
 | `--debug` | space marks the spot as flawed: a line in `marks.jsonl` and a screenshot (only while no menu, prompt or editor is open; `space@N` in `--keys`); ctrl+→ / ctrl+← look 100 m further or back along the course (shift: 1 km), ctrl+↓ back to the rider: with a core only the view moves (the ride stays where it is), without one the fixed-speed ride jumps. The renderer isn't counted as a screen then, and quits without asking |
 | `--marks DIR` | where the marks go (default `~/osscycler/marks`); the `world-faults` skill's `marks.py` reads them |
+| `--control PORT` | a control socket on `127.0.0.1:PORT` (0: any free port) for debugging sessions: one JSON request per line (`state`, `goto`, `shot`, `stats`, `keys`, `load`, `hide`, `mark`, `quit`; `src/Main.Control.cs`), served between frames. `cmd/osscycler-mcp` drives it for an AI assistant; `osscycler 3d --debug --control 7431` opens one on a ride |
 
 ## Keys
 

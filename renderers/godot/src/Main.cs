@@ -33,6 +33,9 @@ namespace Osscycler;
 //	--debug           space marks the spot as flawed (a line in marks.jsonl and a screenshot), for analysis;
 //	                  ctrl+→ / ctrl+← look 100 m further or back along the course (shift: 1 km), ctrl+↓ back to the rider
 //	--marks DIR       where the marks go (default ~/osscycler/marks)
+//	--control PORT    a control socket on 127.0.0.1:PORT (0: any free port) for debugging
+//	                  sessions: move, look, screenshot, measure (ControlSocket, Main.Control.cs;
+//	                  cmd/osscycler-mcp drives it)
 public partial class Main : Node3D
 {
     const float EyeM = 1.6f;      // a rider's eyes above the road
@@ -129,6 +132,7 @@ public partial class Main : Node3D
         _shot = args.File("shot", "") is { Length: > 0 } s ? s : null;
         _shotFrames = (int)args.Number("frames", _shotFrames);
         StatsArgs(args);
+        ControlArgs(args);
         // --keys "?@60,x@120": keys pressed at those frames (for checks).
         foreach (var part in args.Get("keys", "").Split(',', StringSplitOptions.RemoveEmptyEntries))
         {
@@ -219,6 +223,7 @@ public partial class Main : Node3D
     public override void _ExitTree()
     {
         _source?.Stop(); // a world being built for this screen: no one to load it now
+        _control?.Dispose();
         _core?.Dispose();
         _trace?.Dispose();
     }
@@ -343,6 +348,7 @@ public partial class Main : Node3D
             _grass = new Grass(w.Ground, _relief, w.TerrainMaterial, _bloom);
             AddChild(_grass.Node);
         }
+        _hidden.Clear(); // the old world's nodes went with it
         HideParts(w);
         _missing = "";
         _gaze = Vector3.Zero;
@@ -423,6 +429,7 @@ public partial class Main : Node3D
             GD.Print($"osscycler: view at {_distance:F0} m saved to {_shot}: {err}");
             GetTree().Quit();
         }
+        ServeControl();
     }
 
     // Keys go to the head (Head.Controller), named as the TUI names them.
@@ -523,15 +530,7 @@ public partial class Main : Node3D
         {
             shot = "";
         }
-        // Heights back to the world's frame: the scene is scaled by --relief.
-        Vector3 Frame(Vector3 v) => v with { Y = v.Y / _relief };
-        double at = Viewed; // the spot looked at (the rider's, or a debug view ahead or behind)
-        var rider = Frame(w.InLane(at));
-        var cam = Frame(_camera.GlobalPosition);
-        var fwd = -_camera.GlobalTransform.Basis.Z;
-        fwd = new Vector3(fwd.X, fwd.Y / _relief, fwd.Z).Normalized();
-        var (lat, lon) = Head.Marks.LatLon(m.Origin.Lat, m.Origin.Lon, rider.X, rider.Z);
-        double along = m.Course.Loop && w.Length > 0 ? ((at % w.Length) + w.Length) % w.Length : Math.Clamp(at, 0, w.Length);
+        var (at, along, rider, lat, lon, cam, fwd) = Spot(w);
         double R(double v, int digits) => Math.Round(v, digits);
         var mark = new Head.Mark
         {

@@ -626,13 +626,29 @@ public partial class Main : Node3D
 
     // Idle shows a world at rest while no ride is on (free riding, the
     // dashboard's tiles over it): the figure 8 if it has been built, else
-    // the first world there is.
+    // the first world there is; with another builder than the default
+    // (the graph builder) chosen ($OSSCYCLER_WORLD_BUILDER, e.g. classic),
+    // that builder's worlds (<worlds>/.<builder>/) first, as
+    // osscycler-world puts them.
     void Idle()
     {
         _idleTried = true;
-        var dirs = new List<string> { Path.Combine(_worldsDir, "figure-8") };
-        if (Directory.Exists(_worldsDir))
-            dirs.AddRange(Directory.GetDirectories(_worldsDir));
+        var roots = new List<string>();
+        var builder = System.Environment.GetEnvironmentVariable("OSSCYCLER_WORLD_BUILDER") ?? "";
+        if (builder != "" && builder != "graph" && builder.IndexOfAny(new[] { '/', '\\', '.' }) < 0)
+            roots.Add(Path.Combine(_worldsDir, "." + builder));
+        roots.Add(_worldsDir);
+        var dirs = new List<string>();
+        foreach (var r in roots)
+        {
+            dirs.Add(Path.Combine(r, "figure-8"));
+            if (Directory.Exists(r))
+            {
+                var found = Directory.GetDirectories(r);
+                Array.Sort(found, StringComparer.Ordinal);
+                dirs.AddRange(found);
+            }
+        }
         foreach (var d in dirs)
             if (File.Exists(Path.Combine(d, "world.json")) && Show(d))
             {

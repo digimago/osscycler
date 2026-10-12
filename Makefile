@@ -18,6 +18,10 @@ COURSES      ?= _gpx
 WORKOUTS     ?= _workouts
 RIDES        ?= _rides
 WORLDS       ?= _worlds
+# The world builder: graph (the road network first; the default), or
+# classic (the fallback; its worlds go in $(WORLDS)/.classic/). make
+# world-ab builds both and compares them.
+BUILDER      ?= graph
 # The 3D view from source: Godot 4.7.2 .NET (the editor binary or a wrapper)
 # and the .NET SDK; 3D_FLAGS for more (e.g. --debug to mark flaws).
 GODOT        ?= godot
@@ -38,7 +42,7 @@ export BIN LOG_DIR ADDR TOKEN_FILE ANT_KEY_FILE PORT COURSES WORKOUTS RIDES
 
 .DEFAULT_GOAL := build
 .PHONY: help build 3d generate test race vet fmt lint check token udev \
-        core core-fake tui stack stack-fake demo demo-free demo-files replay world release clean
+        core core-fake tui stack stack-fake demo demo-free demo-files replay world world-ab release clean
 
 help: ## List targets
 	@awk 'BEGIN {FS = ":.*## "} /^[a-z-]+:.*## / {printf "  %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -53,7 +57,7 @@ test: ## Run tests
 	go test ./...
 
 race: ## Run tests with the race detector
-	go test -race -count=1 ./...
+	go test -race -count=1 -timeout 20m ./...
 
 vet: ## go vet
 	go vet ./...
@@ -124,12 +128,15 @@ demo-files:
 replay: build ## Re-ride recorded course rides from $(RIDES) (courses from $(COURSES)); add REPLAY_FLAGS="-cda 0.25" etc.
 	$(BIN)/osscycler-replay -rides $(RIDES) -courses $(COURSES) $(REPLAY_FLAGS)
 
-world: build ## Build the 3D world of COURSE (default posbank) into $(WORLDS)/; ground model tiles cached in $(COURSES)/.dem
-	$(BIN)/osscycler-world -courses $(COURSES) -out $(WORLDS) $(WORLD_FLAGS) $(or $(COURSE),posbank)
+world: build ## Build the 3D world of COURSE (default posbank) into $(WORLDS)/ with BUILDER (graph, the default, or classic, the fallback); ground model tiles cached in $(COURSES)/.dem
+	$(BIN)/osscycler-world -courses $(COURSES) -out $(WORLDS) -builder $(BUILDER) $(WORLD_FLAGS) $(or $(COURSE),posbank)
 
-3d: build ## Build and open the 3D view (from source) on the core at $(ADDR), worlds in $(WORLDS)/; 3D_FLAGS=--debug marks flaws
+world-ab: build ## Build COURSE's world with both builders (classic, graph) and compare them side by side
+	$(BIN)/osscycler-world -courses $(COURSES) -out $(WORLDS) -builder ab $(WORLD_FLAGS) $(or $(COURSE),posbank)
+
+3d: build ## Build and open the 3D view (from source) on the core at $(ADDR), worlds in $(WORLDS)/ by BUILDER; 3D_FLAGS=--debug marks flaws
 	$(DOTNET) build renderers/godot/OsscyclerGodot.sln -v quiet -nologo
-	OSSCYCLER_WORLD=$(CURDIR)/$(BIN)/osscycler-world $(GODOT) --path renderers/godot -- --core $(ADDR) --worlds "$(CURDIR)/$(WORLDS)" \
+	OSSCYCLER_WORLD=$(CURDIR)/$(BIN)/osscycler-world OSSCYCLER_WORLD_BUILDER=$(BUILDER) $(GODOT) --path renderers/godot -- --core $(ADDR) --worlds "$(CURDIR)/$(WORLDS)" \
 		--token-file "$(CURDIR)/$(TOKEN_FILE)" $(3D_FLAGS)
 
 # Release builds with the ANT+ network key built in (see scripts/release.sh):

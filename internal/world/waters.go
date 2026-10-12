@@ -83,7 +83,19 @@ func ringArea(r [][2]float64) float64 {
 // exactWaters picks the water areas over the terrain that are drawn from
 // their outline, and marks them so the terrain's cells leave them out.
 func (t *terrain) exactWaters(keys [][2]int) []exactWater {
-	if t.cover == nil || t.cover.m == nil || !t.cut {
+	if !t.cut {
+		return nil
+	}
+	return t.waterOutlines(keys, false)
+}
+
+// waterOutlines are the water areas over the chunks keys within
+// exactReachM of the route whose outline ear clipping covers exactly (the
+// graph builder draws them so whatever the terrain), marked in t.exact.
+// With islands, an area with islands in it counts too, its islands joined
+// into its outline (withIslands).
+func (t *terrain) waterOutlines(keys [][2]int, islands bool) []exactWater {
+	if t.cover == nil || t.cover.m == nil {
 		return nil
 	}
 	size := t.o.ChunkM
@@ -131,6 +143,11 @@ func (t *terrain) exactWaters(keys [][2]int) []exactWater {
 	t.exact = map[int]bool{}
 	for _, id := range t.cover.m.Waters() {
 		rings := waterRings(t.cover.m.Edges(id))
+		if islands && len(rings) > 1 {
+			if r, ok := withIslands(rings); ok {
+				rings = [][][2]float64{r}
+			}
+		}
 		if len(rings) != 1 || len(rings[0]) < 3 || len(rings[0]) > exactMaxPoints {
 			continue
 		}
@@ -330,4 +347,116 @@ func grownRing(r [][2]float64, d float64) [][2]float64 {
 		out[i] = [2]float64{q[0] + m[0]*d/cos, q[1] + m[1]*d/cos}
 	}
 	return out
+}
+
+// withIslands joins the islands (inner rings) of a water area into its
+// outline (the largest ring), each by a seam from its easternmost point to
+// a point of the outline it can see eastwards, so the water with its
+// islands left out is one ring ear clipping can take (the graph builder;
+// owner, 2026-10-11: the canal by the main street, an outline with
+// three islands, fell back to the 5 m cells and the land stood through
+// it). False when a ring lies outside the outline or no seam is found;
+// a seam that crosses another island is caught by ear clipping's area
+// check (waterOutlines).
+func withIslands(rings [][][2]float64) ([][2]float64, bool) {
+	outer := 0
+	for i, r := range rings {
+		if math.Abs(ringArea(r)) > math.Abs(ringArea(rings[outer])) {
+			outer = i
+		}
+	}
+	out := append([][2]float64(nil), rings[outer]...)
+	if ringArea(out) < 0 {
+		reverseRing(out)
+	}
+	var holes [][][2]float64
+	for i, r := range rings {
+		if i == outer || len(r) < 3 {
+			continue
+		}
+		if !inRing(out, r[0]) {
+			return nil, false
+		}
+		h := append([][2]float64(nil), r...)
+		if ringArea(h) > 0 {
+			reverseRing(h) // islands run clockwise
+		}
+		holes = append(holes, h)
+	}
+	// Easternmost islands first, so each seam meets the outline as it is.
+	east := func(h [][2]float64) (int, float64) {
+		k := 0
+		for i := range h {
+			if h[i][0] > h[k][0] {
+				k = i
+			}
+		}
+		return k, h[k][0]
+	}
+	sort.Slice(holes, func(a, b int) bool {
+		_, xa := east(holes[a])
+		_, xb := east(holes[b])
+		return xa > xb
+	})
+	for _, h := range holes {
+		k, _ := east(h)
+		m := h[k]
+		// Where the ray eastwards from m first meets the outline (as joined
+		// so far): the seam's other end, a point of its own there unless a
+		// corner is. Edges ending at m's height count (an island's corner
+		// level with m: skipped, the seam ran to a far corner across it).
+		best, at := math.Inf(1), -1
+		var hit [2]float64
+		for i := range out {
+			a, b := out[i], out[(i+1)%len(out)]
+			if a[1] == b[1] || m[1] < math.Min(a[1], b[1]) || m[1] > math.Max(a[1], b[1]) {
+				continue
+			}
+			x := a[0] + (m[1]-a[1])/(b[1]-a[1])*(b[0]-a[0])
+			if x >= m[0] && x-m[0] < best {
+				best, at, hit = x-m[0], i, [2]float64{x, m[1]}
+			}
+		}
+		if at < 0 {
+			return nil, false
+		}
+		// The seam's end in the outline: a corner there, or a new point
+		// put in the edge after at.
+		switch {
+		case math.Hypot(hit[0]-out[at][0], hit[1]-out[at][1]) < 1e-9:
+		case math.Hypot(hit[0]-out[(at+1)%len(out)][0], hit[1]-out[(at+1)%len(out)][1]) < 1e-9:
+			at = (at + 1) % len(out)
+		default:
+			out = append(out[:at+1], append([][2]float64{hit}, out[at+1:]...)...)
+			at++
+		}
+		p := out[at]
+		var ring [][2]float64
+		ring = append(ring, out[:at+1]...)
+		for j := 0; j <= len(h); j++ {
+			ring = append(ring, h[(k+j)%len(h)])
+		}
+		ring = append(ring, p)
+		ring = append(ring, out[at+1:]...)
+		out = ring
+	}
+	return out, true
+}
+
+func reverseRing(r [][2]float64) {
+	for i, j := 0, len(r)-1; i < j; i, j = i+1, j-1 {
+		r[i], r[j] = r[j], r[i]
+	}
+}
+
+// inRing: whether p lies inside ring r (even-odd).
+func inRing(r [][2]float64, p [2]float64) bool {
+	in := false
+	for i := range r {
+		a, b := r[i], r[(i+1)%len(r)]
+		if (a[1] > p[1]) != (b[1] > p[1]) && p[0] < a[0]+(p[1]-a[1])/(b[1]-a[1])*(b[0]-a[0]) {
+			in = !in
+		}
+	}
+	return in
 }

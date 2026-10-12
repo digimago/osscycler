@@ -3,6 +3,7 @@ package worlds
 import (
 	"bytes"
 	"context"
+	"errors"
 	"math"
 	"os"
 	"path/filepath"
@@ -38,14 +39,16 @@ func TestBuildIsTheSameEveryTime(t *testing.T) {
 		return 20 + 3*math.Sin(e/60) + 2*math.Sin(n/90), true
 	}
 	for _, tc := range []struct {
-		name string
-		o    world.Options
+		name, engine string
+		o            world.Options
 	}{
-		{"no ground model", world.Options{Generator: "test"}},
-		{"ground model", world.Options{Generator: "test", Elevation: ground}},
+		{"no ground model", world.EngineClassic, world.Options{Generator: "test"}},
+		{"ground model", world.EngineClassic, world.Options{Generator: "test", Elevation: ground}},
+		{"graph, no ground model", world.EngineGraph, world.Options{Generator: "test"}},
+		{"graph, ground model", world.EngineGraph, world.Options{Generator: "test", Elevation: ground}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			b := &Builder{Ground: "none", Options: tc.o}
+			b := &Builder{Ground: "none", Options: tc.o, Engine: tc.engine}
 			var files [2]map[string][]byte
 			for i := range files {
 				res, err := b.Build(context.Background(), c, nil)
@@ -68,7 +71,7 @@ func TestBuildIsTheSameEveryTime(t *testing.T) {
 					t.Errorf("%s differs between two builds", f)
 				}
 			}
-			if !bytes.Contains(files[0][world.ManifestFile], []byte(`"stamp":"`+Stamp(c)+`"`)) {
+			if !bytes.Contains(files[0][world.ManifestFile], []byte(`"stamp":"`+EngineStamp(c, tc.engine)+`"`)) {
 				t.Error("the manifest lacks the course's stamp")
 			}
 		})
@@ -116,5 +119,48 @@ func TestPreview(t *testing.T) {
 	}
 	if Find([]string{dir}, c.ID, Stamp(c)) != "" {
 		t.Error("the preview was taken for the world")
+	}
+}
+
+// Each builder's worlds have their own stamp and directory, so both can
+// be kept and neither is taken for the other's; the classic builder's are
+// what they always were.
+func TestEngineStampsAndDirs(t *testing.T) {
+	c := track(t, "oval-400")
+	classic, graph := EngineStamp(c, world.EngineClassic), EngineStamp(c, world.EngineGraph)
+	if classic != Stamp(c) {
+		t.Errorf("the classic builder's stamp %q, want the course's %q", classic, Stamp(c))
+	}
+	if graph == classic || !strings.HasPrefix(graph, "g") || EngineStamp(c, "") != graph {
+		t.Errorf("the graph builder's stamp %q (classic %q, default %q)", graph, classic, EngineStamp(c, ""))
+	}
+	if got := Dir("/w", "oval-400", world.EngineClassic); got != filepath.Join("/w", ".classic", "oval-400") {
+		t.Errorf("classic dir %s", got)
+	}
+	if got := Dir("/w", "oval-400", world.EngineGraph); got != filepath.Join("/w", "oval-400") || Dir("/w", "oval-400", "") != got {
+		t.Errorf("graph dir %s (default %s)", got, Dir("/w", "oval-400", ""))
+	}
+}
+
+// When the graph builder fails, the classic one builds the world in its
+// place, under the graph builder's stamp (so it isn't tried again and
+// again), and the result says so.
+func TestBuilderFallsBackToClassic(t *testing.T) {
+	c := track(t, "oval-400")
+	was := world.Engines[world.EngineGraph]
+	world.Engines[world.EngineGraph] = func(*course.Course, world.Options) (*world.World, error) {
+		return nil, errors.New("no network")
+	}
+	defer func() { world.Engines[world.EngineGraph] = was }()
+	b := &Builder{Ground: "none"}
+	r, err := b.Build(context.Background(), c, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !r.FellBack || r.World.Manifest.Builder != world.EngineClassic {
+		t.Errorf("fell back %v, builder %q: want the classic builder in the graph builder's place", r.FellBack, r.World.Manifest.Builder)
+	}
+	if r.World.Manifest.Stamp != EngineStamp(c, world.EngineGraph) {
+		t.Errorf("stamp %q, want the graph builder's %q", r.World.Manifest.Stamp, EngineStamp(c, world.EngineGraph))
 	}
 }

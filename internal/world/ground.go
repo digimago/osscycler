@@ -59,6 +59,10 @@ type groundChunk struct {
 // route), in parallel: the file's bytes and where each chunk is.
 func groundMap(sp *spots, t *terrain, s *surface, drawn *landSurface, keys [][2]int, chunkM float64, route *routeGrid) ([]byte, []groundChunk) {
 	n := int(math.Round(chunkM / groundCellM))
+	// The route's samples on a grid of the reach itself: the grid given
+	// has 400 m cells, and a cell's worth of samples was scanned for
+	// every metre of the map.
+	route = newRouteGrid(route.fine, groundReachM)
 	near := func(e, no float64) bool {
 		hit := false
 		route.within(e, no, groundReachM, func(int) { hit = true })
@@ -82,12 +86,16 @@ func groundMap(sp *spots, t *terrain, s *surface, drawn *landSurface, keys [][2]
 						}
 						land, _ := sp.landAt(e, no)
 						cells[j*n+i] = byte(land) + 1
-						heights[j*n+i] = s.ground(e, no)
+						// The land as drawn; the ground model only where
+						// nothing is drawn (a hole), as it costs a road search.
+						h, ok := 0.0, false
 						if drawn != nil {
-							if h, ok := drawn.at(e, no); ok {
-								heights[j*n+i] = h
-							}
+							h, ok = drawn.at(e, no)
 						}
+						if !ok {
+							h = s.ground(e, no)
+						}
+						heights[j*n+i] = h
 						if land != scenery.LandWater {
 							c := sp.clearance(e, no, 255*groundClearStepM)
 							cells[n*n+j*n+i] = byte(math.Round(c / groundClearStepM))
@@ -181,8 +189,15 @@ func groundMap(sp *spots, t *terrain, s *surface, drawn *landSurface, keys [][2]
 // terrain's cells are 5 m, the verges skip cross-sections), and grass
 // floated over the Diepesteeg's banks (owner, 2026-10-09, 3.35 km).
 type landSurface struct {
-	prims []gltf.Primitive
-	cells map[[2]int][][2]int32 // per landCellM cell: primitive, triangle
+	// tri holds each triangle's corners (x y z, three times) as float64,
+	// mat its material; cells lists the triangles per landCellM cell.
+	// Flat copies rather than the primitives' indices and positions: a
+	// lookup reads 10 words per triangle instead of 18; under the race
+	// detector, which counts every read, a graph build of the figure 8
+	// went from 36 to 26 s.
+	tri   []float64
+	mat   []int32
+	cells map[[2]int][]int32
 }
 
 const (
@@ -198,28 +213,31 @@ func newLandSurface(prims []gltf.Primitive, land func(material int) bool) *landS
 // materials up to maxTri across (roads: their junctions' triangles are
 // tens of metres).
 func newSurfaceIndex(prims []gltf.Primitive, land func(material int) bool, maxTri float64) *landSurface {
-	ls := &landSurface{cells: map[[2]int][][2]int32{}}
+	ls := &landSurface{cells: map[[2]int][]int32{}}
 	for _, p := range prims {
 		if !land(p.Material) {
 			continue
 		}
-		pi := int32(len(ls.prims))
-		ls.prims = append(ls.prims, p)
 		pos := p.Positions
 		for t := 0; t+2 < len(p.Indices); t += 3 {
 			lo, hi := [2]float64{math.Inf(1), math.Inf(1)}, [2]float64{math.Inf(-1), math.Inf(-1)}
+			var c [9]float64
 			for k := range 3 {
 				v := p.Indices[t+k]
-				x, z := float64(pos[3*v]), float64(pos[3*v+2])
+				c[3*k], c[3*k+1], c[3*k+2] = float64(pos[3*v]), float64(pos[3*v+1]), float64(pos[3*v+2])
+				x, z := c[3*k], c[3*k+2]
 				lo, hi = [2]float64{math.Min(lo[0], x), math.Min(lo[1], z)}, [2]float64{math.Max(hi[0], x), math.Max(hi[1], z)}
 			}
 			if hi[0]-lo[0] > maxTri || hi[1]-lo[1] > maxTri {
 				continue
 			}
+			id := int32(len(ls.mat))
+			ls.tri = append(ls.tri, c[:]...)
+			ls.mat = append(ls.mat, int32(p.Material))
 			for gx := int(math.Floor(lo[0] / landCellM)); gx <= int(math.Floor(hi[0]/landCellM)); gx++ {
 				for gz := int(math.Floor(lo[1] / landCellM)); gz <= int(math.Floor(hi[1]/landCellM)); gz++ {
 					k := [2]int{gx, gz}
-					ls.cells[k] = append(ls.cells[k], [2]int32{pi, int32(t)})
+					ls.cells[k] = append(ls.cells[k], id)
 				}
 			}
 		}
@@ -227,30 +245,75 @@ func newSurfaceIndex(prims []gltf.Primitive, land func(material int) bool, maxTr
 	return ls
 }
 
+// heightOf is triangle id's height at x, z (glTF axes) by barycentric
+// coordinates; false where the point is outside it or it has no area.
+func (ls *landSurface) heightOf(id int32, x, z float64) (float64, bool) {
+	c := ls.tri[9*id : 9*id+9]
+	px, py, pz := [3]float64{c[0], c[3], c[6]}, [3]float64{c[1], c[4], c[7]}, [3]float64{c[2], c[5], c[8]}
+	den := (pz[1]-pz[2])*(px[0]-px[2]) + (px[2]-px[1])*(pz[0]-pz[2])
+	if math.Abs(den) < 1e-12 {
+		return 0, false
+	}
+	a := ((pz[1]-pz[2])*(x-px[2]) + (px[2]-px[1])*(z-pz[2])) / den
+	b := ((pz[2]-pz[0])*(x-px[2]) + (px[0]-px[2])*(z-pz[2])) / den
+	c3 := 1 - a - b
+	const eps = -1e-6
+	if a < eps || b < eps || c3 < eps {
+		return 0, false
+	}
+	return a*py[0] + b*py[1] + c3*py[2], true
+}
+
 // at is the drawn land's height at e, n (the highest where pieces
 // overlap); false where no land is drawn.
 func (ls *landSurface) at(e, n float64) (float64, bool) {
+	return ls.top(e, n, true)
+}
+
+// matAt is the material of the highest surface at e, n.
+func (ls *landSurface) matAt(e, n float64) (int, bool) {
+	x, z := e, -n
+	best, mat, ok := math.Inf(-1), 0, false
+	for _, id := range ls.cells[[2]int{int(math.Floor(x / landCellM)), int(math.Floor(z / landCellM))}] {
+		if h, in := ls.heightOf(id, x, z); in && h > best {
+			best, mat, ok = h, int(ls.mat[id]), true
+		}
+	}
+	return mat, ok
+}
+
+// low is the lowest surface at e, n (where surfaces overlap: a junction's
+// over a road's end, with a step between).
+func (ls *landSurface) low(e, n float64) (float64, bool) {
+	return ls.top(e, n, false)
+}
+
+// anyWithin says whether any surface triangle may lie within r of e, n:
+// whether the cells the square of that reach covers hold any. False means
+// at, low and top are false at every point within r (its cell is among
+// these), so a caller probing all round a point far from every surface
+// can skip the probes: the land blend probed six rings of eight points
+// at every land vertex, most of them in open land, a third of a build.
+func (ls *landSurface) anyWithin(e, n, r float64) bool {
+	x, z := e, -n
+	for gx := int(math.Floor((x - r) / landCellM)); gx <= int(math.Floor((x+r)/landCellM)); gx++ {
+		for gz := int(math.Floor((z - r) / landCellM)); gz <= int(math.Floor((z+r)/landCellM)); gz++ {
+			if len(ls.cells[[2]int{gx, gz}]) > 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (ls *landSurface) top(e, n float64, highest bool) (float64, bool) {
 	x, z := e, -n
 	best, ok := math.Inf(-1), false
-	for _, r := range ls.cells[[2]int{int(math.Floor(x / landCellM)), int(math.Floor(z / landCellM))}] {
-		p := ls.prims[r[0]]
-		var px, py, pz [3]float64
-		for k := range 3 {
-			v := p.Indices[int(r[1])+k]
-			px[k], py[k], pz[k] = float64(p.Positions[3*v]), float64(p.Positions[3*v+1]), float64(p.Positions[3*v+2])
-		}
-		den := (pz[1]-pz[2])*(px[0]-px[2]) + (px[2]-px[1])*(pz[0]-pz[2])
-		if math.Abs(den) < 1e-12 {
-			continue
-		}
-		a := ((pz[1]-pz[2])*(x-px[2]) + (px[2]-px[1])*(z-pz[2])) / den
-		b := ((pz[2]-pz[0])*(x-px[2]) + (px[0]-px[2])*(z-pz[2])) / den
-		c := 1 - a - b
-		const eps = -1e-6
-		if a < eps || b < eps || c < eps {
-			continue
-		}
-		if h := a*py[0] + b*py[1] + c*py[2]; h > best {
+	if !highest {
+		best = math.Inf(1)
+	}
+	for _, id := range ls.cells[[2]int{int(math.Floor(x / landCellM)), int(math.Floor(z / landCellM))}] {
+		if h, in := ls.heightOf(id, x, z); in && (h > best == highest || !ok) {
 			best, ok = h, true
 		}
 	}

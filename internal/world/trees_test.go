@@ -118,7 +118,7 @@ func TestCrownReachCoversTheTree(t *testing.T) {
 // of their height across in the open, under a quarter in a stand), grown
 // broadleaves thick in the trunk at breast height (1.3 m).
 func TestTreesHaveRealMeasures(t *testing.T) {
-	dbh := map[string]float64{"oak": 0.95, "beech": 0.75, "ash": 0.65, "birch": 0.32}
+	dbh := map[string]float64{"oak": 0.95, "beech": 0.75, "ash": 0.65, "birch": 0.32, "plane": 0.9, "chestnut": 0.9, "maple": 0.6, "red oak": 0.7}
 	for _, sp := range allSpecies {
 		for v := range treeVariants {
 			var p gltf.Primitive

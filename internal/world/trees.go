@@ -79,6 +79,24 @@ var allSpecies = []species{
 	// tall and about 0.7 m across, its head of shoots 3 m long (owner,
 	// 2026-10-10: along farmland ditches between plots).
 	{name: "willow", h: 5.5, bare: 2.2, trunkR: 0.35, crownR: 2.2, clumpR: 0.9, bark: 0x6b6152, leaf: 0x8aa06a, pollard: true},
+	// Town trees (owner, 2026-10-11: Dutch urban greenery is maple, ash,
+	// rowan, plane, red oak, ginkgo, now and then sweet chestnut or
+	// cherry; by water birch, willow, alder or poplar; no conifers but in
+	// woods and gardens). Grown street trees: sycamore maple (esdoorn)
+	// 18 m, 0.7 m across; rowan (lijsterbes) small, 8 m; London plane
+	// (plataan) 24 m, a broad crown on a trunk 1 m across, its bark
+	// mottled light; red oak (Amerikaanse eik) 20 m; ginkgo 15 m, narrow,
+	// steep branches; sweet chestnut (tamme kastanje) 20 m, broad; ornamental
+	// cherry (sierkers) 8 m, a wide round crown on a short stem; alder (els)
+	// 16 m, narrow and dark.
+	{name: "maple", h: 18, bare: 3.5, trunkR: 0.35, branches: 6, spread: 0.85, rise: 40, crownR: 5, clumpR: 2.6, clumps: 1, bark: 0x7a7466, leaf: 0x4a7a2e},
+	{name: "rowan", h: 8, bare: 1.8, trunkR: 0.12, branches: 5, spread: 0.6, rise: 55, crownR: 2.2, clumpR: 1.3, bark: 0x8a8478, leaf: 0x6b9440},
+	{name: "plane", h: 24, bare: 4, trunkR: 0.5, branches: 7, spread: 0.85, rise: 35, crownR: 7, clumpR: 3, clumps: 1, bark: 0xb5ac8c, leaf: 0x5a8a34},
+	{name: "red oak", h: 20, bare: 4, trunkR: 0.4, branches: 6, spread: 0.85, rise: 35, crownR: 6, clumpR: 2.8, clumps: 1, bark: 0x6e6a60, leaf: 0x46712c},
+	{name: "ginkgo", h: 15, bare: 2.5, trunkR: 0.25, branches: 5, spread: 0.45, rise: 60, crownR: 2.6, clumpR: 1.4, clumps: 1, bark: 0x857a68, leaf: 0x7ea34a},
+	{name: "chestnut", h: 20, bare: 3, trunkR: 0.5, branches: 7, spread: 0.9, rise: 35, crownR: 6, clumpR: 3, clumps: 1, bark: 0x5e5244, leaf: 0x3f6a26},
+	{name: "cherry", h: 8, bare: 1.8, trunkR: 0.18, branches: 5, spread: 0.85, rise: 35, crownR: 3.2, clumpR: 1.6, bark: 0x5a3e34, leaf: 0x4e7a32},
+	{name: "alder", h: 16, bare: 3, trunkR: 0.22, branches: 6, spread: 0.55, rise: 50, crownR: 3, clumpR: 1.6, clumps: 1, bark: 0x4a4640, leaf: 0x2f5a26},
 }
 
 // Kinds of plant (templates): each species' detailed variants and simple
@@ -158,6 +176,23 @@ var speciesByLand = map[scenery.Land]speciesMix{
 	scenery.LandMeadow: {broad: map[string]float64{"oak": 55, "ash": 35, "birch": 10}},
 	scenery.LandNone:   {broad: map[string]float64{"oak": 50, "ash": 35, "birch": 15}},
 }
+
+// Town greenery (owner, 2026-10-11): the street and park trees of a Dutch
+// town, and by water those that like it wet. No conifers there: they grow
+// in woods and in gardens (gardenM back from the street).
+var (
+	townMix = map[string]float64{"maple": 20, "ash": 12, "plane": 14, "red oak": 12, "rowan": 10, "birch": 10, "cherry": 8, "ginkgo": 5, "chestnut": 4}
+	// Few willows (owner, 2026-10-12: not wanted along a village's streets
+	// by its ditches; they stand by the water in the fields).
+	townWaterMix = map[string]float64{"birch": 40, "alder": 30, "poplar": 25, "willow": 5}
+)
+
+const (
+	gardenM      = 12.0 // conifers grow in a town only this far from a road: in gardens
+	gardenHouseM = 20.0 // and this near a house
+	townNearM    = 40.0 // grass or park with built-up land this near is a town's
+	townWaterM   = 15.0 // a town tree this near water is one of townWaterMix
+)
 
 // avenueMix: the trees along roads through open land, one species per
 // stretch.

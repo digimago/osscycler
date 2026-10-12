@@ -115,6 +115,9 @@ func patchMeshes(p patch, m roadMaterials, v *verger) []gltf.Primitive {
 	}
 	walk, kerb := gltf.Primitive{Material: m.walk}, gltf.Primitive{Material: m.kerb}
 	for _, w := range p.walks {
+		if walkOnRoad(p, w) {
+			continue
+		}
 		walkMesh(p, w, &walk, &kerb)
 	}
 	for _, q := range []gltf.Primitive{walk, kerb} {
@@ -434,10 +437,13 @@ type patchCut struct {
 	ele    float64
 }
 
-// mergePatches makes one patch of junctions whose spans overlap on a
+// mergePatchesApart makes one patch of junctions whose spans overlap on a
 // road (two junctions a few metres apart, a carriageway joining near a
-// crossing): one surface, never two over each other.
-func mergePatches(ps []patch) []patch {
+// crossing): one surface, never two over each other. With apart,
+// junctions a short street apart stay two instead, each trimmed back to
+// halfway along it (which abreast may undo: networkPatches bounds their
+// rounds).
+func mergePatchesApart(ps []patch, apart bool) []patch {
 	parent := make([]int, len(ps))
 	for i := range parent {
 		parent[i] = i
@@ -449,13 +455,43 @@ func mergePatches(ps []patch) []patch {
 		}
 		return parent[i]
 	}
+	// widest is the half width of the widest road meeting at a patch's
+	// node; along says whether a span reaches along roads running side by
+	// side (overlapReach took it past the apron: carriageways, slip roads).
+	widest := make([]float64, len(ps))
+	for i, p := range ps {
+		for _, a := range p.arms {
+			widest[i] = math.Max(widest[i], sampleAt(a.l, a.at).hw)
+		}
+	}
+	along := func(i int, a patchSpan) bool {
+		base := widest[i] + apronAlongM + fineStep
+		return a.at-a.from > base || a.to-a.at > base
+	}
 	for i := range ps {
 		for j := i + 1; j < len(ps); j++ {
-			for _, a := range ps[i].spans {
-				for _, b := range ps[j].spans {
-					if a.l == b.l && a.from < b.to+fineStep && b.from < a.to+fineStep {
-						parent[find(j)] = find(i)
+			for ka, a := range ps[i].spans {
+				for kb, b := range ps[j].spans {
+					if a.l != b.l || a.from >= b.to+fineStep || b.from >= a.to+fineStep {
+						continue
 					}
+					// Two junctions a short street apart (the side street
+					// between the next side street and the main street, 14 m)
+					// are two: each ends halfway along it (owner, 2026-10-11:
+					// merged, with a carriageway split beyond, they paved a
+					// triangle of the verge between them on the polder ride, 10.4 km).
+					// Junctions whose roads touch (carriageways side by side),
+					// or that reach along roads alongside, are one.
+					if apart && math.Abs(a.at-b.at) > widest[i]+widest[j]+mergeGapM && !along(i, a) && !along(j, b) && !besideLink(ps[i], ps[j], a.l, (a.at+b.at)/2) {
+						mid := (a.at + b.at) / 2
+						if a.at < b.at {
+							ps[i].spans[ka].to, ps[j].spans[kb].from = math.Min(a.to, mid), math.Max(b.from, mid)
+						} else {
+							ps[i].spans[ka].from, ps[j].spans[kb].to = math.Max(a.from, mid), math.Min(b.to, mid)
+						}
+						continue
+					}
+					parent[find(j)] = find(i)
 				}
 			}
 		}
@@ -1106,4 +1142,65 @@ func fillet(p [][2]float64) [][2]float64 {
 		}
 	}
 	return append(out, p[m-1])
+}
+
+// walkOnRoad says whether a junction's sidewalk would lie on one of its own
+// roads' carriageway (with the reach over to a road alongside): its edge
+// between two carriageways drawn as one surface is no kerb (owner,
+// 2026-10-11: sidewalk wedges in the middle of the main street's joined
+// carriageways at the side street, 10.4 km; and a junction's
+// sidewalk stub over the road at Zandvoort, 14.88 km).
+func walkOnRoad(p patch, w walkChain) bool {
+	if len(w.kerb) == 0 {
+		return false
+	}
+	m := w.kerb[len(w.kerb)/2]
+	if len(w.kerb)%2 == 0 {
+		a, b := w.kerb[len(w.kerb)/2-1], w.kerb[len(w.kerb)/2]
+		m = [2]float64{(a[0] + b[0]) / 2, (a[1] + b[1]) / 2}
+	}
+	for _, a := range p.arms {
+		ss := a.l.samples
+		d, off, hw := lineNearest(a.l, m[0], m[1])
+		if d <= ss[0].d+0.5 || d >= ss[len(ss)-1].d-0.5 {
+			continue // past the road's end: not on it
+		}
+		s := sampleBetween(a.l, d)
+		limit := hw - 0.2
+		if wide := math.Max(s.wide[0], s.wide[1]); wide > 0 {
+			// Joined to a road alongside: its edge on that side is no
+			// edge, nor the metre beyond it a kerb.
+			limit = hw + wide + 1
+		}
+		if off < limit {
+			return true
+		}
+	}
+	return false
+}
+
+// besideLink says whether line l, at d between two junctions p and q,
+// runs alongside another of their roads (parallel, their edges within
+// mergeGapM): a service road beside the main road with junctions along
+// both is one junction across the strip between them (owner, 2026-10-10,
+// the Velp loop at 3.0 km), unlike a street crossing between two roads.
+func besideLink(p, q patch, l *roadLine, d float64) bool {
+	s := sampleBetween(l, d)
+	de, dn, _ := l.smooth.heading(d)
+	for _, arms := range [][]patchArm{p.arms, q.arms} {
+		for _, a := range arms {
+			if a.l == l {
+				continue
+			}
+			at, off, hw := lineNearest(a.l, s.e, s.n)
+			if off >= s.hw+hw+mergeGapM {
+				continue
+			}
+			oe, on, _ := a.l.smooth.heading(at)
+			if math.Abs(de*oe+dn*on) >= parallelCosine {
+				return true
+			}
+		}
+	}
+	return false
 }

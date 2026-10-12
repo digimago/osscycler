@@ -108,6 +108,47 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 		return roadNear(e, n, m, -1) < 0 && (t.surfaces == nil || t.surfaces.dist(e, -n, m) >= m)
 	}
 	onRoad := func(e, n float64) bool { return !clearOf(e, n, clearRoadM) }
+	// inGarden: beside a house (a wall within gardenHouseM) and at least
+	// gardenM from every road's edge we know (clearOf looks only 10 m
+	// about). The house matters: the map data has only the roads near the
+	// route, and a public verge across a canal, its street unfetched, had
+	// looked like a garden (owner, 2026-10-11: no conifers in a town's
+	// greenery, polder ride).
+	streets := newRouteGrid(t.fine, gardenM+10)
+	type wall struct{ a, b [2]float64 }
+	houses := map[[2]int][]wall{}
+	hkey := func(e, n float64) [2]int {
+		return [2]int{int(math.Floor(e / gardenHouseM)), int(math.Floor(n / gardenHouseM))}
+	}
+	for _, f := range fps {
+		for i := range f.Outline {
+			a, b := f.Outline[i], f.Outline[(i+1)%len(f.Outline)]
+			k := hkey((a[0]+b[0])/2, (a[1]+b[1])/2)
+			houses[k] = append(houses[k], wall{a, b})
+		}
+	}
+	inGarden := func(e, n float64) bool {
+		ok := true
+		streets.within(e, n, gardenM+10, func(i int) {
+			if s := t.fine[i]; math.Hypot(s.e-e, s.n-n)-s.edge < gardenM {
+				ok = false
+			}
+		})
+		if !ok {
+			return false
+		}
+		k := hkey(e, n)
+		for dx := -1; dx <= 1; dx++ {
+			for dy := -1; dy <= 1; dy++ {
+				for _, w := range houses[[2]int{k[0] + dx, k[1] + dy}] {
+					if segDist(w.a, w.b, e, n) < gardenHouseM {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}
 	// The distance to the route, once per 30 m block (density only needs
 	// to know near from far).
 	blockDist := map[[2]int]float64{}
@@ -248,9 +289,22 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 						}
 					}
 					sp := -1
-					if l == scenery.LandOrchard && mixLand == l {
+					town := l == scenery.LandBuilt || (l == scenery.LandMeadow || l == scenery.LandNone) && landNear(landAt, e, n, townNearM, scenery.LandBuilt, 4)
+					switch {
+					case l == scenery.LandOrchard && mixLand == l:
 						sp, scale = 0, 0.4 // fruit trees: small and round, as a young oak
-					} else {
+					case town && kind == catConifer && inGarden(e, n):
+						// A garden's conifer, back from the street.
+						sp = pickSpecies(speciesByLand[scenery.LandBuilt].conifer, unit(hb>>16))
+					case town && kind == catConifer:
+						continue // no conifers in the town's greenery
+					case town:
+						table := townMix
+						if landNear(landAt, e, n, townWaterM, scenery.LandWater, 8) || landNear(landAt, e, n, townWaterM/2, scenery.LandWater, 8) {
+							table = townWaterMix
+						}
+						sp = pickSpecies(table, unit(hb>>16))
+					default:
 						mix := speciesByLand[mixLand]
 						table := mix.broad
 						if kind == catConifer && mix.conifer != nil || table == nil {
@@ -325,6 +379,16 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 								mix = canalAvenueMix
 							}
 						}
+					}
+				}
+				// In a town, its street trees, by water those that like it wet
+				// (owner, 2026-10-11: oaks, ashes and beeches lined the
+				// main street on the polder ride, where birches grow by the
+				// canal).
+				if landNear(landAt, e, n, townNearM, scenery.LandBuilt, 4) {
+					mix = townMix
+					if landNear(landAt, e, n, townWaterM, scenery.LandWater, 8) || landNear(landAt, e, n, townWaterM/2, scenery.LandWater, 8) {
+						mix = townWaterMix
 					}
 				}
 				sp := pickSpecies(mix, unit(hs))
@@ -752,4 +816,16 @@ func (sp *spots) landAt(e, n float64) (scenery.Land, string) {
 	}
 	l, id := sp.land.Area(e, n)
 	return l, sp.land.LeafType(id)
+}
+
+// landNear says whether land use want lies within r of e, n, looked for
+// at k points round it at r.
+func landNear(landAt func(e, n float64) (scenery.Land, string), e, n, r float64, want scenery.Land, k int) bool {
+	for i := range k {
+		a := 2 * math.Pi * float64(i) / float64(k)
+		if l, _ := landAt(e+r*math.Cos(a), n+r*math.Sin(a)); l == want {
+			return true
+		}
+	}
+	return false
 }

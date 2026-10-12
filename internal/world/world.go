@@ -106,8 +106,11 @@ type Manifest struct {
 	// Stamp identifies what the world was built from (the course and the
 	// builder, worlds.Stamp): a world whose stamp differs from the
 	// course's now is out of date.
-	Stamp  string `json:"stamp,omitempty"`
-	Course struct {
+	Stamp string `json:"stamp,omitempty"`
+	// Builder names the builder that made it (engine.go): "classic" or
+	// "graph".
+	Builder string `json:"builder,omitempty"`
+	Course  struct {
 		ID        string  `json:"id"`
 		Name      string  `json:"name"`
 		DistanceM float64 `json:"distance_m"`

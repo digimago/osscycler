@@ -396,7 +396,10 @@ own code works in east and north (n = −z).
   renderers/godot/OsscyclerGodot.sln` (`~/.dotnet/dotnet`) after changing
   the renderer, or the run shows the old code.
 - `pkill -f <pattern>` matches the shell running it when the pattern is
-  in its own command line; stop a test core by its port or PID.
+  in its own command line (a binary's name, a course's file name later in
+  the same chain), and kills the chain. Save a background job's PID at
+  launch (`( … ) & echo $! > FILE`) and `kill $(cat FILE)`; if a pattern
+  search is unavoidable, exclude the shell: `pgrep -f PATTERN | grep -vx $$`.
 - Builds are byte-identical only if nothing depends on map iteration
   order: the junction heights' node order and the cutter's order once
   did (2026-10-09, ~200 of 4,746 arrays differed from run to run).

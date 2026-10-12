@@ -48,6 +48,9 @@ type chunkLists struct {
 
 func (s *surface) at(e, n float64) float64 {
 	t := s.t
+	if t.landAt != nil {
+		return t.landAt(e, n)
+	}
 	size := t.o.ChunkM
 	cells := max(1, int(math.Round(size/t.o.CellM)))
 	l := t.lod()
@@ -77,6 +80,9 @@ func (s *surface) at(e, n float64) float64 {
 // verges stand on, between the terrain mesh's vertices too.
 func (s *surface) ground(e, n float64) float64 {
 	t := s.t
+	if t.landAt != nil {
+		return t.landAt(e, n)
+	}
 	size := t.o.ChunkM
 	key := [2]int{int(math.Floor(e / size)), int(math.Floor(n / size))}
 	s.mu.Lock()

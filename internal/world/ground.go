@@ -230,8 +230,13 @@ func newSurfaceIndex(prims []gltf.Primitive, land func(material int) bool, maxTr
 // at is the drawn land's height at e, n (the highest where pieces
 // overlap); false where no land is drawn.
 func (ls *landSurface) at(e, n float64) (float64, bool) {
+	return ls.top(e, n, true)
+}
+
+// matAt is the material of the highest surface at e, n.
+func (ls *landSurface) matAt(e, n float64) (int, bool) {
 	x, z := e, -n
-	best, ok := math.Inf(-1), false
+	best, mat, ok := math.Inf(-1), 0, false
 	for _, r := range ls.cells[[2]int{int(math.Floor(x / landCellM)), int(math.Floor(z / landCellM))}] {
 		p := ls.prims[r[0]]
 		var px, py, pz [3]float64
@@ -251,6 +256,43 @@ func (ls *landSurface) at(e, n float64) (float64, bool) {
 			continue
 		}
 		if h := a*py[0] + b*py[1] + c*py[2]; h > best {
+			best, mat, ok = h, p.Material, true
+		}
+	}
+	return mat, ok
+}
+
+// low is the lowest surface at e, n (where surfaces overlap: a junction's
+// over a road's end, with a step between).
+func (ls *landSurface) low(e, n float64) (float64, bool) {
+	return ls.top(e, n, false)
+}
+
+func (ls *landSurface) top(e, n float64, highest bool) (float64, bool) {
+	x, z := e, -n
+	best, ok := math.Inf(-1), false
+	if !highest {
+		best = math.Inf(1)
+	}
+	for _, r := range ls.cells[[2]int{int(math.Floor(x / landCellM)), int(math.Floor(z / landCellM))}] {
+		p := ls.prims[r[0]]
+		var px, py, pz [3]float64
+		for k := range 3 {
+			v := p.Indices[int(r[1])+k]
+			px[k], py[k], pz[k] = float64(p.Positions[3*v]), float64(p.Positions[3*v+1]), float64(p.Positions[3*v+2])
+		}
+		den := (pz[1]-pz[2])*(px[0]-px[2]) + (px[2]-px[1])*(pz[0]-pz[2])
+		if math.Abs(den) < 1e-12 {
+			continue
+		}
+		a := ((pz[1]-pz[2])*(x-px[2]) + (px[2]-px[1])*(z-pz[2])) / den
+		b := ((pz[2]-pz[0])*(x-px[2]) + (px[0]-px[2])*(z-pz[2])) / den
+		c := 1 - a - b
+		const eps = -1e-6
+		if a < eps || b < eps || c < eps {
+			continue
+		}
+		if h := a*py[0] + b*py[1] + c*py[2]; h > best == highest || !ok {
 			best, ok = h, true
 		}
 	}

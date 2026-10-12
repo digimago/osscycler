@@ -53,7 +53,20 @@ type CheckResult struct {
 	// below, which the other measures don't see).
 	StepM float64
 	Steps []CheckSpot
+	// TurnDeg is the sharpest change in the path's heading from one step
+	// to the next, in degrees; Turns the stretches where it turns more
+	// than checkTurnDeg in a step, Area their sharpest. PaceMax is the
+	// longest step of the path against its StepM: 1 even, 2 the rider
+	// covering twice the ground in that step. Both for comparing builders
+	// (engine.go): a smooth ride turns gently and keeps its pace.
+	TurnDeg float64
+	Turns   []CheckSpot
+	PaceMax float64
 }
+
+// checkTurnDeg: a turn of the path in one step worth naming (a 10 m
+// radius, the tightest junction corner a rider sweeps at speed).
+const checkTurnDeg = 30.0
 
 // checkStepM: a change in the path's height between two of its points
 // worth naming (a 20 % grade over a 5 m step).
@@ -295,7 +308,44 @@ func (w *World) Check() CheckResult {
 	r.LandOverRoad = list(over, &r.LandOverRoadM2)
 	r.OffRoad = list(off, &r.OffRoadM)
 	r.StepM, r.Steps = w.pathSteps()
+	r.TurnDeg, r.Turns, r.PaceMax = w.pathTurns()
 	return r
+}
+
+// pathTurns is the sharpest turn of the path between steps, the stretches
+// turning more than checkTurnDeg, and its longest step against StepM.
+func (w *World) pathTurns() (float64, []CheckSpot, float64) {
+	xyz, step := w.Manifest.Path.XYZ, w.Manifest.Path.StepM
+	n := len(xyz) / 3
+	worst, pace := 0.0, 0.0
+	bySpot := map[int]float64{}
+	for i := 1; i < n; i++ {
+		dx, dz := xyz[3*i]-xyz[3*i-3], xyz[3*i+2]-xyz[3*i-1]
+		if step > 0 {
+			pace = math.Max(pace, math.Hypot(dx, dz)/step)
+		}
+		if i+1 >= n {
+			break
+		}
+		ex, ez := xyz[3*i+3]-xyz[3*i], xyz[3*i+5]-xyz[3*i+2]
+		if math.Hypot(dx, dz) < 1e-6 || math.Hypot(ex, ez) < 1e-6 {
+			continue
+		}
+		deg := math.Abs(math.Atan2(dx*ez-dz*ex, dx*ex+dz*ez)) * 180 / math.Pi
+		worst = math.Max(worst, deg)
+		if deg > checkTurnDeg {
+			s := int(float64(i) * step / checkSpotM)
+			bySpot[s] = math.Max(bySpot[s], deg)
+		}
+	}
+	var out []CheckSpot
+	for s, v := range bySpot {
+		out = append(out, CheckSpot{D: float64(s) * checkSpotM, Area: v})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Area > out[j].Area || out[i].Area == out[j].Area && out[i].D < out[j].D
+	})
+	return worst, out, pace
 }
 
 // pathSteps is the most the path's height changes from one point to the

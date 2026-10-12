@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -23,7 +24,12 @@ import (
 
 // BuilderVersion goes up when a change to the builder should rebuild the
 // worlds riders have (a fix they'd ride into, not every commit).
-const BuilderVersion = 9
+const BuilderVersion = 11
+
+// GraphVersion is BuilderVersion for the graph builder (world.EngineGraph),
+// which goes its own way: it goes up when that builder changes what it
+// builds.
+const GraphVersion = 10
 
 // Builder builds worlds.
 type Builder struct {
@@ -49,6 +55,16 @@ type Builder struct {
 	// time left (Progress); Timing keeps this machine's build rate for it.
 	Progress func(Progress)
 	Timing   *Timing
+	// Engine is the builder (world.Engines): "" the default (the graph
+	// builder), world.EngineGraph or world.EngineClassic. A preview is
+	// always the classic builder's. When the builder asked for fails, the
+	// classic one builds the world instead (Result.FellBack), with the
+	// stamp of the one asked for, so it isn't tried again and again.
+	Engine string
+	// Stamp, when set, is the world's stamp instead of EngineStamp's: a
+	// fallback build by osscycler-world keeps the stamp of the builder
+	// asked for.
+	Stamp string
 }
 
 // Phases a build goes through, for its status.
@@ -64,8 +80,9 @@ const (
 
 // Result is a built world with what went into it.
 type Result struct {
-	World   *world.World
-	MapInfo string // "1234 map elements", "no map data", ...
+	World    *world.World
+	MapInfo  string // "1234 map elements", "no map data", ...
+	FellBack bool   // the builder asked for failed; the classic one built it
 }
 
 // Build builds course c's world; phase reports progress.
@@ -79,7 +96,10 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 	}
 	o := b.Options
 	o.Attribution = append([]string(nil), o.Attribution...)
-	o.Stamp = Stamp(c)
+	o.Stamp = EngineStamp(c, b.Engine)
+	if b.Stamp != "" {
+		o.Stamp = b.Stamp
+	}
 	if b.Preview {
 		o.Stamp = PreviewStamp(c)
 	}
@@ -201,14 +221,27 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 	enter(PhaseBuild)
 	o.Progress = func(f float64) { tr.step(0, 0, f) }
 	buildAt := time.Now()
-	w, err := world.Build(c, o)
+	engine := b.Engine
+	if engine == "" {
+		engine = world.DefaultEngine
+	}
+	if b.Preview {
+		engine = world.EngineClassic
+	}
+	w, err := world.BuildWith(engine, c, o)
+	fellBack := false
+	if err != nil && engine != world.EngineClassic && ctx.Err() == nil {
+		log.Warn("the builder failed; building with the classic builder instead", "course", c.ID, "builder", engine, "err", err)
+		w, err = world.BuildWith(world.EngineClassic, c, o)
+		fellBack = true
+	}
 	if err == nil && !b.Preview && c.Distance > 1000 {
 		b.Timing.learn(time.Since(buildAt).Seconds() / (c.Distance / 1000))
 	}
 	if err != nil {
 		return Result{}, err
 	}
-	return Result{World: w, MapInfo: mapInfo}, nil
+	return Result{World: w, MapInfo: mapInfo, FellBack: fellBack}, nil
 }
 
 // Anchor is the regional frame's origin for a course starting at lat, lon:
@@ -225,14 +258,46 @@ func Anchor(lat, lon float64) (float64, float64) {
 // PreviewStamp is the stamp of course c's preview world.
 func PreviewStamp(c *course.Course) string { return "preview-" + Stamp(c) }
 
+// EngineStamp is Stamp for the named builder ("" the default): the classic
+// builder's is Stamp itself (as the worlds built before there were two),
+// the graph builder's has its own version and a "g" in front, so a world
+// from one is never taken for the other's (a classic world where the graph
+// builder's should be is stale, and rebuilt).
+func EngineStamp(c *course.Course, engine string) string {
+	if engine == "" {
+		engine = world.DefaultEngine
+	}
+	if engine == world.EngineClassic {
+		return Stamp(c)
+	}
+	return fmt.Sprintf("%s%d-%s", engine[:1], GraphVersion, stampHash(c, engine+" "+strconv.Itoa(GraphVersion)))
+}
+
+// Dir is where course id's world from the named builder ("" the default)
+// goes in the worlds directory out: the default builder's in out/id, the
+// others' in out/.<engine>/id (the classic builder's in out/.classic/id
+// since the graph builder became the default), so both can be kept and
+// compared.
+func Dir(out, id, engine string) string {
+	if engine == "" || engine == world.DefaultEngine {
+		return filepath.Join(out, id)
+	}
+	return filepath.Join(out, "."+engine, id)
+}
+
 // Stamp identifies what course c's world is built from: the course as
 // loaded (its line every 10 m, its profile, its name and length) and the
 // builder's version. A GPX edited or a builder that builds differently
 // gives another stamp.
 func Stamp(c *course.Course) string {
+	return fmt.Sprintf("%d-%s", BuilderVersion, stampHash(c, strconv.Itoa(BuilderVersion)))
+}
+
+// stampHash hashes course c as loaded, with the builder's version.
+func stampHash(c *course.Course, version string) string {
 	h := sha256.New()
 	put := func(v float64) { h.Write(strconv.AppendFloat(nil, math.Round(v*1e6)/1e6, 'g', -1, 64)) }
-	fmt.Fprintf(h, "osscycler world %d\x00%s\x00%s\x00%t\x00", BuilderVersion, c.ID, c.Name, c.Loop)
+	fmt.Fprintf(h, "osscycler world %s\x00%s\x00%s\x00%t\x00", version, c.ID, c.Name, c.Loop)
 	put(c.Distance)
 	for d := 0.0; d <= c.Distance; d += 10 {
 		lat, lon := c.Position(d)
@@ -241,5 +306,5 @@ func Stamp(c *course.Course) string {
 		ele, _ := c.At(d)
 		put(ele)
 	}
-	return fmt.Sprintf("%d-%s", BuilderVersion, hex.EncodeToString(h.Sum(nil))[:16])
+	return hex.EncodeToString(h.Sum(nil))[:16]
 }

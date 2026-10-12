@@ -45,6 +45,10 @@ type terrain struct {
 	// once the roads are final.
 	lodOf   *lod
 	lodOnce sync.Once
+	// landAt, when set, is the land's height anywhere (the graph builder's
+	// land, graph_terrain.go): what surface.at and surface.ground give,
+	// in place of this terrain's grid.
+	landAt func(e, n float64) float64
 }
 
 // lod is the grid's level of detail.
@@ -526,7 +530,10 @@ func (t *terrain) markAloft(ls []*roadLine) {
 			s := &l.samples[i]
 			var near []sample
 			g.within(s.e, s.n, 400, func(k int) { near = append(near, t.coarse[k]) })
-			if z, ok := t.model(s.e, s.n, near); ok && math.Abs(z-s.ele) > bridgeM {
+			// Above the model: a bridge. Below it: a cutting, a tunnel, an
+			// underpass (the course's own way under a viaduct, graph builder,
+			// 2026-10-12: taken for a deck, it got a slab and the land over it).
+			if z, ok := t.model(s.e, s.n, near); ok && s.ele-z > bridgeM {
 				s.aloft = true
 			}
 		}

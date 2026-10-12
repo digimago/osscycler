@@ -214,7 +214,7 @@ func deck(prim func(e, n float64) *gltf.Primitive, s *surface, l *roadLine, i, j
 			{[2]float64{a.right, b.right}, [2]float64{ra, rb}, 1},
 		} {
 			// Two carriageways joined side by side: none down the middle
-			// of the road between them (the Rivierkom's two bridges).
+			// of the road between them (a dual carriageway's two bridges).
 			if a.butt[si] && b.butt[si] {
 				continue
 			}

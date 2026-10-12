@@ -54,7 +54,13 @@ small; fix at the stage that causes it, then make it stay fixed.
      spacing, lane changes and grade steps of the rider's path.
    Classify the symptom with the table below before forming a theory.
 3. **Look.** A screenshot from the rider's place, before and after the
-   km mark, and sideways (`--look 90`, `--look -90`):
+   km mark, and sideways (look 90, look -90). With the `osscycler-view`
+   MCP tools: `view_open` (world: the course id or directory, `seed`: the
+   mark's) once, `view_shot` with `m` and `look_deg` per look, and after a
+   rebuild `view_reload` to compare the same spots; `view_open` with
+   `port` attaches to the rider's own view started with
+   `osscycler 3d --debug --control 7431`. Without them, one Godot start
+   per shot (about 10 s):
    `~/.local/bin/godot --path renderers/godot -- --world "$PWD/_worlds/<id>" --from <m> --shot <scratchpad>/x.png --frames 150 --seed 1`
    (`~/.local/bin` isn't on the PATH of a tool shell; the world path has
    to be absolute; quote IDs with spaces). Then `scripts/near_point.py

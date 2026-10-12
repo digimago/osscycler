@@ -9,8 +9,8 @@ import (
 )
 
 // Fences: wooden posts every fencePostM with three rails, and steel
-// five-bar gates hung between heavier posts (the Dutch dam fence where a
-// ditch meets a polder road).
+// five-bar gates hung between heavier posts; at a field entrance, the
+// strip of bare earth from the road to the gate (scenery.Fence.Entry).
 const (
 	fencePostM = 2.0
 	fenceH     = 1.25
@@ -36,6 +36,9 @@ func (w *World) addFences(t *terrain, fences []scenery.Fence) error {
 		if p == nil {
 			p = &gltf.Primitive{Material: mat}
 			byChunk[k] = p
+		}
+		if len(f.Entry) == 4 {
+			entryStrip(p, s, f.Entry)
 		}
 		l := math.Hypot(b[0]-a[0], b[1]-a[1])
 		ux, uy := (b[0]-a[0])/l, (b[1]-a[1])/l
@@ -81,6 +84,49 @@ func (w *World) addFences(t *terrain, fences []scenery.Fence) error {
 		}
 	}
 	return nil
+}
+
+// entryLiftM: the strip lies this far over the land, as car parks did on
+// the terrain mesh.
+const entryLiftM = 0.04
+
+// entryStrip lays a field entrance's dirt strip on the land: outline is
+// its four corners (the road's end first, then the far end, as
+// scenery.Fence.Entry), draped every metre. Across it, as on a farm track:
+// two wheel ruts of darker earth with grass between them.
+func entryStrip(p *gltf.Primitive, s *surface, outline [][2]float64) {
+	near0, near1, far0 := outline[0], outline[1], outline[3]
+	width := math.Hypot(near1[0]-near0[0], near1[1]-near0[1])
+	length := math.Hypot(far0[0]-near0[0], far0[1]-near0[1])
+	if width <= 0 || length <= 0 {
+		return
+	}
+	dirt, rut, grass := srgbLinear(0x8f7a5a), srgbLinear(0x6e5d45), srgbLinear(0x75804a)
+	// Bands across, in metres from the middle: dirt, rut, grass, rut, dirt.
+	h := width / 2
+	bands := []struct {
+		from, to float64
+		c        [3]float32
+	}{{-h, -1.25, dirt}, {-1.25, -0.7, rut}, {-0.7, 0.7, grass}, {0.7, 1.25, rut}, {1.25, h, dirt}}
+	// at is the point across x from the middle, along y from the road's
+	// end, on the land.
+	at := func(x, y float64) [3]float64 {
+		fx, fy := (x+h)/width, y/length
+		e := near0[0] + (near1[0]-near0[0])*fx + (far0[0]-near0[0])*fy
+		n := near0[1] + (near1[1]-near0[1])*fx + (far0[1]-near0[1])*fy
+		return [3]float64{e, s.at(e, n) + entryLiftM, -n}
+	}
+	up := [3]float64{0, 1, 0}
+	steps := max(1, int(math.Ceil(length)))
+	for _, b := range bands {
+		if b.to-b.from < 0.05 {
+			continue
+		}
+		for i := range steps {
+			y0, y1 := length*float64(i)/float64(steps), length*float64(i+1)/float64(steps)
+			quad(p, at(b.from, y0), at(b.to, y0), at(b.to, y1), at(b.from, y1), up, b.c)
+		}
+	}
 }
 
 // beam is a box from a to b (glTF axes), w wide and h deep across it.

@@ -22,8 +22,8 @@ type Track struct {
 	Data *Data
 	// Roads overrides the road the route rides on (nil: the default).
 	Roads []RoadStretch
-	// Fences are the polder's fences (dam fences where a ditch meets the
-	// road).
+	// Fences are the polder's field entrances: a gate set back from the
+	// road, a dirt strip between (Fence.Entry).
 	Fences []Fence
 	// Lawns are mown grass, nothing grows on them (a pitch), in metres
 	// east and north of the course's start (course.Project).
@@ -32,9 +32,12 @@ type Track struct {
 
 // Fence is a fence along Line (east and north of the course's start):
 // wooden posts and rails, with a gate from GateFromM to GateToM along it.
+// Entry, when set, is the outline of the bare dirt strip from the road to
+// the gate, where farm machinery turns in off the road before the gate.
 type Fence struct {
 	Line               [][2]float64
 	GateFromM, GateToM float64
+	Entry              [][2]float64
 }
 
 // SurfaceTrack is a running track's synthetic surface.
@@ -176,6 +179,8 @@ func (g *trackGen) figureEight() *Track {
 	// meadows, a ditch along each one's east side (broken where the road
 	// crosses: culverts), now and then a row of trees.
 	const pw, pl, ditch = 50.0, 250.0, 2.5
+	var ends [][2]float64    // ditch ends by the road
+	var ditches [][4]float64 // x, from, to (north), width
 	for x := mid + 80; x < g.hi[0]+reach; x += pw {
 		for y := s; y < n; y += pl {
 			c := [2]float64{x + pw/2, y + pl/2}
@@ -193,15 +198,16 @@ func (g *trackGen) figureEight() *Track {
 				case clear && math.IsNaN(from):
 					from = yy
 					if yy > y {
-						g.damFence([2]float64{x + pw - ditch/2, yy})
+						ends = append(ends, [2]float64{x + pw - ditch/2, yy})
 					}
 				case !clear && !math.IsNaN(from):
 					if yy < y+pl {
-						g.damFence([2]float64{x + pw - ditch/2, yy})
+						ends = append(ends, [2]float64{x + pw - ditch/2, yy})
 					}
 					if yy-from >= 10 {
 						g.area(trackRect([2]float64{x + pw - ditch/2, (from + yy) / 2}, math.Pi/2, yy-from, ditch),
 							tags("natural", "water", "water", "ditch"))
+						ditches = append(ditches, [4]float64{x + pw - ditch/2, from, yy, ditch})
 					}
 					from = math.NaN()
 				}
@@ -209,6 +215,14 @@ func (g *trackGen) figureEight() *Track {
 			if g.rng.Float64() < 0.12 {
 				g.area(trackRect([2]float64{x + 4, y + pl/2}, math.Pi/2, pl-20, 6), tags("landuse", "forest", "leaf_type", "broadleaved"))
 			}
+		}
+	}
+	// A field entrance beside each ditch's end by the road, into the
+	// field on one side of it.
+	var placed [][2]float64
+	for _, e := range ends {
+		if p, ok := g.fieldEntry(e, ditches, placed); ok {
+			placed = append(placed, p)
 		}
 	}
 	// Farmsteads beside the road on the polder: a house, a barn, a shed,
@@ -271,28 +285,120 @@ func (g *trackGen) figureEight() *Track {
 			g.building([2]float64{p[0], p[1] + dy*30}, 0, 9+3*g.rng.Float64(), 8, "building", "house", "building:levels", "1")
 		}
 	}
-	return &Track{Data: g.data, Fences: g.fences}
+	t := &Track{Data: g.data, Fences: g.fences}
+	for _, f := range g.fences {
+		if len(f.Entry) > 0 {
+			t.Lawns = append(t.Lawns, f.Entry) // nothing grows on the strip
+		}
+	}
+	return t
 }
 
-// damFence closes off a ditch's end by the road (owner, 2026-10-09: as on
-// Dutch polder roads, a wooden fence over the ditch and a steel gate onto
-// the meadow beside it), along the road.
-func (g *trackGen) damFence(end [2]float64) {
+// Field entrances (owner, 2026-10-12: a fence across a ditch's end by the
+// road is of no use; the gate belongs where farm machinery turns in off
+// the road, a small dirt strip between the road and the gate): a strip of
+// bare earth from the road's edge out to a five-bar gate across it, short
+// stretches of fence either side. Measures: a tractor with its implement
+// is about 3 m wide and 6-8 m long, so the strip is 4 m wide and the gate
+// 8 m off the road's edge: one stands clear of the road while the gate is
+// opened.
+const (
+	entryWidthM  = 4.0
+	entryLengthM = 9.0  // from the road's edge to the gate's line, and a little past
+	entryGateM   = 8.0  // the gate's line off the road's edge
+	entryAlongM  = 12.0 // beside the ditch's end, along the road
+	entryEdgeM   = 2.9  // where the strip begins off the road's line (a 5 m road's edge, its skirt)
+	entryApartM  = 30.0 // entrances at least this far apart
+)
+
+// fieldEntry lays a field entrance beside ditch end e: along the road from
+// it, on a side picked by the seed (the other if that one meets a ditch),
+// clear of the ditches, other entrances and other passes of the road.
+// Its middle at the road, and whether it was laid.
+func (g *trackGen) fieldEntry(e [2]float64, ditches [][4]float64, placed [][2]float64) ([2]float64, bool) {
+	k := g.nearest(e)
+	first := 1.0
+	if g.rng.Float64() < 0.5 {
+		first = -1
+	}
+	for _, side := range []float64{first, -first} {
+		u := g.dir(k)
+		// Along the road from the ditch's end, then that road point's own
+		// direction (the road bends).
+		a := g.route[k]
+		at := g.nearest([2]float64{a[0] + u[0]*side*entryAlongM, a[1] + u[1]*side*entryAlongM})
+		r, ru := g.route[at], g.dir(at)
+		// Across, towards the ditch's side of the road.
+		nx, ny := -ru[1], ru[0]
+		if (e[0]-r[0])*nx+(e[1]-r[1])*ny < 0 {
+			nx, ny = -nx, -ny
+		}
+		pt := func(along, out float64) [2]float64 {
+			return [2]float64{r[0] + ru[0]*along + nx*out, r[1] + ru[1]*along + ny*out}
+		}
+		w := entryWidthM / 2
+		outline := [][2]float64{pt(-w, entryEdgeM), pt(w, entryEdgeM), pt(w, entryEdgeM+entryLengthM), pt(-w, entryEdgeM+entryLengthM)}
+		if !g.entryClear(outline, ditches, placed, r) {
+			continue
+		}
+		gate := entryEdgeM + entryGateM
+		g.fences = append(g.fences, Fence{
+			Line:      [][2]float64{pt(-w-2.5, gate), pt(w+2.5, gate)},
+			GateFromM: 2.5, GateToM: 2.5 + entryWidthM,
+			Entry: outline,
+		})
+		return r, true
+	}
+	return [2]float64{}, false
+}
+
+// entryClear: the outline (and the gate's fence beyond its sides) keeps a
+// metre off every ditch, its far end off every other pass of the road, and
+// its middle entryApartM from the other entrances.
+func (g *trackGen) entryClear(outline [][2]float64, ditches [][4]float64, placed [][2]float64, at [2]float64) bool {
+	for _, p := range placed {
+		if math.Hypot(p[0]-at[0], p[1]-at[1]) < entryApartM {
+			return false
+		}
+	}
+	var pts [][2]float64
+	for i, a := range outline {
+		b := outline[(i+1)%len(outline)]
+		for f := 0.0; f <= 1; f += 0.25 {
+			pts = append(pts, [2]float64{a[0] + (b[0]-a[0])*f, a[1] + (b[1]-a[1])*f})
+		}
+	}
+	for _, q := range pts {
+		for _, d := range ditches {
+			dx := math.Max(0, math.Abs(q[0]-d[0])-d[3]/2-2.5) // the gate's fence reaches 2.5 m past the strip
+			dy := math.Max(0, math.Max(d[1]-q[1], q[1]-d[2]))
+			if math.Hypot(dx, dy) < 1 {
+				return false
+			}
+		}
+	}
+	// The far end: no other pass of the road nearer than the road it
+	// leaves (a crossing, the loop coming back).
+	far := [2]float64{(outline[2][0] + outline[3][0]) / 2, (outline[2][1] + outline[3][1]) / 2}
+	return g.dist(far) > entryEdgeM+entryLengthM-1
+}
+
+// nearest is the index of the route point nearest p.
+func (g *trackGen) nearest(p [2]float64) int {
 	best, k := math.Inf(1), 0
 	for i, q := range g.route {
-		if d := math.Hypot(q[0]-end[0], q[1]-end[1]); d < best {
+		if d := math.Hypot(q[0]-p[0], q[1]-p[1]); d < best {
 			best, k = d, i
 		}
 	}
+	return k
+}
+
+// dir is the route's direction at point k (a unit vector).
+func (g *trackGen) dir(k int) [2]float64 {
 	a, b := g.route[max(0, k-1)], g.route[min(len(g.route)-1, k+1)]
 	l := math.Hypot(b[0]-a[0], b[1]-a[1])
-	ux, uy := (b[0]-a[0])/l, (b[1]-a[1])/l
-	side := 1.0
-	if g.rng.Float64() < 0.5 {
-		side = -1
-	}
-	at := func(f float64) [2]float64 { return [2]float64{end[0] + ux*f*side, end[1] + uy*f*side} }
-	g.fences = append(g.fences, Fence{Line: [][2]float64{at(-3), at(7)}, GateFromM: 4, GateToM: 8})
+	return [2]float64{(b[0] - a[0]) / l, (b[1] - a[1]) / l}
 }
 
 // stadium: the oval as an athletics stadium.

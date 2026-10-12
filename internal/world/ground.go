@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/zlib"
 	"encoding/binary"
+	"fmt"
 	"math"
 	"runtime"
 	"sync"
@@ -44,9 +45,42 @@ const (
 // west of it (from 0 at a row's start), little-endian; 0 beyond the map.
 const GroundLayout = "land, clearance_0.1m, height_cm_delta"
 
-// GroundClasses names the ground map's land values, by value.
-var GroundClasses = []string{"none", "grass", "meadow", "farmland", "forest", "built", "water", "orchard", "heath",
-	"dune sand", "dune grass", "dune scrub", "beach"}
+// GroundClasses names the ground map's land values, by value. A sown
+// field (scenery.Fields) is its crop and the way its rows run, in eighths
+// of a half turn anticlockwise from east: "maize 3" (rows at 67.5°), from
+// groundFieldBase on.
+var GroundClasses = func() []string {
+	out := []string{"none", "grass", "meadow", "farmland", "forest", "built", "water", "orchard", "heath",
+		"dune sand", "dune grass", "dune scrub", "beach"}
+	for _, crop := range groundCrops {
+		for d := range groundRowDirs {
+			out = append(out, fmt.Sprintf("%s %d", crop, d))
+		}
+	}
+	return out
+}()
+
+// groundCrops are the sown fields' names in the ground map, in the order of
+// scenery.LandPloughed on.
+var groundCrops = []string{"ploughed", "maize", "wheat", "potatoes"}
+
+const (
+	groundFieldBase = 13 // the first sown field's value
+	groundRowDirs   = 8  // row directions per crop
+)
+
+// groundValue is the ground map's land value at e, n.
+func groundValue(sp *spots, e, n float64) (byte, scenery.Land) {
+	if sp.land == nil {
+		return byte(scenery.LandNone) + 1, scenery.LandNone
+	}
+	l, id := sp.land.Area(e, n)
+	if l >= scenery.LandPloughed && l <= scenery.LandPotatoes {
+		d := int(math.Round(sp.land.RowDir(id)/(math.Pi/groundRowDirs))) % groundRowDirs
+		return byte(groundFieldBase + int(l-scenery.LandPloughed)*groundRowDirs + d), l
+	}
+	return byte(l) + 1, l
+}
 
 // groundChunk is where one chunk's map is in GroundFile.
 type groundChunk struct {
@@ -84,8 +118,8 @@ func groundMap(sp *spots, t *terrain, s *surface, drawn *landSurface, keys [][2]
 						if !near(e, no) {
 							continue
 						}
-						land, _ := sp.landAt(e, no)
-						cells[j*n+i] = byte(land) + 1
+						v, land := groundValue(sp, e, no)
+						cells[j*n+i] = v
 						// The land as drawn; the ground model only where
 						// nothing is drawn (a hole), as it costs a road search.
 						h, ok := 0.0, false

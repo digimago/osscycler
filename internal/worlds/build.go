@@ -24,12 +24,12 @@ import (
 
 // BuilderVersion goes up when a change to the builder should rebuild the
 // worlds riders have (a fix they'd ride into, not every commit).
-const BuilderVersion = 12
+const BuilderVersion = 13
 
 // GraphVersion is BuilderVersion for the graph builder (world.EngineGraph),
 // which goes its own way: it goes up when that builder changes what it
 // builds.
-const GraphVersion = 11
+const GraphVersion = 12
 
 // Builder builds worlds.
 type Builder struct {
@@ -215,6 +215,8 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 		o.Fences = t.Fences
 		mapInfo = fmt.Sprintf("%d made-up map elements", len(t.Data.Elements))
 	}
+	// Farmland sown as fields: ploughed, or a crop (the 3D world only).
+	o.Land.Fields()
 	if c.Credit != "" {
 		o.Attribution = append(o.Attribution, "route: "+c.Credit)
 	}

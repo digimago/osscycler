@@ -8,6 +8,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/digimago/osscycler/internal/course"
 	"github.com/digimago/osscycler/internal/gltf"
 	"github.com/digimago/osscycler/internal/scenery"
 )
@@ -433,5 +434,35 @@ func TestWillowsAlongDitches(t *testing.T) {
 	}
 	if east != n && east != 0 {
 		t.Errorf("willows on both banks: %d east of %d", east, n)
+	}
+}
+
+// The ground map names a sown field with its crop and the way its rows
+// run, so a renderer grows the crop in rows and draws its furrows.
+func TestGroundMapNamesFields(t *testing.T) {
+	if len(GroundClasses) != groundFieldBase+len(groundCrops)*groundRowDirs || GroundClasses[groundFieldBase] != "ploughed 0" ||
+		GroundClasses[groundFieldBase+1*groundRowDirs+4] != "maize 4" {
+		t.Fatalf("classes %v", GroundClasses)
+	}
+	c := course.Tracks()[1]
+	tr := scenery.TrackScenery(c)
+	lm := scenery.NewLandMap(c, tr.Data)
+	lm.Fields()
+	sp := &spots{land: lm}
+	fields := map[string]int{}
+	for e := -2000.0; e < 2000; e += 10 {
+		for n := -800.0; n < 800; n += 10 {
+			v, land := groundValue(sp, e, n)
+			if scenery.Arable(land) && land != scenery.LandFarmland {
+				fields[GroundClasses[v]]++
+			} else if int(v) >= groundFieldBase {
+				t.Fatalf("%v at %.0f, %.0f has a field's value %d", land, e, n, v)
+			}
+		}
+	}
+	for _, want := range []string{"ploughed 4", "maize 4", "wheat 4", "potatoes 4"} {
+		if fields[want] == 0 {
+			t.Errorf("no %q in the polder: %v", want, fields)
+		}
 	}
 }

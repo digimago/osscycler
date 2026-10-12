@@ -352,18 +352,27 @@ func (g *gnet) reach(n int64) *gDijkstra {
 	return r
 }
 
+// gNodeSlackM: a node this far behind t still counts as ahead (ahead): the
+// course's projection runs a hair past a line's last node (the line's
+// end sample lies beyond it), and from there no way on was found, so the
+// matcher escaped through a stub and back (the Dunes course at 17.35 km).
+// No more than a hair: at the jitter's 3 m the matcher took a flat
+// roundabout's chord to a node behind it and a second chord on (the Velp
+// loop at 2.48 km, 57° in a step).
+const gNodeSlackM = 0.5
+
 // ahead is the first node on line k from t onwards in direction dir (+1
 // along the line, -1 back), and where it lies; false if none.
 func (g *gnet) ahead(k int, t float64, dir int8) (gstop, bool) {
 	st := g.stops[k]
 	if dir > 0 {
-		i := sort.Search(len(st), func(i int) bool { return st[i].d >= t })
+		i := sort.Search(len(st), func(i int) bool { return st[i].d >= t-gNodeSlackM })
 		if i < len(st) {
 			return st[i], true
 		}
 		return gstop{}, false
 	}
-	i := sort.Search(len(st), func(i int) bool { return st[i].d > t })
+	i := sort.Search(len(st), func(i int) bool { return st[i].d > t+gNodeSlackM })
 	if i > 0 {
 		return st[i-1], true
 	}
@@ -554,32 +563,43 @@ func joinNearEnds(ws []scenery.Way, ridden map[int]bool) []scenery.Way {
 // with a residential street's two short links onto the roundabout at
 // the polder ride drawn, the course went up one and back down the other rather
 // than straight over the roundabout).
-func (g *gnet) hairpins(k1 int, t1 float64, dir1 int8, k2 int, t2 float64, p gpath) int {
+func (g *gnet) hairpins(k1 int, t1 float64, dir1 int8, k2 int, t2 float64, dir2 int8, p gpath) int {
 	type leg struct {
 		line int
 		a, b float64
+		sg   float64 // the way along the line when a and b are one point: the way the course came (first leg) or goes on (last)
 	}
-	legs := []leg{{k1, t1, p.out.d}}
+	legs := []leg{{k1, t1, p.out.d, float64(dir1)}}
 	for _, e := range p.edges {
-		legs = append(legs, leg{e.line, e.a, e.b})
+		legs = append(legs, leg{e.line, e.a, e.b, 0})
 	}
-	legs = append(legs, leg{k2, p.in.d, t2})
+	legs = append(legs, leg{k2, p.in.d, t2, float64(dir2)})
 	way := func(l leg, end bool) (float64, float64) {
-		// The leg's way at its end (end) or start, over a few metres.
+		// The leg's way at its end (end) or start, over a few metres. A
+		// leg of no length (the course at a node when it changes road)
+		// has the way it came or goes on: out to a stub's end and
+		// straight back over a twin line of it is a hairpin too (the
+		// Dunes course at 14.88 and 17.35 km, where a 13 m stub ends on
+		// the cycle path the course rides).
 		line := g.lines[l.line]
 		sg := 1.0
 		if l.b < l.a {
 			sg = -1
+		}
+		if math.Abs(l.b-l.a) < 0.5 && l.sg != 0 {
+			sg = l.sg
 		}
 		at := l.a
 		if end {
 			at = l.b
 		}
 		a, b := sampleBetween(line, at-sg*3), sampleBetween(line, at+sg*3)
-		if end {
-			a, b = sampleBetween(line, at-sg*3), sampleBetween(line, at)
-		} else {
-			a, b = sampleBetween(line, at), sampleBetween(line, at+sg*3)
+		if math.Abs(l.b-l.a) >= 0.5 {
+			if end {
+				a, b = sampleBetween(line, at-sg*3), sampleBetween(line, at)
+			} else {
+				a, b = sampleBetween(line, at), sampleBetween(line, at+sg*3)
+			}
 		}
 		de, dn := b.e-a.e, b.n-a.n
 		if l := math.Hypot(de, dn); l > 1e-6 {

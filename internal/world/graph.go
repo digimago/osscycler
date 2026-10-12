@@ -141,6 +141,14 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 			}
 			own[i] = [4]float64{ox, oy, oz, 2 * rs.hw}
 			heading[i] = [2]float64{re, rn}
+			// The course line steps back a metre or two just past a rounded
+			// corner (courseLine, shared): a point behind the one before
+			// holds still there, as the matcher holds a step back along a
+			// road (the Dunes course at 15.13 km: a 2.4 m step back in the
+			// course's own line made a hairpin in the path).
+			if i > 0 && (ox-own[i-1][0])*re+(oy-own[i-1][1])*rn < 0 {
+				own[i] = own[i-1]
+			}
 		}
 		if o.Elevation != nil {
 			span := int(math.Round(gOwnSmoothM / step))
@@ -393,6 +401,9 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 	land.underRoads(meshes)
 	waterChunks := 0
 	for k, p := range meshes {
+		if len(p.Positions) == 0 {
+			continue // a chunk wholly under roads or water (the river at Rotterdam)
+		}
 		if err := w.add(fmt.Sprintf("terrain %d %d", keys[k][0], keys[k][1]),
 			map[string]any{"kind": "terrain", "chunk": keys[k]}, p); err != nil {
 			return nil, err
@@ -755,6 +766,8 @@ func (gp gpathOut) place(steps int, step float64, onRoad func(e, n float64) bool
 	isTurn := map[float64]bool{}
 	free := map[float64]bool{}
 	devAt := map[float64]int{}
+	var remap func(float64) float64
+	var atOf map[int]float64
 	dev := func(at float64) float64 {
 		if isTurn[at] {
 			return gTurnDevs[devAt[at]]
@@ -777,7 +790,11 @@ func (gp gpathOut) place(steps int, step float64, onRoad func(e, n float64) bool
 						at = k
 					}
 				}
-				t = turn{at: at, free: freeAt[turns[i]] || freeAt[turns[i+1]], cut: true, pair: i}
+				// Free only when both are: with one on a road, the sweep
+				// across is checked against the carriageway (it had cut 20 m
+				// over the verge where the course came back onto a road 8 m
+				// before a junction's node).
+				t = turn{at: at, free: freeAt[turns[i]] && freeAt[turns[i+1]], cut: true, pair: i}
 				i++
 			}
 			tl = append(tl, t)
@@ -876,8 +893,6 @@ func (gp gpathOut) place(steps int, step float64, onRoad func(e, n float64) bool
 			simplify(wk, j)
 		}
 		for q, t := range tl {
-			s := gp.s[t.at]
-			isTurn[s], free[s] = true, t.free
 			keep[wins[q][0]], keep[wins[q][1]], keep[t.at] = true, true, true
 			if !t.free && !t.cut {
 				simplify(wins[q][0], t.at)
@@ -885,10 +900,39 @@ func (gp gpathOut) place(steps int, step float64, onRoad func(e, n float64) bool
 			}
 		}
 		keep[0], keep[n-1] = true, true
+		// The kept points, at their straight distances along the line
+		// through them (not the line's own: where points were left out
+		// round a detour, the line between two kept points was 40 m for a
+		// 20 m chord, and the arc's metric tangent and the chord walked by
+		// fraction disagreed by metres, a step back in the path at 88.58 km
+		// of the Grebbeberg course); each step's place is mapped onto them.
+		var orig []float64
+		at := make(map[int]float64) // kept pts index → its new distance
 		for i, p := range gp.pts {
 			if keep[i] && !never[i] {
-				sd, sx, sy = append(sd, gp.s[i]), append(sx, p.x), append(sy, p.y)
+				d := 0.0
+				if len(sx) > 0 {
+					d = sd[len(sd)-1] + math.Hypot(p.x-sx[len(sx)-1], p.y-sy[len(sy)-1])
+				}
+				at[i] = d
+				orig = append(orig, gp.s[i])
+				sd, sx, sy = append(sd, d), append(sx, p.x), append(sy, p.y)
 			}
+		}
+		remap = func(s float64) float64 {
+			j := sort.SearchFloat64s(orig, s)
+			if j <= 0 {
+				return sd[0]
+			}
+			if j >= len(orig) {
+				return sd[len(sd)-1]
+			}
+			f := (s - orig[j-1]) / math.Max(orig[j]-orig[j-1], 1e-9)
+			return sd[j-1] + f*(sd[j]-sd[j-1])
+		}
+		atOf = at
+		for _, t := range tl {
+			isTurn[atOf[t.at]], free[atOf[t.at]] = true, t.free
 		}
 		// Each turn as wide as the drawn road allows (onRoad, when given):
 		// from gTurnDevM down, until its sweep stays on the carriageway.
@@ -917,12 +961,25 @@ func (gp gpathOut) place(steps int, step float64, onRoad func(e, n float64) bool
 		}
 		// A jog cut across on the roads stays on the carriageway all the
 		// way, or its turns are rounded on their own.
+		// A window's end may lie in a swept link's zone and so not be a
+		// kept point: the bound is the nearest kept point outwards.
+		bound := func(i, dir int) float64 {
+			for ; i > 0 && i < n-1; i += dir {
+				if d, ok := atOf[i]; ok {
+					return d
+				}
+			}
+			if dir < 0 {
+				return sd[0]
+			}
+			return sd[len(sd)-1]
+		}
 		bad := -1
 		for q, t := range tl {
 			if !t.cut || t.free {
 				continue
 			}
-			for at := gp.s[wins[q][0]]; at <= gp.s[wins[q][1]] && bad < 0; at += 0.5 {
+			for at := bound(wins[q][0], -1); at <= bound(wins[q][1], 1) && bad < 0; at += 0.5 {
 				if e, n := sl.at(at); !onRoad(e, n) {
 					bad = t.pair
 				}
@@ -962,12 +1019,12 @@ func (gp gpathOut) place(steps int, step float64, onRoad func(e, n float64) bool
 		return v(gp.pts[j-1]) + f*(v(gp.pts[j])-v(gp.pts[j-1]))
 	}
 	for i := 0; i <= steps; i++ {
-		s := even[min(i, len(even)-1)]
-		px, py := sl.at(s)
+		s0 := even[min(i, len(even)-1)] // along the line through the network
+		px, py := sl.at(remap(s0))
 		d = append(d, step*float64(i))
 		x, y = append(x, px), append(y, py)
-		z = append(z, interp(s, func(p gpoint) float64 { return p.z }))
-		w = append(w, interp(s, func(p gpoint) float64 { return p.w }))
+		z = append(z, interp(s0, func(p gpoint) float64 { return p.z }))
+		w = append(w, interp(s0, func(p gpoint) float64 { return p.w }))
 		on = append(on, gp.on[min(i, len(gp.on)-1)])
 	}
 	return d, x, y, z, w, on

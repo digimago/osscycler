@@ -124,20 +124,18 @@ func newGland(t *terrain, roads *landSurface, lines []*roadLine) *gland {
 	return g
 }
 
-// covered says whether the road (shrunk by gTuckM) is at e, n.
+// covered says whether the road (shrunk by gTuckM) is at e, n: coverKind
+// other than clear, so the tree, the ring vertices and the crossings all
+// agree (water near a road counts as clear, below).
 func (g *gland) covered(e, n float64) bool {
-	for _, d := range [5][2]float64{{0, 0}, {gTuckM, 0}, {-gTuckM, 0}, {0, gTuckM}, {0, -gTuckM}} {
-		if _, ok := g.roads.at(e+d[0], n+d[1]); !ok {
-			return false
-		}
-	}
-	return true
+	return g.coverKind(e, n) != gClear
 }
 
 // coverKind is what covers e, n: gClear nothing, gByWater water only, gByRoad
 // a road (or car park) at any of the tuck's points.
 func (g *gland) coverKind(e, n float64) int8 {
 	kind := int8(gByWater)
+	water := false
 	for _, d := range [5][2]float64{{0, 0}, {gTuckM, 0}, {-gTuckM, 0}, {0, gTuckM}, {0, -gTuckM}} {
 		m, ok := g.roads.matAt(e+d[0], n+d[1])
 		if !ok {
@@ -145,6 +143,31 @@ func (g *gland) coverKind(e, n float64) int8 {
 		}
 		if m != g.water {
 			kind = gByRoad
+		} else {
+			water = true
+		}
+	}
+	// Probes on a road and on water both: the seam between the two
+	// surfaces is within the tuck, and they may leave a sliver between
+	// them narrower than a cell; clear, so the land runs under both and
+	// bridges it (a canal along the Benedenkerkseweg at 73.4-75.4 km of
+	// the Grebbeberg course: a line of holes along the road's edge, 15 m²).
+	if kind == gByRoad && water {
+		return gClear
+	}
+	// Under water but within a cell of a road: clear, so the land runs on
+	// under the water's edge to the road's and tucks under both; with every
+	// lattice point covered by one or the other, the seam between the two
+	// surfaces had been a line of holes (a canal along the Benedenkerkseweg,
+	// 73.4-75.4 km of the Grebbeberg course, 15 m²).
+	if kind == gByWater {
+		for _, r := range [3]float64{0.5, 1, g.fineM + gTuckM} {
+			for k := range 8 {
+				a := float64(k) * math.Pi / 4
+				if m, ok := g.roads.matAt(e+r*math.Cos(a), n+r*math.Sin(a)); ok && m != g.water {
+					return gClear
+				}
+			}
 		}
 	}
 	return kind

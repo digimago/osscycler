@@ -835,3 +835,85 @@ func TestGraphFarLandIsSimplifiedWhereFlat(t *testing.T) {
 		t.Errorf("the far hills as drawn are %.2f m off the ground model, want within %.2f (+0.3 for the cells' own interpolation)", worst, gFarTolM)
 	}
 }
+
+// The course doesn't dip into a stub that reaches its line and come back
+// (the Dunes course at 14.88 and 17.35 km: a cycle path the map lacks
+// runs beside a dual road, and the crossing pieces and stubs between the
+// carriageways end on it; the matcher rode up them and straight back,
+// 180° in a step): a stub's end is a dead end, a way back over a twin
+// line is a hairpin, and no leg of a way through the network runs against
+// the course. The course here rides a cycle path 12 m east of the road, a
+// stub reaches it, and the path stays on the road.
+func TestGraphNoDipIntoAStub(t *testing.T) {
+	c := graphCourse(t, "stub", append(along([2]float64{12, 0}, [2]float64{12, 400}, 20), [2]float64{12, 400}))
+	ways := []scenery.Way{
+		{Line: [][2]float64{{0, -40}, {0, 200}}, Nodes: []int64{1, 2}, Name: "Weg", Class: "unclassified", WidthM: 5, Sidepath: true},
+		{Line: [][2]float64{{0, 200}, {0, 440}}, Nodes: []int64{2, 3}, Name: "Weg", Class: "unclassified", WidthM: 5, Sidepath: true},
+		{Line: [][2]float64{{0, 200}, {11, 200}}, Nodes: []int64{2, 4}, Name: "Stub", Class: "service", WidthM: 3},
+		{Line: [][2]float64{{0, 200}, {11, 200}}, Nodes: []int64{2, 4}, Name: "Stub twin", Class: "service", WidthM: 3},
+	}
+	on := routeOn(c.Distance, func(float64) int { return -1 })
+	w, err := BuildGraph(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := w.Check()
+	if r.TurnDeg > 45 {
+		t.Errorf("the rider turns %.0f° in one step %v: into the stub and back", r.TurnDeg, r.Turns)
+	}
+	if r.OffRoadM > 0 {
+		t.Errorf("off road %.0f m %v", r.OffRoadM, r.OffRoad)
+	}
+	xyz := w.Manifest.Path.XYZ
+	for i := 0; 3*i < len(xyz); i++ {
+		if xyz[3*i] > 4 {
+			t.Errorf("at %.0f m north the rider is %.1f m east: on the stub", -xyz[3*i+2], xyz[3*i])
+			break
+		}
+	}
+}
+
+// The line through the network loses its spurs: the course placed at a
+// stub's end and then back on the road it came from traces out along the
+// stub and straight back over it; the spur goes, and the steps on it stand
+// at its foot (the Grebbeberg course at 69.6 and 88.6 km: 180° in a step).
+func TestTraceRemovesSpurs(t *testing.T) {
+	ways := []scenery.Way{
+		{Line: [][2]float64{{0, 0}, {0, 100}, {0, 200}}, Nodes: []int64{1, 2, 3}, Name: "Weg", Class: "unclassified", WidthM: 5},
+		// The stub bows a little, so the way back from its end is the twin.
+		{Line: [][2]float64{{0, 100}, {5, 100.4}, {10, 100}}, Nodes: []int64{2, 5, 4}, Name: "Stub", Class: "service", WidthM: 3},
+		{Line: [][2]float64{{0, 100}, {10, 100}}, Nodes: []int64{2, 4}, Name: "Stub twin", Class: "service", WidthM: 3},
+	}
+	ls := networkLines(ways, nil, func(e, n float64) bool { return true })
+	g := newGnet(ls, ways, nil)
+	road, stub := -1, -1
+	for k, l := range g.lines[:g.virtual] {
+		switch l.samples[0].way {
+		case 0:
+			road = k
+		case 1:
+			stub = k
+		}
+	}
+	if road < 0 || stub < 0 {
+		t.Fatalf("lines: road %d, stub %d", road, stub)
+	}
+	at := func(k int, d float64) gstate {
+		s := sampleBetween(g.lines[k], d)
+		return gstate{on: true, line: k, t: d, dir: 1, x: s.e, y: s.n, z: s.ele, w: 2 * s.hw}
+	}
+	st := []gstate{at(road, 80), at(road, 90), at(stub, 10), at(road, 105), at(road, 110), at(road, 120)}
+	out := g.trace(st)
+	for i := 1; i+1 < len(out.pts); i++ {
+		a, b, c := out.pts[i-1], out.pts[i], out.pts[i+1]
+		ux, uy, vx, vy := b.x-a.x, b.y-a.y, c.x-b.x, c.y-b.y
+		if l := math.Hypot(ux, uy) * math.Hypot(vx, vy); l > 0 && (ux*vx+uy*vy)/l < -0.95 {
+			t.Errorf("the line turns straight back at (%.1f, %.1f): a spur left in", b.x, b.y)
+		}
+	}
+	for i := 1; i < len(out.at); i++ {
+		if out.at[i] < out.at[i-1] {
+			t.Errorf("step %d lies at %.1f m along the line, before step %d at %.1f", i, out.at[i], i-1, out.at[i-1])
+		}
+	}
+}

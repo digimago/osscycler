@@ -544,15 +544,17 @@ func (g *gland) blend(e, n, base float64) (h, gap, edge float64) {
 	// standing 9 cm over (the Posbank Loop at 27.7 km).
 	probed := false
 	edge = math.Inf(1)
-	if gap < gProbeM || len(pieces) == 0 {
+	if (gap < gProbeM || len(pieces) == 0) && g.roads.anyWithin(e, n, gProbeRings[len(gProbeRings)-1]) {
 		for _, r := range gProbeRings {
 			if probed && r > g.fineM+gTuckM {
 				break
 			}
+			if !g.roads.anyWithin(e, n, r) {
+				continue // nothing this ring could find
+			}
 			low := math.Inf(1)
 			for k := range 8 {
-				a := float64(k) * math.Pi / 4
-				if h, ok := g.roads.low(e+r*math.Cos(a), n+r*math.Sin(a)); ok {
+				if h, ok := g.roads.low(e+r*gProbeCos[k], n+r*gProbeSin[k]); ok {
 					low = math.Min(low, h)
 				}
 			}
@@ -592,6 +594,15 @@ func (g *gland) blend(e, n, base float64) (h, gap, edge float64) {
 var gProbeRings = [...]float64{0.15, 0.3, 0.5, 0.8, 1.2, 1.7}
 
 const gProbeM = 12.0
+
+// The eight probe directions, every 45°, computed once.
+var gProbeCos, gProbeSin = func() (c, s [8]float64) {
+	for k := range 8 {
+		a := float64(k) * math.Pi / 4
+		c[k], s[k] = math.Cos(a), math.Sin(a)
+	}
+	return
+}()
 
 // landHeight is a land vertex's height: heightAt, but under a road
 // surface (the land's edge is tucked under it) just below that surface,

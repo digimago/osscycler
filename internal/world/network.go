@@ -292,7 +292,10 @@ func (g *routeGrid) within(e, n, r float64, f func(i int)) {
 	for gx := cx - 1; gx <= cx+1; gx++ {
 		for gy := cy - 1; gy <= cy+1; gy++ {
 			for _, i := range g.cells[[2]int{gx, gy}] {
-				if math.Hypot(g.fine[i].e-e, g.fine[i].n-n) <= r {
+				// The squared distance rules most out cheaply; the
+				// hypotenuse decides, as before, so nothing moves.
+				de, dn := g.fine[i].e-e, g.fine[i].n-n
+				if de*de+dn*dn <= r*r*1.001 && math.Hypot(de, dn) <= r {
 					f(i)
 				}
 			}

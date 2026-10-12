@@ -521,9 +521,7 @@ func Build(c *course.Course, o Options) (*World, error) {
 	if err := w.addBuildings(&t, o.Buildings); err != nil {
 		return nil, err
 	}
-	if err := w.addFences(&t, o.Fences); err != nil {
-		return nil, err
-	}
+
 	if err := w.addBridges(&t, lines, ways); err != nil {
 		return nil, err
 	}
@@ -539,6 +537,12 @@ func Build(c *course.Course, o Options) (*World, error) {
 	// Lawns are kept clear as car parks are: nothing grows on a pitch.
 	for _, l := range o.Lawns {
 		parks = append(parks, scenery.Parking{Outline: l})
+	}
+	// The fences: the course's own (the test tracks' field entrances) and
+	// the meadows' along the roads.
+	fences := append(append([]scenery.Fence{}, o.Fences...), meadowFences(&t, o.Land, o.Buildings, parks)...)
+	if err := w.addFences(&t, fences); err != nil {
+		return nil, err
 	}
 	near := newRouteGrid(coarse, 400)
 	progress(0.75)

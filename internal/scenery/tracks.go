@@ -38,6 +38,9 @@ type Fence struct {
 	Line               [][2]float64
 	GateFromM, GateToM float64
 	Entry              [][2]float64
+	// Wire: a pasture's fence (posts and wire along Line, which may bend)
+	// instead of a wooden one of posts and rails.
+	Wire bool
 }
 
 // SurfaceTrack is a running track's synthetic surface.

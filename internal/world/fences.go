@@ -3,6 +3,7 @@ package world
 import (
 	"fmt"
 	"math"
+	"sort"
 
 	"github.com/digimago/osscycler/internal/gltf"
 	"github.com/digimago/osscycler/internal/scenery"
@@ -39,6 +40,10 @@ func (w *World) addFences(t *terrain, fences []scenery.Fence) error {
 		}
 		if len(f.Entry) == 4 {
 			entryStrip(p, s, f.Entry)
+		}
+		if f.Wire {
+			wireFence(p, s, f, post, steel)
+			continue
 		}
 		l := math.Hypot(b[0]-a[0], b[1]-a[1])
 		ux, uy := (b[0]-a[0])/l, (b[1]-a[1])/l
@@ -84,6 +89,99 @@ func (w *World) addFences(t *terrain, fences []scenery.Fence) error {
 		}
 	}
 	return nil
+}
+
+// A pasture's wire fence: wooden posts every wirePostM, strands of plain
+// galvanised wire at these heights (barbed wire's barbs are too small to
+// see from the road), a five-bar gate in its gap.
+const wirePostM = 3.5
+
+var wireStrands = []float64{0.45, 0.75, 1.05}
+
+// wireFence draws fence f, posts and wire along its (bending) line.
+func wireFence(p *gltf.Primitive, s *surface, f scenery.Fence, post, steel [3]float32) {
+	wire := srgbLinear(0x7c8084)
+	l := polyLength(f.Line)
+	at := func(d, y float64) [3]float64 {
+		q := polyAt(f.Line, d)
+		return [3]float64{q[0], s.at(q[0], q[1]) + y, -q[1]}
+	}
+	gate := f.GateToM > f.GateFromM
+	inGate := func(d float64) bool { return gate && d > f.GateFromM-0.01 && d < f.GateToM+0.01 }
+	// The posts: along the line, and at the gate's sides.
+	var posts []float64
+	steps := max(1, int(math.Ceil(l/wirePostM)))
+	for i := 0; i <= steps; i++ {
+		if d := l * float64(i) / float64(steps); !inGate(d) {
+			posts = append(posts, d)
+		}
+	}
+	if gate {
+		posts = append(posts, f.GateFromM, f.GateToM)
+		sort.Float64s(posts)
+	}
+	for _, d := range posts {
+		beam(p, at(d, -0.3), at(d, 1.15), 0.09, 0.09, post)
+	}
+	// The wire, either side of the gate: one piece as long as the posts it
+	// passes stay within 10 cm of it (a straight, level stretch is one).
+	span := func(from, to float64) {
+		var ds []float64
+		for _, d := range posts {
+			if d >= from-0.01 && d <= to+0.01 {
+				ds = append(ds, d)
+			}
+		}
+		for i := 0; i+1 < len(ds); {
+			j := i + 1
+			for j+1 < len(ds) && straight(at(ds[i], 0), at(ds[j+1], 0), ds[i:j+2], at) {
+				j++
+			}
+			for _, y := range wireStrands {
+				beam(p, at(ds[i], y), at(ds[j], y), 0.012, 0.012, wire)
+			}
+			i = j
+		}
+	}
+	if gate {
+		span(0, f.GateFromM)
+		span(f.GateToM, l)
+	} else {
+		span(0, l)
+	}
+	if gate {
+		g0, g1 := f.GateFromM+0.1, f.GateToM-0.1
+		for i := range 5 {
+			y := 0.2 + 0.22*float64(i)
+			beam(p, at(g0, y), at(g1, y), 0.04, 0.04, steel)
+		}
+		for _, d := range []float64{g0, g1} {
+			beam(p, at(d, 0.15), at(d, 1.13), 0.05, 0.05, steel)
+		}
+		mid := (g0 + g1) / 2
+		beam(p, at(g0, 0.2), at(mid, 1.08), 0.035, 0.035, steel)
+		beam(p, at(g1, 0.2), at(mid, 1.08), 0.035, 0.035, steel)
+	}
+}
+
+// straight tells whether the posts at ds lie within 10 cm of the line
+// from a to b (their foot, as at gives it).
+func straight(a, b [3]float64, ds []float64, at func(d, y float64) [3]float64) bool {
+	ab := [3]float64{b[0] - a[0], b[1] - a[1], b[2] - a[2]}
+	l2 := dot3(ab, ab)
+	for _, d := range ds {
+		q := at(d, 0)
+		aq := [3]float64{q[0] - a[0], q[1] - a[1], q[2] - a[2]}
+		f := 0.0
+		if l2 > 0 {
+			f = math.Max(0, math.Min(1, dot3(aq, ab)/l2))
+		}
+		dx, dy, dz := aq[0]-ab[0]*f, aq[1]-ab[1]*f, aq[2]-ab[2]*f
+		if dx*dx+dy*dy+dz*dz > 0.01 {
+			return false
+		}
+	}
+	return true
 }
 
 // entryLiftM: the strip lies this far over the land, as car parks did on

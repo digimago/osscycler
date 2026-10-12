@@ -390,8 +390,12 @@ func TestGraphDitchBesideTheRoad(t *testing.T) {
 	}
 	land := newLandSurface(w.prims, func(m int) bool { return w.doc.MaterialName(m) == "terrain" })
 	water := newSurfaceIndex(w.prims, func(m int) bool { return w.doc.MaterialName(m) == "water" }, 1000)
+	// The ditch is mapped to the top of its bank, 1.5 m from the road's
+	// edge (2.5 m): its water keeps a verge and a bank from the road
+	// (ditchBank: owner, 2026-10-12, a bank a wall within a metre of the
+	// asphalt read as water level with the road), from 4.8 m.
 	for n := 20.0; n <= 280; n += 1 {
-		for e := 4.5; e <= 7.5; e += 0.5 {
+		for e := 5.0; e <= 7.5; e += 0.5 {
 			wh, wet := water.at(e, n)
 			lh, dry := land.at(e, n)
 			if n >= 139.5 && n <= 146.5 && (n < 140.5 || n > 145.5) {
@@ -409,6 +413,30 @@ func TestGraphDitchBesideTheRoad(t *testing.T) {
 			if dry && lh > wh {
 				t.Fatalf("land stands %.2f m through the ditch at %.1f m right, %.0f m along", lh-wh, e, n)
 			}
+		}
+		if n > 130 && n < 156 {
+			continue // the dam and the ditch's ends
+		}
+		// The verge, level with the road's edge; then the bank, falling
+		// all the way to the water and nowhere as a wall.
+		road, _ := land.at(2.7, n)
+		if v, _ := land.at(3.1, n); math.Abs(v-road) > 0.1 {
+			t.Fatalf("the verge at %.0f m along stands %.2f m off the road's edge", n, v-road)
+		}
+		wh, _ := water.at(5.5, n)
+		prev := road
+		for e := 3.3; e <= 4.8; e += 0.25 {
+			h, ok := land.at(e, n)
+			if !ok {
+				t.Fatalf("no land on the bank at %.2f m right, %.0f m along", e, n)
+			}
+			if h > prev+0.02 || prev-h > 0.45 {
+				t.Fatalf("the bank at %.2f m right, %.0f m along: %.2f after %.2f (a step or a wall)", e, n, h, prev)
+			}
+			prev = h
+		}
+		if prev > road-0.5*(road-wh) {
+			t.Fatalf("the bank at %.0f m along ends %.2f m over the water, %.2f under the road", n, prev-wh, road-prev)
 		}
 	}
 }

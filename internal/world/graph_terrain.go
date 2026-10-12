@@ -58,10 +58,14 @@ const (
 
 // gland is the land being laid.
 type gland struct {
-	t      *terrain
-	roads  *landSurface // what the land goes round (decks excluded: the ground goes on under bridges)
-	decks  *landSurface // the decks, which the land keeps under (nil: none)
-	water  int          // the water material: a shore refines to gWaterS, a road's edge to the smallest cell
+	t     *terrain
+	roads *landSurface // what the land goes round (decks excluded: the ground goes on under bridges)
+	decks *landSurface // the decks, which the land keeps under (nil: none)
+	water int          // the water material: a shore refines to gWaterS, a road's edge to the smallest cell
+	// waters indexes the water sheets alone, so the land tells quickly
+	// whether a ditch is near (ditchBank); nil: none.
+	waters *landSurface
+	dry    *landSurface // the roads, junctions and car parks alone
 	near   *routeGrid   // the route, for the cells' size
 	samps  []sample     // the roads' samples, for the heights
 	grid   map[[2]int][]int
@@ -399,6 +403,13 @@ func (g *gland) height(e, n float64, wet bool) float64 {
 	near := g.coarseNear(key)
 	base := t.base(e, n, near)
 	h, gap, edge := g.blend(e, n, base)
+	// Between a road and a ditch: a verge, then the bank down to the water
+	// (ditchBank), not the land at the water's level right up to the road.
+	if gap < gDitchVergeM+gDitchBankM+1 {
+		if bh, be, ok := g.ditchBank(e, n); ok {
+			h, edge = bh, be
+		}
+	}
 	// Under water the ground lies below its level; a water drawn from its
 	// outline (t.exact) is a surface the land goes round instead.
 	if land, id := t.cover.at(e, n); wet && land == scenery.LandWater && gap > g.t.o.CellM/2 && id >= 0 && !t.exact[id] {
@@ -939,6 +950,173 @@ func (g *gland) chunk(key [2]int, material, waterMaterial int) (ground, water gl
 		}
 	}
 	return p, w
+}
+
+// A ditch's banks by the road (owner, 2026-10-12: a ditch's water at
+// 7.83 km of the polder ride lay 1.3 m below the road but read as level
+// with it, its bank a wall within a metre of the asphalt, out of the
+// rider's sight). Dutch ditches are mapped to the top of their bank (the
+// BGT's insteek), and many reach the road's edge, so the water's edge is
+// kept this far from any road surface: a verge before the bank, then the
+// bank's run down to the water, which the land fills (it eases from the
+// road's edge down to the water's).
+const (
+	gDitchVergeM = 0.8 // flat beside the road
+	gDitchBankM  = 1.5 // the bank's run, about 1:1.2 for a metre and more's fall
+	gDitchStepM  = 4.0 // the outline followed this finely
+	gDitchWaterM = 0.8 // a narrow ditch keeps at least this much water (its bottom)
+)
+
+// ditchBanks is outline ring (east, north) with its points that come
+// within gDitchVergeM+gDitchBankM of a road surface (dist: the distance to
+// the nearest, up to its max) moved in, away from the road, as far as the
+// water's width allows.
+func ditchBanks(ring [][2]float64, dist func(e, n, max float64) float64) [][2]float64 {
+	keep := gDitchVergeM + gDitchBankM
+	var r [][2]float64
+	var corner []bool // the outline's own points (the rest were put in)
+	for i := range ring {
+		a, b := ring[i], ring[(i+1)%len(ring)]
+		k := max(1, int(math.Ceil(math.Hypot(b[0]-a[0], b[1]-a[1])/gDitchStepM)))
+		for j := range k {
+			f := float64(j) / float64(k)
+			r = append(r, [2]float64{a[0] + f*(b[0]-a[0]), a[1] + f*(b[1]-a[1])})
+			corner = append(corner, j == 0)
+		}
+	}
+	var area float64
+	for i := range r {
+		a, b := r[i], r[(i+1)%len(r)]
+		area += a[0]*b[1] - b[0]*a[1]
+	}
+	out := make([][2]float64, len(r))
+	moved := make([]bool, len(r))
+	any := false
+	for i, p := range r {
+		out[i] = p
+		d := dist(p[0], p[1], keep)
+		if d >= keep {
+			continue
+		}
+		prev, next := r[(i-1+len(r))%len(r)], r[(i+1)%len(r)]
+		tx, ty := next[0]-prev[0], next[1]-prev[1]
+		l := math.Hypot(tx, ty)
+		if l == 0 {
+			continue
+		}
+		nx, ny := -ty/l, tx/l // left of the ring's way: inside an anticlockwise ring
+		if area < 0 {
+			nx, ny = -nx, -ny
+		}
+		// Only the bank on the road's side moves: the water may narrow to
+		// gDitchWaterM, a ditch mapped from bank top to bank top having its
+		// water at the bottom.
+		move := math.Min(keep-d, math.Max(0, rayToRing(r, i, p, nx, ny)-gDitchWaterM))
+		if move > 0 {
+			out[i] = [2]float64{p[0] + nx*move, p[1] + ny*move}
+			moved[i], any = true, true
+		}
+	}
+	if !any {
+		return ring
+	}
+	// The outline's own points, those moved and one either side of each
+	// run moved (where the bank starts): the points put in on long straight
+	// sides elsewhere would only make the water's triangles long and thin
+	// across a canal (and every land height looked them all up: the polder
+	// ride's build took three times as long).
+	var kept [][2]float64
+	for i := range out {
+		near := moved[i] || moved[(i+1)%len(out)] || moved[(i-1+len(out))%len(out)]
+		if corner[i] || near {
+			kept = append(kept, out[i])
+		}
+	}
+	return kept
+}
+
+// ditchBank is the land at e, n between a road and water (a ditch beside
+// it): level with the road's edge for gDitchVergeM, then straight down to
+// the water's edge, and the road's height as the edge it keeps under; false
+// where no road and water are both near. The land's probes otherwise take
+// the lowest surface near, the water, and stood the land at its level up
+// to the asphalt: a wall the rider never saw, the water seeming level with
+// the road (owner, 2026-10-12, the polder ride at 7.83 km).
+func (g *gland) ditchBank(e, n float64) (h, edge float64, ok bool) {
+	reach := gDitchVergeM + gDitchBankM + 0.7
+	if g.waters == nil || g.dry == nil || !g.waters.anyWithin(e, n, reach) || !g.dry.anyWithin(e, n, reach) {
+		return 0, 0, false
+	}
+	dw, hw, okw := g.nearestSurface(e, n, reach, true)
+	if !okw || dw < 0.2 {
+		return 0, 0, false // no water near, or within its own edge's tuck
+	}
+	dr, hr, okr := g.nearestSurface(e, n, reach, false)
+	if !okr {
+		return 0, 0, false
+	}
+	// Where the room is short, the verge gives way to the bank.
+	verge := math.Min(gDitchVergeM, 0.35*(dr+dw))
+	if dr <= verge {
+		return hr - gSinkM, hr, true
+	}
+	f := (dr - verge) / (dr - verge + dw)
+	return (hr-gSinkM)*(1-f) + (hw-gSinkM)*f, hr, true
+}
+
+// gBankRings are the rings ditchBank looks round a point on.
+var gBankRings = [...]float64{0.15, 0.3, 0.5, 0.8, 1.2, 1.7, 2.3, 3.0}
+
+// nearestSurface is how far the nearest water (water true) or other
+// surface (a road, a junction, a car park) is from e, n within reach, in
+// gBankRings, and the lowest surface's height there.
+func (g *gland) nearestSurface(e, n, reach float64, water bool) (d, h float64, ok bool) {
+	ix := g.dry
+	if water {
+		ix = g.waters
+	}
+	for _, r := range gBankRings {
+		if r > reach {
+			break
+		}
+		if !ix.anyWithin(e, n, r) {
+			continue
+		}
+		low := math.Inf(1)
+		for k := range 8 {
+			if lh, found := ix.low(e+r*gProbeCos[k], n+r*gProbeSin[k]); found {
+				low = math.Min(low, lh)
+			}
+		}
+		if !math.IsInf(low, 1) {
+			return r, low, true
+		}
+	}
+	return 0, 0, false
+}
+
+// rayToRing is how far the ray from p (ring point i) along nx, ny goes
+// before it meets the ring again (the water's width there); +Inf if never.
+func rayToRing(r [][2]float64, i int, p [2]float64, nx, ny float64) float64 {
+	best := math.Inf(1)
+	for k := range r {
+		if k == i || (k+1)%len(r) == i {
+			continue
+		}
+		a, b := r[k], r[(k+1)%len(r)]
+		ex, ey := b[0]-a[0], b[1]-a[1]
+		den := nx*ey - ny*ex
+		if math.Abs(den) < 1e-12 {
+			continue
+		}
+		wx, wy := a[0]-p[0], a[1]-p[1]
+		s := (wx*ey - wy*ex) / den // along the ray
+		u := (wx*ny - wy*nx) / den // along the edge
+		if s > 1e-6 && u >= 0 && u <= 1 {
+			best = math.Min(best, s)
+		}
+	}
+	return best
 }
 
 // gWaterSheet is water x's surface for the graph builder, from its own

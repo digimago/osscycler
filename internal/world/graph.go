@@ -367,9 +367,14 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 	// the land goes round, as round a road.
 	keys := t.chunks()
 	sheets := map[[2]int][]gltf.Primitive{}
+	var allSheets []gltf.Primitive
+	dryIx := newSurfaceIndex(under, func(int) bool { return true }, gOutlineMaxTriM) // before the water joins
 	for _, x := range t.waterOutlines(keys, true) {
+		// A verge and a bank between a road and the water (ditchBanks).
+		x.ring = ditchBanks(x.ring, func(e, n, max float64) float64 { return cut.dist(e, -n, max) })
 		p := gWaterSheet(&t, x, pre.dryAt, waterMat)
 		sheets[x.key] = append(sheets[x.key], p)
+		allSheets = append(allSheets, p)
 		under = append(under, p)
 	}
 	// Every triangle, however big: a long canal's outline has triangles
@@ -378,6 +383,9 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 	// the canal beside the main street at 0.35 km of the polder ride).
 	land := newGland(&t, newSurfaceIndex(under, func(int) bool { return true }, gOutlineMaxTriM), lines)
 	land.decks, land.water = deckIx, waterMat
+	if len(allSheets) > 0 {
+		land.waters, land.dry = newSurfaceIndex(allSheets, func(int) bool { return true }, gOutlineMaxTriM), dryIx
+	}
 	t.landAt = land.heightAt
 
 	meshes := make([]gltf.Primitive, len(keys))

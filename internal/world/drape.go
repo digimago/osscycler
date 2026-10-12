@@ -23,6 +23,22 @@ type surface struct {
 	t     *terrain
 	mu    sync.Mutex
 	lists map[[2]int]chunkLists
+	// drawn is the land as drawn (terrain and verges, the roads cut out),
+	// once there is one: what plants stand on (stand).
+	drawn *landSurface
+}
+
+// stand is where a plant stands at e, n: on the land as drawn, which near
+// a road is the verge rather than the terrain mesh cut away under it
+// (owner, 2026-10-11: bushes floated and sank by up to 1.4 m beside the
+// roads); the terrain mesh where no land is drawn.
+func (s *surface) stand(e, n float64) float64 {
+	if s.drawn != nil {
+		if h, ok := s.drawn.at(e, n); ok {
+			return h
+		}
+	}
+	return s.at(e, n)
 }
 
 type chunkLists struct {

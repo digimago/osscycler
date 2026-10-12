@@ -200,12 +200,19 @@ type sample struct {
 	open           [2]bool    // a junction's patch on that side: no sidewalk or lane
 	again          bool       // an earlier pass of the route rides the same road here: drawn once, by it
 	wide           [2]float64 // the carriageway reaches this much further left and right, to a road alongside
-	onPatch        bool       // within a junction's span: the junction draws the surface
-	underPatch     bool       // a road not of the junction, lying on its patch
-	aloft          bool       // on a bridge or viaduct, off the ground (cut terrain)
-	oneway         int8       // traffic only along the line (1), only against it (-1), or both (0)
-	way            int        // the map's way it belongs to (network roads)
-	line           int        // the road line it belongs to (the terrain's samples)
+	// butt: another road's surface continues at that edge (joinAlongside):
+	// no skirt there, whose face showed as a dark line along the seam
+	// (owner, 2026-10-11: two carriageways side by side, 1 cm apart).
+	butt [2]bool
+	// walkW: the sidewalk's width on that side where a building leaves it
+	// less than walkM (0: walkM; walls.go).
+	walkW      [2]float64
+	onPatch    bool // within a junction's span: the junction draws the surface
+	underPatch bool // a road not of the junction, lying on its patch
+	aloft      bool // on a bridge or viaduct, off the ground (cut terrain)
+	oneway     int8 // traffic only along the line (1), only against it (-1), or both (0)
+	way        int  // the map's way it belongs to (network roads)
+	line       int  // the road line it belongs to (the terrain's samples)
 }
 
 const (
@@ -282,6 +289,7 @@ func Build(c *course.Course, o Options) (*World, error) {
 	// alongside joined.
 	net.lines = dropCovered(net.lines, rbs)
 	joinAlongside(net.lines, o.CellM)
+	clearWalksOfBuildings(net.lines, o.Buildings)
 	pd, px, py, pz, pw := net.finish(rbs)
 	lines := net.lines
 	patches := networkPatches(lines, ways)
@@ -348,12 +356,17 @@ func Build(c *course.Course, o Options) (*World, error) {
 	}
 	progress(0.1) // the network, junctions and path
 	roads, decks := roadPrims(lines, patches, o.ChunkM, roadMats, verges)
+	for k, p := range pavedIslands(roads, ground, roadMats.surface[scenery.SurfaceAsphalt], o.ChunkM) {
+		roads[k] = append(roads[k], p)
+	}
 	progress(0.2)
 	if t.cut {
 		t.footprint = rasterize(roads, o.ChunkM)
 	}
 
 	keys := t.chunks()
+	exact := t.exactWaters(keys)
+	exactSurf, exactBed := map[[2]int][]gltf.Primitive{}, map[[2]int][]gltf.Primitive{}
 	meshes := make([]gltf.Primitive, len(keys))
 	waters := make([]gltf.Primitive, len(keys))
 	var wg sync.WaitGroup
@@ -374,18 +387,63 @@ func Build(c *course.Course, o Options) (*World, error) {
 	wg.Wait()
 	// (Terrain + verges) − roads and car parks: nothing of the land lies
 	// over them.
-	lots := parkingLots(&t, o.Scenery, roadMats)
+	lots := parkingLots(&t, o.Scenery, roadMats, roads)
+	if t.cut && len(lots) > 0 {
+		var landPrims, roadPrimsAll []gltf.Primitive
+		landPrims = append(landPrims, meshes...)
+		for _, k := range chunkOrder(roads) {
+			for _, p := range roads[k] {
+				if p.Material == ground {
+					landPrims = append(landPrims, p)
+				} else {
+					roadPrimsAll = append(roadPrimsAll, p)
+				}
+			}
+		}
+		land := newLandSurface(landPrims, func(m int) bool { return m == ground })
+		road := newSurfaceIndex(roadPrimsAll, func(int) bool { return true }, 200)
+		for i := range lots {
+			lots[i].rim = rimMesh(lots[i].outline, lots[i].height, land, road, ground)
+		}
+	}
 	if t.cut {
 		cut := newCutter()
+		cut.seams = true
 		t.surfaces = cut
 		for _, l := range lots {
-			cut.add(l.mesh)
+			cut.add(l.cut)
 		}
 		for _, ps := range roads {
 			for _, p := range ps {
 				if p.Material != ground {
 					cut.add(p)
 				}
+			}
+		}
+		// Water from its own outline: the land under it goes, as under a
+		// road; its bed and bank stand in for it. A cutter of its own: the
+		// road one (t.surfaces) also keeps plants off the roads, and
+		// would keep them off every bank.
+		var wcut *cutter
+		if len(exact) > 0 {
+			wcut = newCutter()
+			var landPrims []gltf.Primitive
+			landPrims = append(landPrims, meshes...)
+			for _, ps := range roads {
+				for _, p := range ps {
+					if p.Material == ground {
+						landPrims = append(landPrims, p)
+					}
+				}
+			}
+			before := newLandSurface(landPrims, func(m int) bool { return m == ground })
+			for _, x := range exact {
+				s, b := t.waterMeshes(x, waterMat, ground, before)
+				// The outline's own triangles cut: the sheet's split ones
+				// fragmented the land under a big water by the hundred thousand.
+				wcut.add(drapedIn(func(e, n float64) float64 { return 0 }, x.ring, waterMat, 0, 0))
+				exactSurf[x.key] = append(exactSurf[x.key], s)
+				exactBed[x.key] = append(exactBed[x.key], b)
 			}
 		}
 		var cw sync.WaitGroup
@@ -399,13 +457,20 @@ func Build(c *course.Course, o Options) (*World, error) {
 			}
 		}
 		clipDone := func() { progress(0.6 + 0.1*float64(clipped.Add(1))/float64(clips)) }
+		both := func(p gltf.Primitive, seams bool) gltf.Primitive {
+			p = cut.clipSeams(p, seams)
+			if wcut != nil {
+				p = wcut.clip(p)
+			}
+			return p
+		}
 		for k := range meshes {
-			cw.Go(func() { meshes[k] = cut.clip(meshes[k]); clipDone() })
+			cw.Go(func() { meshes[k] = both(meshes[k], false); clipDone() })
 		}
 		for k, ps := range roads {
 			for i, p := range ps {
 				if p.Material == ground {
-					cw.Go(func() { roads[k][i] = cut.clip(p); clipDone() })
+					cw.Go(func() { roads[k][i] = both(p, true); clipDone() })
 				}
 			}
 		}
@@ -419,6 +484,17 @@ func Build(c *course.Course, o Options) (*World, error) {
 		}
 	}
 	waterChunks := 0
+	for _, k := range chunkOrder(exactSurf) {
+		waterChunks++
+		if err := w.add(fmt.Sprintf("water exact %d %d", k[0], k[1]),
+			map[string]any{"kind": "water", "chunk": k}, mergeByMaterial(exactSurf[k])...); err != nil {
+			return nil, err
+		}
+		if err := w.add(fmt.Sprintf("bank %d %d", k[0], k[1]),
+			map[string]any{"kind": "terrain", "chunk": k}, mergeByMaterial(exactBed[k])...); err != nil {
+			return nil, err
+		}
+	}
 	for k, p := range waters {
 		if len(p.Positions) == 0 {
 			continue
@@ -445,7 +521,7 @@ func Build(c *course.Course, o Options) (*World, error) {
 	if err := w.addFences(&t, o.Fences); err != nil {
 		return nil, err
 	}
-	if err := w.addBridges(&t, lines); err != nil {
+	if err := w.addBridges(&t, lines, ways); err != nil {
 		return nil, err
 	}
 	if c.Loop {
@@ -463,7 +539,8 @@ func Build(c *course.Course, o Options) (*World, error) {
 	}
 	near := newRouteGrid(coarse, 400)
 	progress(0.75)
-	ps := plants(&t, &surface{t: &t, lists: map[[2]int]chunkLists{}}, o.Land, keys, o.Buildings, parks, ways, near)
+	drawn := newLandSurface(w.prims, func(m int) bool { return w.doc.MaterialName(m) == "terrain" })
+	ps := plants(&t, &surface{t: &t, lists: map[[2]int]chunkLists{}, drawn: drawn}, o.Land, keys, o.Buildings, parks, ways, near)
 	if len(ps) > 0 {
 		if err := w.addTemplates(); err != nil {
 			return nil, err
@@ -490,7 +567,7 @@ func Build(c *course.Course, o Options) (*World, error) {
 	}
 	progress(0.9)
 	if gm, index := groundMap(newSpots(&t, o.Land, o.Buildings, parks), &t, &surface{t: &t, lists: map[[2]int]chunkLists{}},
-		newLandSurface(w.prims, func(m int) bool { return w.doc.MaterialName(m) == "terrain" }), groundKeys, o.ChunkM, near); len(index) > 0 {
+		drawn, groundKeys, o.ChunkM, near); len(index) > 0 {
 		w.ground = gm
 		g := &w.Manifest.Ground
 		g.File, g.CellM, g.Layout, g.Classes, g.Chunks = GroundFile, groundCellM, GroundLayout, GroundClasses, index
@@ -536,8 +613,9 @@ func Build(c *course.Course, o Options) (*World, error) {
 	}
 	limitDrift(lanes, pathStep)
 	evenPace(px, py, pz, pw, lanes, c.Loop)
+	unfold(px, py, c.Loop)
 	despike(px, py, c.Loop)
-	settleOnRoad(px, py, lanes, c.Loop, newRoadIndex(w.prims, func(mat int) bool { return riddenMaterials[w.doc.MaterialName(mat)] }))
+	settleOnRoad(px, py, lanes, c.Loop, newRoadIndex(w.prims, func(mat int) bool { return carriageway[w.doc.MaterialName(mat)] }))
 	limitDrift(lanes, pathStep) // a lane settling narrowed eases there (it only narrows)
 	m.Path.XYZ = m.Path.XYZ[:0]
 	for i := range pd {
@@ -683,7 +761,11 @@ func mergeByMaterial(ps []gltf.Primitive) []gltf.Primitive {
 // addParking lays the car parks on the terrain.
 func (w *World) addParking(lots []parkingLot) error {
 	for k, l := range lots {
-		if err := w.add(fmt.Sprintf("car park %d", k), l.extras, l.mesh); err != nil {
+		ps := []gltf.Primitive{l.mesh}
+		if len(l.rim.Indices) > 0 {
+			ps = append(ps, l.rim)
+		}
+		if err := w.add(fmt.Sprintf("car park %d", k), l.extras, ps...); err != nil {
 			return err
 		}
 	}
@@ -692,19 +774,34 @@ func (w *World) addParking(lots []parkingLot) error {
 
 // parkingLot is a car park's mesh and its node's extras.
 type parkingLot struct {
-	mesh   gltf.Primitive
-	extras map[string]any
+	mesh    gltf.Primitive
+	cut     gltf.Primitive // its outline's own triangles, what cuts the land (the 1 m mesh fragmented the verges round it)
+	rim     gltf.Primitive // its bank face to the land beside it (rims.go)
+	extras  map[string]any
+	height  func(e, n float64) float64
+	outline [][2]float64
 }
 
-// parkingLots are the car parks, laid on the terrain.
-func parkingLots(t *terrain, sc *scenery.Scenery, m roadMaterials) []parkingLot {
+// parkingLots are the car parks, laid on the terrain and meeting the
+// roads beside them (roads: by chunk, as roadPrims made them).
+func parkingLots(t *terrain, sc *scenery.Scenery, m roadMaterials, roads map[[2]int][]gltf.Primitive) []parkingLot {
 	if sc == nil {
 		return nil
 	}
 	s := &surface{t: t, lists: map[[2]int]chunkLists{}}
+	paved := map[int]bool{m.lane: true, m.walk: true}
+	for _, mat := range m.surface {
+		paved[mat] = true
+	}
+	var prims []gltf.Primitive
+	for _, k := range chunkOrder(roads) {
+		prims = append(prims, roads[k]...)
+	}
+	rs := newSurfaceIndex(prims, func(mat int) bool { return paved[mat] }, 200)
+	height := func(e, n float64) float64 { return parkingHeight(s.at(e, n), e, n, rs) }
 	var out []parkingLot
 	for _, lot := range sc.Parking {
-		p := parkingMesh(s, lot.Outline, m.surface[lot.Surface])
+		p := drapedIn(height, lot.Outline, m.surface[lot.Surface], 0, parkCellM)
 		if len(p.Indices) == 0 {
 			continue
 		}
@@ -712,9 +809,48 @@ func parkingLots(t *terrain, sc *scenery.Scenery, m roadMaterials) []parkingLot 
 		if lot.Name != "" {
 			extras["name"] = lot.Name
 		}
-		out = append(out, parkingLot{p, extras})
+		out = append(out, parkingLot{mesh: p, cut: drapedIn(height, lot.Outline, p.Material, 0, 0), extras: extras, height: height, outline: lot.Outline})
 	}
 	return out
+}
+
+// A car park meets the road it lies against at the road's height
+// (owner, 2026-10-11, marks at Zandvoort, 13.0-15.0 km: car parks along
+// the boulevard lay on the 5 m terrain, 0.15-0.6 m off the road beside
+// them, and the step showed as dark slits and gashes along the road): within
+// parkBlendM of a road surface it takes the road's height, just under it,
+// easing to the ground further in.
+const (
+	parkBlendM = 4.0
+	// parkCellM: a car park's triangles near a road follow it this finely
+	// (4 m rose above the road's edge between their corners).
+	parkCellM = 1.0
+)
+
+// parkingHeight is a car park's surface at e, n over ground g: the nearest
+// road surface (rs) within parkBlendM sets it, eased out to g + the lift.
+func parkingHeight(g, e, n float64, rs *landSurface) float64 {
+	// A road it meets stays on top: a junction's long fan triangles crease,
+	// and a car park on the road's height rose through between creases.
+	const under = 0.05
+	if h, ok := rs.at(e, n); ok {
+		return h - under
+	}
+	for r := 0.25; r <= parkBlendM; r += 0.25 {
+		best, found := 0.0, false
+		for k := range 16 {
+			a := float64(k) * math.Pi / 8
+			if h, ok := rs.at(e+r*math.Cos(a), n+r*math.Sin(a)); ok && (!found || h > best) {
+				best, found = h, true
+			}
+		}
+		if found {
+			w := r / parkBlendM
+			w = w * w * (3 - 2*w)
+			return (best-under)*(1-w) + (g+parkingLiftM)*w
+		}
+	}
+	return g + parkingLiftM
 }
 
 // Write puts the world in dir as world.glb and world.json, each replaced

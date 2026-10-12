@@ -49,3 +49,19 @@ func TestBushSpecies(t *testing.T) {
 		t.Errorf("sizes (height, width): %v", size)
 	}
 }
+
+// Every bush reaches the ground: a mound whose flattened foot stood up
+// read as floating (rhododendron 0.43 m, laurel 0.18 m).
+func TestBushesReachTheGround(t *testing.T) {
+	for _, b := range allBushes {
+		var p gltf.Primitive
+		b.build(&p, srgbLinear(b.leaf), srgbLinear(b.wood))
+		low := math.Inf(1)
+		for i := 1; i < len(p.Positions); i += 3 {
+			low = math.Min(low, float64(p.Positions[i]))
+		}
+		if low > 0.02 {
+			t.Errorf("%s: its lowest point stands %.2f m off the ground", b.name, low)
+		}
+	}
+}

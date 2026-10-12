@@ -21,6 +21,13 @@ import (
 var riddenMaterials = map[string]bool{"road": true, "cycle lane": true, "sidewalk": true, "kerb": true,
 	"roundabout centre": true, "start line": true, "running track": true}
 
+// carriageway are the surfaces the riding line is settled onto: the
+// ridden ones without sidewalks and kerbs (owner, 2026-10-11: on a new
+// course the rider cut three junction corners over the sidewalk, 7-8 m
+// each, which settling counted as road).
+var carriageway = map[string]bool{"road": true, "cycle lane": true,
+	"roundabout centre": true, "start line": true, "running track": true}
+
 const (
 	checkReachM = 40.0
 	checkCellM  = 0.25

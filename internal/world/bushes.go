@@ -155,8 +155,9 @@ func birdCherryTemplate(p *gltf.Primitive, leaf, wood [3]float32) {
 }
 
 func laurelTemplate(p *gltf.Primitive, leaf, wood [3]float32) {
-	// 2 m: a broad dense mound of big glossy leaves, to the ground.
-	clump(p, 0, 0.9, 0, 1.5, 0.95, leaf, 0.6)
+	// 2 m: a broad dense mound of big glossy leaves, to the ground (its
+	// flattened foot had stood 0.18 m up).
+	clump(p, 0, 0.74, 0, 1.5, 0.95, leaf, 0.6)
 	for i := range 3 {
 		x, z := around(2*math.Pi*float64(i)/3, 0.7)
 		clump(p, x, 0.8+0.25*float64(i%2), z, 0.9, 0.7, shade(leaf, 0.92+0.08*float64(i)), 0.6)
@@ -221,12 +222,14 @@ func juniperTemplate(p *gltf.Primitive, leaf, wood [3]float32) {
 }
 
 func rhododendronTemplate(p *gltf.Primitive, leaf, wood [3]float32) {
-	// 2 m: a broad dark dome of separate leafy masses, wider than tall.
+	// 2 m: a broad dark dome of separate leafy masses, wider than tall,
+	// leafy to the ground (owner, 2026-10-11: the dome floated 0.43 m up in
+	// the gardens at 0.68 km of a new course).
 	for i := range 5 {
 		x, z := around(2*math.Pi*float64(i)/5, 0.85)
-		clump(p, x, 0.95+0.2*float64(i%2), z, 0.85, 0.65, shade(leaf, 0.9+0.06*float64(i%3)), 0.5)
+		clump(p, x, 0.6+0.2*float64(i%2), z, 0.85, 0.75, shade(leaf, 0.9+0.06*float64(i%3)), 0.5)
 	}
-	clump(p, 0, 1.4, 0, 0.9, 0.6, shade(leaf, 1.05), 0.5)
+	clump(p, 0, 1.25, 0, 0.9, 0.7, shade(leaf, 1.05), 0.5)
 }
 
 func boxTemplate(p *gltf.Primitive, leaf, wood [3]float32) {

@@ -148,7 +148,7 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 		if kind < speciesKinds {
 			size *= seaAt(e, n)
 		}
-		out = append(out, plant{kind: kind, x: float32(e), y: float32(s.at(e, n)), z: float32(-n),
+		out = append(out, plant{kind: kind, x: float32(e), y: float32(s.stand(e, n)), z: float32(-n),
 			s: float32(size), yaw: float32(2 * math.Pi * unit(h>>24))})
 	}
 	size := t.o.ChunkM

@@ -285,3 +285,44 @@ func despike(x, y []float64, loop bool) {
 		}
 	}
 }
+
+// unfold takes the folds out of the rider's path: a point the path
+// reaches by stepping back against its way on (keepOnRoad moves points
+// onto a road one by one, and two neighbours can land past each other),
+// is put halfway between its neighbours. The path doubled back on itself
+// for a moment and the rider, turned round, fell flat (owner, 2026-10-11:
+// Amsterdam Water Supply Dunes at 15.14 km, 0.45 m back; the Posbank Loop
+// had one of 3.3 m at 16.5 km). A few rounds: a fold moved may show
+// another.
+func unfold(x, y []float64, loop bool) {
+	n := len(x)
+	if n < 3 {
+		return
+	}
+	idx := func(i int) (int, bool) {
+		if loop {
+			return (i%n + n) % n, true
+		}
+		return i, i >= 0 && i < n
+	}
+	for range 4 {
+		moved := false
+		for i := range n {
+			a, okA := idx(i - 1)
+			b, okB := idx(i + 1)
+			if !okA || !okB {
+				continue
+			}
+			// Back against the way from i-1 to i+1, on either step.
+			de, dn := x[b]-x[a], y[b]-y[a]
+			if (x[i]-x[a])*de+(y[i]-y[a])*dn >= 0 && (x[b]-x[i])*de+(y[b]-y[i])*dn >= 0 {
+				continue
+			}
+			x[i], y[i] = (x[a]+x[b])/2, (y[a]+y[b])/2
+			moved = true
+		}
+		if !moved {
+			return
+		}
+	}
+}

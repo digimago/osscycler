@@ -78,35 +78,6 @@ func (ix *roadIndex) on(e, n float64) bool {
 	return false
 }
 
-// nearest is the nearest point on a road surface within settleM of e, n,
-// moved settleInsetM into that triangle (towards its middle, as far as it
-// reaches), and whether there is one.
-func (ix *roadIndex) nearest(e, n float64) (float64, float64, bool) {
-	best, be, bn := math.Inf(1), 0.0, 0.0
-	var bt [6]float64
-	k := ix.key(e, n)
-	r := int(math.Ceil(settleM / settleCellM))
-	for ce := k[0] - r; ce <= k[0]+r; ce++ {
-		for cn := k[1] - r; cn <= k[1]+r; cn++ {
-			for _, t := range ix.cells[[2]int{ce, cn}] {
-				qe, qn := closestOnTri2(t, e, n)
-				if d := math.Hypot(qe-e, qn-n); d < best {
-					best, be, bn, bt = d, qe, qn, t
-				}
-			}
-		}
-	}
-	if best > settleM {
-		return 0, 0, false
-	}
-	ce, cn := (bt[0]+bt[2]+bt[4])/3, (bt[1]+bt[3]+bt[5])/3
-	if l := math.Hypot(ce-be, cn-bn); l > 1e-9 {
-		f := math.Min(settleInsetM, l*0.9) / l
-		be, bn = be+(ce-be)*f, bn+(cn-bn)*f
-	}
-	return be, bn, true
-}
-
 // inTri2 tells whether e, n lies in triangle t, edges included.
 func inTri2(t [6]float64, e, n float64) bool {
 	d := func(ax, ay, bx, by float64) float64 { return (bx-ax)*(n-ay) - (by-ay)*(e-ax) }
@@ -116,25 +87,25 @@ func inTri2(t [6]float64, e, n float64) bool {
 	return !(neg && pos)
 }
 
-// closestOnTri2 is the point of triangle t nearest e, n.
-func closestOnTri2(t [6]float64, e, n float64) (float64, float64) {
-	if inTri2(t, e, n) {
-		return e, n
-	}
-	best, be, bn := math.Inf(1), 0.0, 0.0
-	for k := range 3 {
-		ax, ay, bx, by := t[2*k], t[2*k+1], t[(2*k+2)%6], t[(2*k+3)%6]
-		dx, dy := bx-ax, by-ay
-		f := 0.0
-		if l2 := dx*dx + dy*dy; l2 > 0 {
-			f = math.Max(0, math.Min(1, ((e-ax)*dx+(n-ay)*dy)/l2))
+// sideways is the shortest move across the path at e, n (ra, rb: its
+// right) that lands settleInsetM inside a road, either way, within
+// settleM. Looking only towards the nearest road point failed at a
+// junction's inside corner (owner, 2026-10-11: three corners of a new
+// course ridden over the sidewalk): the nearest carriageway lay ahead,
+// along the road, so the sideways move came short onto the sidewalk again.
+func (ix *roadIndex) sideways(e, n, ra, rb float64) (float64, bool) {
+	const step = 0.25
+	for d := step; d <= settleM; d += step {
+		for _, s := range [2]float64{d, -d} {
+			if ix.on(e+ra*s, n+rb*s) {
+				s += settleInsetM * sign(s)
+				if ix.on(e+ra*s, n+rb*s) {
+					return s, true
+				}
+			}
 		}
-		qx, qy := ax+f*dx, ay+f*dy
-		if d := math.Hypot(e-qx, n-qy); d < best {
-			best, be, bn = d, qx, qy
-		}
 	}
-	return be, bn
+	return 0, false
 }
 
 // settleOnRoad keeps the riding line (the path x, y and lane, metres to
@@ -216,12 +187,7 @@ func settleOnRoad(x, y, lane []float64, loop bool, ix *roadIndex) {
 				default:
 					// Sideways only: a move along the path would bunch its
 					// points at the end of a road before a gap it can't mend.
-					if qe, qn, ok := ix.nearest(pe, pn); ok {
-						s := (qe-pe)*ra + (qn-pn)*rb
-						s += settleInsetM * sign(s)
-						if math.Abs(s) > settleM || !ix.on(pe+ra*s, pn+rb*s) {
-							continue
-						}
+					if s, ok := ix.sideways(pe, pn, ra, rb); ok {
 						for _, j := range js {
 							want[j] = 0
 							if !moved[j] || math.Abs(s) > math.Hypot(move[j][0], move[j][1]) {

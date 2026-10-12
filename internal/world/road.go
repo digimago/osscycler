@@ -124,16 +124,16 @@ func roadMesh(seg, all []sample, from int, line *smoothLine, loop bool, m roadMa
 			{on: true, a: a, b: b, material: m.surface[s.surface]},
 			{on: s.lane[0], a: -s.hw, b: -s.hw + laneM, material: m.lane},
 			{on: s.lane[1], a: s.hw - laneM, b: s.hw, material: m.lane},
-			{on: s.walk[0], a: -s.hw - walkM, b: -s.hw, ya: kerbM, yb: kerbM, material: m.walk},
-			{on: s.walk[1], a: s.hw, b: s.hw + walkM, ya: kerbM, yb: kerbM, material: m.walk},
+			{on: s.walk[0], a: -s.hw - s.walkWidth(0), b: -s.hw, ya: kerbM, yb: kerbM, material: m.walk},
+			{on: s.walk[1], a: s.hw, b: s.hw + s.walkWidth(1), ya: kerbM, yb: kerbM, material: m.walk},
 			{on: s.walk[0], a: -s.hw, b: -s.hw, ya: 0, yb: kerbM, material: m.kerb, wall: true},
 			{on: s.walk[1], a: s.hw, b: s.hw, ya: 0, yb: kerbM, material: m.kerb, wall: true, wallLeft: true},
-			{on: s.walk[0], a: -s.hw - walkM, b: -s.hw - walkM, ya: -walkFootM, yb: kerbM, material: m.kerb, wall: true, wallLeft: true},
-			{on: s.walk[1], a: s.hw + walkM, b: s.hw + walkM, ya: -walkFootM, yb: kerbM, material: m.kerb, wall: true},
+			{on: s.walk[0], a: -s.hw - s.walkWidth(0), b: -s.hw - s.walkWidth(0), ya: -walkFootM, yb: kerbM, material: m.kerb, wall: true, wallLeft: true},
+			{on: s.walk[1], a: s.hw + s.walkWidth(1), b: s.hw + s.walkWidth(1), ya: -walkFootM, yb: kerbM, material: m.kerb, wall: true},
 			// Without a sidewalk, the edge goes on into the ground: the road
 			// sits in the landscape, not on it.
-			{on: !s.walk[0], a: -s.hw - s.wide[0], b: -s.hw - s.wide[0], ya: -skirtM, yb: 0, material: m.surface[s.surface], wall: true, wallLeft: true},
-			{on: !s.walk[1], a: s.hw + s.wide[1], b: s.hw + s.wide[1], ya: -skirtM, yb: 0, material: m.surface[s.surface], wall: true},
+			{on: !s.walk[0] && !s.butt[0], a: -s.hw - s.wide[0], b: -s.hw - s.wide[0], ya: -skirtM, yb: 0, material: m.surface[s.surface], wall: true, wallLeft: true},
+			{on: !s.walk[1] && !s.butt[1], a: s.hw + s.wide[1], b: s.hw + s.wide[1], ya: -skirtM, yb: 0, material: m.surface[s.surface], wall: true},
 		}
 	}
 	type frame struct {
@@ -204,7 +204,7 @@ func roadMesh(seg, all []sample, from int, line *smoothLine, loop bool, m roadMa
 			for side, sign := range []float64{-1, 1} {
 				base, y0 := s.hw+s.wide[side], ele
 				if s.walk[side] {
-					base, y0 = s.hw+walkM, ele+kerbM
+					base, y0 = s.hw+s.walkWidth(side), ele+kerbM
 				}
 				limit := math.Inf(1)
 				if k != 0 && (k > 0) == (side == 0) {
@@ -262,6 +262,28 @@ func roadMesh(seg, all []sample, from int, line *smoothLine, loop bool, m roadMa
 		}
 		for i := range f0.parts {
 			p0, p1 := f0.parts[i], f1.parts[i]
+			// A sidewalk that starts or stops between two cross-sections
+			// ramps down to the road's edge over them, as a dropped kerb:
+			// ended square, the verge from its outer edge back to the
+			// road's left a triangle of nothing (owner, 2026-10-11: sidewalks
+			// now stop in front of buildings mid-street).
+			// A cycle lane narrows to nothing at the road's edge the same
+			// way: the carriageway beside it widens over the step, and the
+			// wedge between them showed the land.
+			if p0.on != p1.on && f0.parts[0].on && f1.parts[0].on {
+				off, of := &p0, f0
+				if p0.on {
+					off, of = &p1, f1
+				}
+				switch {
+				case i >= 3 && i <= 8: // sidewalk, kerb, outer face
+					*off = rampEnd(*off, of.parts[9+(i-3)%2].a)
+				case i == 1: // left cycle lane
+					*off = rampEnd(*off, of.parts[1].a)
+				case i == 2:
+					*off = rampEnd(*off, of.parts[2].b)
+				}
+			}
 			if !p0.on || !p1.on {
 				continue
 			}
@@ -385,4 +407,20 @@ func markPassesAgain(ls []*roadLine) {
 			grid[k] = append(grid[k], ref{li, i})
 		}
 	}
+}
+
+// walkWidth is the sidewalk's width on side (0 left).
+func (s sample) walkWidth(side int) float64 {
+	if s.walkW[side] > 0 {
+		return s.walkW[side]
+	}
+	return walkM
+}
+
+// rampEnd is part p (a sidewalk's surface, kerb or outer face, or a cycle
+// lane) gone to nothing at the road's edge, edge, where it stops: for a
+// sidewalk a dropped kerb.
+func rampEnd(p part, edge float64) part {
+	p.on, p.a, p.b, p.ya, p.yb = true, edge, edge, 0, 0
+	return p
 }

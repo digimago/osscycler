@@ -699,10 +699,64 @@ func (n *network) openRuns(d, x, y []float64, rbs []roundabout) ([]float64, bool
 			grid[k] = append(grid[k], sampleRef{l, i})
 		}
 	}
+	// Where drawn roads meet, a junction is drawn later: a path across its
+	// corner is on it, not on open ground (owner, 2026-10-11: a route
+	// cutting a junction's corner got a road of its own laid over the
+	// corner, under the junction's sidewalk and onto the grass, and the
+	// rider rode the sidewalk). A point counts within the widest road
+	// there plus apronAlongM of a node two or more lines share.
+	type joint struct{ e, n, r float64 }
+	var joints []joint
+	{
+		seen := map[int64][]sample{}
+		var ids []int64
+		for _, l := range n.lines {
+			for id, ds := range l.nodes {
+				for _, dd := range ds {
+					if dd < l.samples[0].d-0.5 || dd > l.samples[len(l.samples)-1].d+0.5 {
+						continue
+					}
+					if _, ok := seen[id]; !ok {
+						ids = append(ids, id)
+					}
+					seen[id] = append(seen[id], sampleAt(l, dd))
+				}
+			}
+		}
+		sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+		for _, id := range ids {
+			ss := seen[id]
+			if len(ss) < 2 {
+				continue
+			}
+			widest := 0.0
+			for _, sm := range ss {
+				widest = math.Max(widest, sm.hw)
+			}
+			joints = append(joints, joint{ss[0].e, ss[0].n, widest + apronAlongM})
+		}
+	}
+	jgrid := map[[2]int][]joint{}
+	for _, j := range joints {
+		k := key(j.e, j.n)
+		jgrid[k] = append(jgrid[k], j)
+	}
 	on := func(e, no float64) bool {
 		for _, rb := range rbs {
 			if math.Hypot(e-rb.c[0], no-rb.c[1]) < rb.outer()+gapRbM {
 				return true
+			}
+		}
+		{
+			k := key(e, no)
+			for gx := k[0] - 2; gx <= k[0]+2; gx++ {
+				for gy := k[1] - 2; gy <= k[1]+2; gy++ {
+					for _, j := range jgrid[[2]int{gx, gy}] {
+						if math.Hypot(e-j.e, no-j.n) < j.r {
+							return true
+						}
+					}
+				}
 			}
 		}
 		k := key(e, no)
@@ -2181,6 +2235,9 @@ func joinAlongside(ls []*roadLine, cell float64) {
 			}
 			if bestLine < 0 || bestGap >= mergeGapM {
 				continue
+			}
+			if !s.walk[bestSide] {
+				s.butt[bestSide] = true
 			}
 			if bestGap > 0 && !s.walk[bestSide] {
 				s.wide[bestSide] = bestGap + 0.1 // just under the other's edge

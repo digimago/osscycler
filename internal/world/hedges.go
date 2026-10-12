@@ -174,7 +174,7 @@ func hedges(t *terrain, s *surface, sp *spots, wp *wayPlaces) []plant {
 		// A centimetre or two between neighbours, so overlapping faces
 		// never lie in one plane.
 		scale *= 0.985 + 0.03*unit(h)
-		out = append(out, plant{kind: kHedge + kind, x: float32(e), y: float32(s.at(e, n)), z: float32(-n),
+		out = append(out, plant{kind: kHedge + kind, x: float32(e), y: float32(s.stand(e, n)), z: float32(-n),
 			s: float32(scale), yaw: float32(math.Atan2(dn, de))})
 	}
 	free := func(e, n, margin float64) bool {
@@ -261,7 +261,7 @@ func hedges(t *terrain, s *surface, sp *spots, wp *wayPlaces) []plant {
 			// verge's width off the road.
 			off := a.hw + a.wide[side] + 1.2
 			if a.walk[side] {
-				off = a.hw + a.wide[side] + walkM + 0.6
+				off = a.hw + a.wide[side] + a.walkWidth(side) + 0.6
 			}
 			for k := math.Ceil(math.Min(sa, sb) / hedgeStepM); k*hedgeStepM < math.Max(sa, sb); k++ {
 				along := k * hedgeStepM

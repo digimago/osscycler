@@ -730,7 +730,7 @@ public partial class Main : Node3D
         var w = _world;
         var st = _core?.Latest().State;
         float height = st?.Profile?.HeightCm is > 0 and var cm ? (float)cm / 100 : Avatar.Pose.RefHeight;
-        if (_me == null || Math.Abs(height - _riderHeight) > 0.005f)
+        if (_me == null || _ghostRider == null || Math.Abs(height - _riderHeight) > 0.005f)
         {
             foreach (var c in new[] { _me, _ghostRider })
                 c?.Node.QueueFree();

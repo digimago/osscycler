@@ -191,7 +191,9 @@ public sealed class WorkoutForm
                 w.Description = s;
                 return;
         }
-        b = b!;
+        // The rest are a block's fields: callers pass the block with them.
+        if (b is null)
+            throw new InvalidOperationException($"{f} is a block's field, but no block was given");
         switch (f)
         {
             case Field.Duration:

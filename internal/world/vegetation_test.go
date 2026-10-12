@@ -476,3 +476,41 @@ func TestGroundMapNamesFields(t *testing.T) {
 		}
 	}
 }
+
+// Slivers of field are grass: a strip narrower than fieldMinM goes, a
+// field the disc fits in keeps its cells but its corners (owner,
+// 2026-10-12: slivers beside a farmyard and an orchard on the figure 8).
+func TestFieldSliversAreGrass(t *testing.T) {
+	const w = 60
+	v := make([]byte, w*w)
+	maize := byte(groundFieldBase + groundRowDirs + 4)
+	wheat := byte(groundFieldBase + 2*groundRowDirs + 4)
+	for j := 5; j < 55; j++ {
+		for i := 5; i < 30; i++ {
+			v[j*w+i] = maize // a field 25 by 50 m
+		}
+		for i := 40; i < 44; i++ {
+			v[j*w+i] = wheat // a strip 4 m wide
+		}
+	}
+	r := int(fieldMinM / 2)
+	out := openFields(v, w, r)
+	kept, strip := 0, 0
+	for k, x := range out {
+		if x == maize {
+			kept++
+		}
+		if x == wheat {
+			strip++
+		}
+		if v[k] < byte(groundFieldBase) && x != v[k] {
+			t.Fatalf("cell %d not a field, changed", k)
+		}
+	}
+	if strip != 0 {
+		t.Errorf("%d cells of the 4 m strip left", strip)
+	}
+	if all := 25 * 50; kept < all-4*r*r || kept > all {
+		t.Errorf("%d of the field's %d cells kept: want all but its corners", kept, all)
+	}
+}

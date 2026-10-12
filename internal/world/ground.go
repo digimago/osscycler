@@ -72,7 +72,70 @@ const (
 	// owner, 2026-10-12: crops never grow that close to the rider; potatoes
 	// had grown right beside the road).
 	fieldHeadlandM = 8.0
+	// fieldMinM: a field narrower than this is grass (owner, 2026-10-12: the
+	// figure 8's road cuts its parcels, and the headland left slivers of
+	// field a few metres wide beside a farmyard and an orchard, 0.23, 0.28
+	// and 0.69 km): the ground map's fields are opened (eroded, then
+	// dilated) by a disc this wide, which keeps every field it fits in as
+	// it was, its corners rounded, and takes away strips it doesn't fit.
+	fieldMinM = 10.0
 )
+
+// openFields opens the sown fields in v, a w-wide grid of ground map
+// values: a field cell stays where a disc of radius r cells fits wholly
+// in that field round some cell within r of it; any other field cell
+// becomes grass. Cells nearer than 2r to the grid's edge can't be told
+// (the caller gives a margin).
+func openFields(v []byte, w, r int) []byte {
+	var disc [][2]int
+	for dj := -r; dj <= r; dj++ {
+		for di := -r; di <= r; di++ {
+			if di*di+dj*dj <= r*r {
+				disc = append(disc, [2]int{di, dj})
+			}
+		}
+	}
+	h := len(v) / w
+	field := func(x byte) bool { return int(x) >= groundFieldBase }
+	same := func(i, j int, x byte) bool {
+		for _, d := range disc {
+			ii, jj := i+d[0], j+d[1]
+			if ii < 0 || jj < 0 || ii >= w || jj >= h || v[jj*w+ii] != x {
+				return false
+			}
+		}
+		return true
+	}
+	core := make([]bool, len(v)) // the disc fits round this cell
+	for j := range h {
+		for i := range w {
+			if x := v[j*w+i]; field(x) {
+				core[j*w+i] = same(i, j, x)
+			}
+		}
+	}
+	out := append([]byte(nil), v...)
+	for j := range h {
+		for i := range w {
+			x := v[j*w+i]
+			if !field(x) {
+				continue
+			}
+			kept := false
+			for _, d := range disc {
+				ii, jj := i+d[0], j+d[1]
+				if ii >= 0 && jj >= 0 && ii < w && jj < h && core[jj*w+ii] && v[jj*w+ii] == x {
+					kept = true
+					break
+				}
+			}
+			if !kept {
+				out[j*w+i] = byte(scenery.LandNone) + 1 // grass
+			}
+		}
+	}
+	return out
+}
 
 // groundValue is the ground map's land value at e, n; nearRoad (nil: no
 // roads) tells whether a road's edge lies within fieldHeadlandM, where a
@@ -145,13 +208,30 @@ func groundMap(sp *spots, t *terrain, s *surface, drawn *landSurface, keys [][2]
 				cells := make([]byte, 2*n*n) // land, then clearance
 				heights := make([]float64, n*n)
 				any := false
+				// The land values with a margin round the chunk, so the
+				// fields are opened (openFields) the same either side of a
+				// chunk's edge.
+				r := int(math.Round(fieldMinM / 2 / groundCellM))
+				mg := 2 * r
+				w := n + 2*mg
+				vals := make([]byte, w*w)
+				lands := make([]scenery.Land, w*w)
+				for j := range w {
+					for i := range w {
+						e, no := e0+(float64(i-mg)+0.5)*groundCellM, n0+(float64(j-mg)+0.5)*groundCellM
+						if near(e, no) {
+							vals[j*w+i], lands[j*w+i] = groundValue(sp, e, no, headland)
+						}
+					}
+				}
+				vals = openFields(vals, w, r)
 				for j := range n {
 					for i := range n {
 						e, no := e0+(float64(i)+0.5)*groundCellM, n0+(float64(j)+0.5)*groundCellM
 						if !near(e, no) {
 							continue
 						}
-						v, land := groundValue(sp, e, no, headland)
+						v, land := vals[(j+mg)*w+i+mg], lands[(j+mg)*w+i+mg]
 						cells[j*n+i] = v
 						// The land as drawn; the ground model only where
 						// nothing is drawn (a hole), as it costs a road search.

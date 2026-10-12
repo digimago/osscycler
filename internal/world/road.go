@@ -254,7 +254,17 @@ func roadMesh(seg, all []sample, from int, line *smoothLine, loop bool, m roadMa
 		a, b  uint32
 		mat   int
 	}
-	last := map[int]row{} // by part
+	prim := func(mat int) *gltf.Primitive {
+		pr := prims[mat]
+		if pr == nil {
+			pr = &gltf.Primitive{Material: mat}
+			prims[mat] = pr
+			order = append(order, mat)
+		}
+		return pr
+	}
+	last := map[int]row{}                 // by part
+	drawn := make([][2]bool, len(frames)) // a sidewalk quad from frame k to k+1, per side
 	for k := 0; k+1 < len(frames); k++ {
 		f0, f1 := frames[k], frames[k+1]
 		if f0.onPatch || f1.onPatch || f0.underPatch && f1.underPatch {
@@ -314,6 +324,43 @@ func roadMesh(seg, all []sample, from int, line *smoothLine, loop bool, m roadMa
 			last[i] = row{k + 1, a1, b1, p0.material}
 			tri(pr, a0, b0, a1, normal(f0, p0))
 			tri(pr, b0, b1, a1, normal(f0, p0))
+			if i == 3 || i == 4 {
+				drawn[k][i-3] = true
+			}
+		}
+	}
+	// A sidewalk's short ends. Where its strip starts or stops without a
+	// dropped kerb (at a junction's edge, where the junction may carry no
+	// sidewalk on; where the drawing stops), its slab stood open: a kerb
+	// face and an outer face with nothing between, and the rider looked
+	// into the hollow (owner, 2026-10-12: sidewalks on the Velp loop
+	// beginning or ending without a solid end). A face across the end,
+	// from the road's edge over the slab to the outer face's foot. Where
+	// the junction's sidewalk goes on from the same end, it lies inside
+	// both and shows nowhere.
+	for k, f := range frames {
+		for side := range 2 {
+			if !f.parts[3+side].on {
+				continue
+			}
+			before := k > 0 && drawn[k-1][side]
+			after := drawn[k][side]
+			if before == after {
+				continue // within a run, or nothing drawn either way
+			}
+			dir := 1.0 // a run's end faces forward
+			if after {
+				dir = -1 // its start faces back
+			}
+			n := [3]float64{dir * f.rz, 0, -dir * f.rx}
+			inner, outer := f.parts[5+side].a, f.parts[7+side].a
+			pr := prim(m.kerb)
+			v0 := vert(pr, f, inner, 0, 0, n)
+			v1 := vert(pr, f, inner, kerbM, 1, n)
+			v2 := vert(pr, f, outer, kerbM, 1, n)
+			v3 := vert(pr, f, outer, -walkFootM, 0, n)
+			tri(pr, v0, v1, v2, n)
+			tri(pr, v0, v2, v3, n)
 		}
 	}
 	out := make([]gltf.Primitive, 0, len(order)+1)

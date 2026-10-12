@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/digimago/osscycler/internal/course"
+	"github.com/digimago/osscycler/internal/gltf"
 	"github.com/digimago/osscycler/internal/scenery"
 )
 
@@ -193,5 +194,42 @@ func TestLoopClosesOnItself(t *testing.T) {
 		if s.again {
 			t.Fatalf("the loop marked as ridden again at %.0f m", s.d)
 		}
+	}
+}
+
+// A sidewalk's strip is closed at its short ends: where it starts or
+// stops without a dropped kerb (a junction's edge, the end of what is
+// drawn), a kerb face stands across it from the road's edge to the outer
+// face's foot, so the hollow slab never shows (owner, 2026-10-12: on the
+// Velp loop sidewalks began or ended without a solid end, to look into).
+func TestSidewalkEndsAreClosed(t *testing.T) {
+	c := northCourse(t)
+	sc := &scenery.Scenery{Roads: []scenery.RoadStretch{
+		{FromM: 0, ToM: c.Distance, Class: "residential", WidthM: 6, Sidewalk: [2]bool{true, true}}}}
+	tr := testTerrain(c, Options{Scenery: sc})
+	m := addRoadMaterials(gltf.New("test"))
+	// The first 400 m: the strip starts at the first cross-section and
+	// stops at the last, each end a face across both sidewalks.
+	ps := roadMesh(tr.fine[:200], tr.fine, 0, courseLine(c, nil), false, m, nil)
+	across := 0
+	for _, p := range ps {
+		if p.Material != m.kerb {
+			continue
+		}
+		for i := 0; i+2 < len(p.Indices); i += 3 {
+			var v [3][3]float64
+			for k := range 3 {
+				j := p.Indices[i+k]
+				v[k] = [3]float64{float64(p.Positions[3*j]), float64(p.Positions[3*j+1]), float64(p.Positions[3*j+2])}
+			}
+			u, w := [3]float64{v[1][0] - v[0][0], v[1][1] - v[0][1], v[1][2] - v[0][2]}, [3]float64{v[2][0] - v[0][0], v[2][1] - v[0][1], v[2][2] - v[0][2]}
+			n := [3]float64{u[1]*w[2] - u[2]*w[1], u[2]*w[0] - u[0]*w[2], u[0]*w[1] - u[1]*w[0]}
+			if l := math.Sqrt(n[0]*n[0] + n[1]*n[1] + n[2]*n[2]); l > 0 && math.Abs(n[2])/l > 0.9 {
+				across++ // facing along the road (north: glTF -z)
+			}
+		}
+	}
+	if across != 8 {
+		t.Errorf("%d kerb triangles face along the road, want 8: two per end of each sidewalk", across)
 	}
 }

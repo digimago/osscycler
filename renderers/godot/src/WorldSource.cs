@@ -24,28 +24,30 @@ public sealed class WorldSource
     readonly object _mu = new();
     string _id = "";
     string? _ready;      // the world's directory, once it is there
+    string _stamp = "";  // its manifest's stamp ("" unknown)
     string _status = ""; // what is going on meanwhile
     CancellationTokenSource? _cancel;
 
     public WorldSource(Core core, string dir) => (_core, _dir) = (core, dir);
 
     // For is course id's world: its directory once ready (null until
-    // then; the preview's while the world is built), and what is going on
-    // meanwhile ("" once the world itself is there). Asking for another
-    // course drops the last one.
-    public (string? Dir, string Status) For(string id)
+    // then; the preview's while the world is built) and its stamp (to tell
+    // a rebuild in the same directory from the world shown), and what is
+    // going on meanwhile ("" once the world itself is there). Asking for
+    // another course drops the last one.
+    public (string? Dir, string Stamp, string Status) For(string id)
     {
         lock (_mu)
         {
             if (id != _id)
             {
                 _cancel?.Cancel();
-                (_id, _ready, _status) = (id, null, "looking for the 3D world");
+                (_id, _ready, _stamp, _status) = (id, null, "", "looking for the 3D world");
                 _cancel = new CancellationTokenSource();
                 var token = _cancel.Token;
                 _ = Task.Run(() => Get(id, token));
             }
-            return (_ready, _status);
+            return (_ready, _stamp, _status);
         }
     }
 
@@ -58,9 +60,24 @@ public sealed class WorldSource
 
     void Set(string id, string? ready, string status)
     {
+        var stamp = ready != null ? StampOf(ready) : "";
         lock (_mu)
             if (id == _id)
-                (_ready, _status) = (ready, status);
+                (_ready, _stamp, _status) = (ready, stamp, status);
+    }
+
+    // StampOf is the stamp in dir's manifest ("" if it can't be read).
+    static string StampOf(string dir)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllBytes(Path.Combine(dir, "world.json")));
+            return doc.RootElement.TryGetProperty("stamp", out var s) ? s.GetString() ?? "" : "";
+        }
+        catch (Exception)
+        {
+            return "";
+        }
     }
 
     static bool SafeName(string s) =>

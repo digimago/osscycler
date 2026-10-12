@@ -107,10 +107,16 @@ no-liability sentence. Check any imagery source before using it.
 3. Khronos glTF validator on the `.glb`: 0 errors, 0 warnings. npm
    `gltf-validator` in a `node:22-slim` container (no node on the dev
    box).
-4. Look at it. Screenshot from the rider's place:
+4. Look at it. With the `osscycler-view` MCP tools (`.mcp.json`;
+   `cmd/osscycler-mcp`): `view_open` on the world (a course id from
+   `_worlds/` or a directory) once, then `view_shot` with `m` and
+   `look_deg` for each look (a fraction of a second, the image returned
+   directly), `view_reload` after rebuilding, `view_stats` for the frame,
+   `view_close` at the end. Without them, a screenshot from the rider's
+   place by starting Godot each time (about 10 s):
    `godot --path renderers/godot -- --world "$PWD/_worlds/posbank" --from <m> --shot <scratchpad>/x.png --frames 120`
    (`--look DEG` turns the view sideways, `--seed` fixes the light); then
-   read the PNG. It opens a Godot window briefly on the desktop (headless
+   read the PNG. Either opens a Godot window on the desktop (headless
    has no renderer). Take shots at the km marks the owner named, before
    and after. From above: `_scratch/glbshade` (a hillshade of a `.glb`).
 5. 60 fps (vsync) on the Posbank Loop, through the forest at 5.3-6 km and

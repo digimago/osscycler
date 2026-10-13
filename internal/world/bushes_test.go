@@ -65,3 +65,34 @@ func TestBushesReachTheGround(t *testing.T) {
 		}
 	}
 }
+
+// A bush's wood reaches up into its leaves: a crown that starts above the
+// stem's top hangs in the air (owner, 2026-10-13: the hawthorn's round
+// crown stood 10 cm clear of its stem, "detached from the trunk", Dunes
+// course 9.35 km). Wood is told from leaves by its colour (red over green).
+func TestBushCrownsSitOnTheirStems(t *testing.T) {
+	for _, b := range allBushes {
+		if b.wood == b.leaf {
+			continue
+		}
+		var p gltf.Primitive
+		b.build(&p, srgbLinear(b.leaf), srgbLinear(b.wood))
+		comps := len(p.Colors) / (len(p.Positions) / 3)
+		woodTop, leafLow := math.Inf(-1), math.Inf(1)
+		for v := 0; v < len(p.Positions)/3; v++ {
+			r, g := p.Colors[v*comps], p.Colors[v*comps+1]
+			y := float64(p.Positions[v*3+1])
+			if r >= g {
+				woodTop = math.Max(woodTop, y)
+			} else {
+				leafLow = math.Min(leafLow, y)
+			}
+		}
+		if math.IsInf(woodTop, -1) {
+			continue
+		}
+		if woodTop < leafLow+0.1 {
+			t.Errorf("%s: its wood ends at %.2f m, its leaves start at %.2f m", b.name, woodTop, leafLow)
+		}
+	}
+}

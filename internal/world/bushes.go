@@ -192,11 +192,15 @@ func hazelTemplate(p *gltf.Primitive, leaf, wood [3]float32) {
 }
 
 func hawthornTemplate(p *gltf.Primitive, leaf, wood [3]float32) {
-	// 3 m: a short gnarled stem and a dense round crown low over it.
-	limb(p, 0, 0, 0, 0.15, 1.0, 0.05, 0.12, 0.08, 5, wood)
+	// 3 m: a short gnarled stem and a dense round crown low over it. The
+	// stem runs on up into the crown and forks into it, so the crown sits
+	// on its wood (owner, 2026-10-13: ending under the crown, it left the
+	// crown hanging clear of the stem).
+	limb(p, 0, 0, 0, 0.15, 1.7, 0.05, 0.14, 0.08, 5, wood)
 	clump(p, 0.15, 1.9, 0.05, 1.3, 1.0, leaf, 0.5)
 	for i := range 3 {
 		x, z := around(2*math.Pi*float64(i)/3+0.5, 0.7)
+		limb(p, 0.1, 0.9, 0.03, x*0.8+0.15, 1.45+0.3*float64(i%2), z*0.8, 0.07, 0.04, 4, wood)
 		clump(p, x+0.15, 1.5+0.3*float64(i%2), z, 0.75, 0.6, shade(leaf, 0.9+0.07*float64(i)), 0.4)
 	}
 }

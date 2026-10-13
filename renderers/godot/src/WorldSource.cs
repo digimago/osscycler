@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
@@ -87,18 +88,7 @@ public sealed class WorldSource
     {
         try
         {
-            // The course's GPX, beside the worlds (the core's courses
-            // directory may be on another machine).
-            var courses = Path.Combine(_dir, ".courses");
-            Directory.CreateDirectory(courses);
-            if (await _core.CourseFile(id) is { } f)
-            {
-                if (!SafeName(f.Name) || !f.Name.EndsWith(".gpx", StringComparison.Ordinal))
-                    throw new InvalidDataException($"the core sent a course file named \"{f.Name}\"");
-                var path = Path.Combine(courses, f.Name);
-                if (!File.Exists(path) || !File.ReadAllBytes(path).AsSpan().SequenceEqual(f.Data))
-                    await File.WriteAllBytesAsync(path, f.Data, token);
-            }
+            var courses = await FetchCourse(_core, _dir, id, token);
             await Build(id, courses, token);
         }
         catch (OperationCanceledException)
@@ -110,30 +100,91 @@ public sealed class WorldSource
         }
     }
 
+    // FetchCourse puts course id's GPX from the core beside the worlds (the
+    // core's courses directory may be on another machine; the tracks and
+    // included routes need none) and says where: the courses directory to
+    // build from.
+    internal static async Task<string> FetchCourse(Core core, string dir, string id, CancellationToken token)
+    {
+        var courses = Path.Combine(dir, ".courses");
+        Directory.CreateDirectory(courses);
+        if (await core.CourseFile(id) is { } f)
+        {
+            if (!SafeName(f.Name) || !f.Name.EndsWith(".gpx", StringComparison.Ordinal))
+                throw new InvalidDataException($"the core sent a course file named \"{f.Name}\"");
+            var path = Path.Combine(courses, f.Name);
+            if (!File.Exists(path) || !File.ReadAllBytes(path).AsSpan().SequenceEqual(f.Data))
+                await File.WriteAllBytesAsync(path, f.Data, token);
+        }
+        return courses;
+    }
+
     async Task Build(string id, string courses, CancellationToken token)
     {
-        var builder = Builder();
-        if (builder == null)
+        string? world = null, preview = null;
+        var (code, last) = await RunBuilder(Args(courses, _dir, id, "-preview"), ProcessPriorityClass.BelowNormal, line =>
+        {
+            if (line.StartsWith("phase: ", StringComparison.Ordinal))
+                Set(id, preview, preview != null ? $"preview (the 3D world: {line[7..]})" : $"building the 3D world: {line[7..]}");
+            else if (Head.BuildStatus.Parse(line) is { } how)
+                Set(id, preview, preview != null ? $"preview (the 3D world: {how})" : $"building the 3D world: {how}");
+            else if (line.StartsWith("preview: ", StringComparison.Ordinal))
+            {
+                preview = line[9..];
+                Set(id, preview, "preview (the 3D world is being built)");
+            }
+            else if (line.StartsWith("world: ", StringComparison.Ordinal))
+                world = line[7..];
+        }, token);
+        if (code == null)
         {
             Set(id, null, "no osscycler-world to build the 3D world with");
             return;
         }
-        // The map data and ground model caches of this machine's osscycler.
+        if (code != 0 || world == null)
+        {
+            Set(id, preview, (preview != null ? "preview: " : "") + "the 3D world couldn't be built: " + (last != "" ? last : $"osscycler-world exited with {code}"));
+            return;
+        }
+        Set(id, world, "");
+    }
+
+    // Args are osscycler-world's arguments for course id's world in dir,
+    // from the GPX in courses, with this machine's map data and ground
+    // model caches, and extra flags (-preview, -if-cached).
+    internal static string[] Args(string courses, string dir, string id, params string[] extra)
+    {
         var cache = Path.Combine(Core.Home(), "courses");
+        var a = new List<string> { "-courses", courses, "-osm-cache", Path.Combine(cache, ".osm"), "-dem-cache", Path.Combine(cache, ".dem"),
+            "-out", dir, "-progress", "-if-stale", "-check=warn" };
+        a.AddRange(extra);
+        a.Add("--");
+        a.Add(id);
+        return a.ToArray();
+    }
+
+    // RunBuilder runs osscycler-world with args at priority, handing each
+    // line it prints to onLine, until it ends (killed when token is
+    // cancelled: OperationCanceledException). Its exit code (null: there is
+    // no osscycler-world) and the last line it wrote to stderr.
+    internal static async Task<(int? Code, string Last)> RunBuilder(string[] args, ProcessPriorityClass priority, Action<string> onLine, CancellationToken token)
+    {
+        var builder = Builder();
+        if (builder == null)
+            return (null, "");
         var psi = new ProcessStartInfo(builder)
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
         };
-        foreach (var a in new[] { "-courses", courses, "-osm-cache", Path.Combine(cache, ".osm"), "-dem-cache", Path.Combine(cache, ".dem"),
-                     "-out", _dir, "-progress", "-if-stale", "-preview", "-check=warn", "--", id })
+        foreach (var a in args)
             psi.ArgumentList.Add(a);
         using var p = Process.Start(psi) ?? throw new IOException("osscycler-world didn't start");
         try
         {
             // Below the ride: the view and the core beside it come first.
-            p.PriorityClass = ProcessPriorityClass.BelowNormal;
+            p.PriorityClass = priority;
         }
         catch (Exception)
         {
@@ -155,29 +206,11 @@ public sealed class WorldSource
                 if (line.Trim() != "")
                     last = line.Trim();
         });
-        string? world = null, preview = null;
         while (await p.StandardOutput.ReadLineAsync(token) is { } line)
-        {
-            if (line.StartsWith("phase: ", StringComparison.Ordinal))
-                Set(id, preview, preview != null ? $"preview (the 3D world: {line[7..]})" : $"building the 3D world: {line[7..]}");
-            else if (Head.BuildStatus.Parse(line) is { } how)
-                Set(id, preview, preview != null ? $"preview (the 3D world: {how})" : $"building the 3D world: {how}");
-            else if (line.StartsWith("preview: ", StringComparison.Ordinal))
-            {
-                preview = line[9..];
-                Set(id, preview, "preview (the 3D world is being built)");
-            }
-            else if (line.StartsWith("world: ", StringComparison.Ordinal))
-                world = line[7..];
-        }
+            onLine(line);
         await p.WaitForExitAsync(token);
         await errors;
-        if (p.ExitCode != 0 || world == null)
-        {
-            Set(id, preview, (preview != null ? "preview: " : "") + "the 3D world couldn't be built: " + (last != "" ? last : $"osscycler-world exited with {p.ExitCode}"));
-            return;
-        }
-        Set(id, world, "");
+        return (p.ExitCode, last);
     }
 
     // Builder is osscycler-world: $OSSCYCLER_WORLD, beside this program

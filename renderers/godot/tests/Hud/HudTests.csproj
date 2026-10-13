@@ -29,6 +29,7 @@
     <Compile Include="../../src/Head/Marks.cs" />
     <Compile Include="../../src/Head/Cover.cs" />
     <Compile Include="../../src/Head/BuildStatus.cs" />
+    <Compile Include="../../src/Head/AheadQueue.cs" />
     <Compile Include="../../src/Head/GhostTrack.cs" />
     <Compile Include="../../src/Head/WorldPick.cs" />
     <Compile Include="../../src/Avatar/Pose.cs" />

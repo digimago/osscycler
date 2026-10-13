@@ -2,6 +2,7 @@ package world
 
 import (
 	"math"
+	"sort"
 	"sync"
 
 	"github.com/digimago/osscycler/internal/gltf"
@@ -106,15 +107,19 @@ func parkingMesh(s *surface, outline [][2]float64, material int) gltf.Primitive 
 // pieces at most drapeCellM across (so shared edges split the same and
 // nothing cracks).
 func draped(height func(e, n float64) float64, outline [][2]float64, material int, lift float64) gltf.Primitive {
-	return drapedIn(height, outline, material, lift, drapeCellM)
+	return drapedIn(height, outline, material, lift, drapeCellM, false)
 }
 
 // drapedIn is draped with triangles at most cell across; cell 0 leaves the
 // outline's triangles whole (a junction: its outline has a point every
 // 2 m along each road, at the road's height, and is near-flat between).
-func drapedIn(height func(e, n float64) float64, outline [][2]float64, material int, lift, cell float64) gltf.Primitive {
+// fat flips the outline's triangles to Delaunay's (delaunayFlip).
+func drapedIn(height func(e, n float64) float64, outline [][2]float64, material int, lift, cell float64, fat bool) gltf.Primitive {
 	p := gltf.Primitive{Material: material}
 	tris := earClip(outline)
+	if fat {
+		tris = delaunayFlip(outline, tris)
+	}
 	longest := 0.0
 	for _, t := range tris {
 		for k := range 3 {
@@ -245,6 +250,95 @@ func earClip(pts [][2]float64) [][3]int {
 	if len(idx) == 3 {
 		if a, b, c := pts[idx[0]], pts[idx[1]], pts[idx[2]]; cross(a, b, c) > 1e-9 {
 			out = append(out, [3]int{idx[0], idx[1], idx[2]})
+		}
+	}
+	return out
+}
+
+// delaunayFlip turns a polygon's triangles (earClip's, counter-clockwise,
+// indices into pts) into the Delaunay triangulation of the polygon: every
+// edge inside it is flipped while the other diagonal of its quadrilateral
+// lies inside and makes the smaller angle larger (Lawson). Ear clipping
+// fans out from one corner, and a junction's long fan triangles, each
+// with its own normal at the outline, showed as streaks across it
+// (owner, 2026-10-13, Dunes course 13.02 km); the outline stays as it is.
+func delaunayFlip(pts [][2]float64, tris [][3]int) [][3]int {
+	out := append([][3]int(nil), tris...)
+	type edge [2]int
+	key := func(a, b int) edge {
+		if a > b {
+			a, b = b, a
+		}
+		return edge{a, b}
+	}
+	// inCircle: whether d lies inside the circle through a, b, c
+	// (counter-clockwise).
+	inCircle := func(a, b, c, d [2]float64) bool {
+		ax, ay := a[0]-d[0], a[1]-d[1]
+		bx, by := b[0]-d[0], b[1]-d[1]
+		cx, cy := c[0]-d[0], c[1]-d[1]
+		det := (ax*ax+ay*ay)*(bx*cy-cx*by) - (bx*bx+by*by)*(ax*cy-cx*ay) + (cx*cx+cy*cy)*(ax*by-bx*ay)
+		return det > 1e-9
+	}
+	ccw := func(a, b, c [2]float64) bool {
+		return (b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]) > 1e-9
+	}
+	for pass := 0; pass < 4*len(out)+8; pass++ {
+		at := map[edge][]int{}
+		for i, t := range out {
+			for k := range 3 {
+				e := key(t[k], t[(k+1)%3])
+				at[e] = append(at[e], i)
+			}
+		}
+		// Edges in a fixed order, so the result never depends on the map's.
+		edges := make([]edge, 0, len(at))
+		for e, ts := range at {
+			if len(ts) == 2 {
+				edges = append(edges, e)
+			}
+		}
+		sort.Slice(edges, func(i, j int) bool {
+			if edges[i][0] != edges[j][0] {
+				return edges[i][0] < edges[j][0]
+			}
+			return edges[i][1] < edges[j][1]
+		})
+		flipped := false
+		for _, e := range edges {
+			ts := at[e]
+			t0, t1 := out[ts[0]], out[ts[1]]
+			// The corners opposite the edge.
+			opp := func(t [3]int) int {
+				for _, v := range t {
+					if v != e[0] && v != e[1] {
+						return v
+					}
+				}
+				return -1
+			}
+			c, d := opp(t0), opp(t1)
+			// a, b in t0's counter-clockwise order, so t0 is (a, b, c).
+			a, b := e[0], e[1]
+			for k := range 3 {
+				if t0[k] == e[1] && t0[(k+1)%3] == e[0] {
+					a, b = e[1], e[0]
+				}
+			}
+			if !inCircle(pts[a], pts[b], pts[c], pts[d]) {
+				continue
+			}
+			// The new diagonal c-d must lie inside (a convex quadrilateral).
+			if !ccw(pts[c], pts[a], pts[d]) || !ccw(pts[d], pts[b], pts[c]) {
+				continue
+			}
+			out[ts[0]] = [3]int{c, a, d}
+			out[ts[1]] = [3]int{d, b, c}
+			flipped = true
+			break // the edge map is stale: start again
+		}
+		if !flipped {
+			break
 		}
 	}
 	return out

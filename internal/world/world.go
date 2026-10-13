@@ -444,7 +444,7 @@ func Build(c *course.Course, o Options) (*World, error) {
 				s, b := t.waterMeshes(x, waterMat, ground, before)
 				// The outline's own triangles cut: the sheet's split ones
 				// fragmented the land under a big water by the hundred thousand.
-				wcut.add(drapedIn(func(e, n float64) float64 { return 0 }, x.ring, waterMat, 0, 0))
+				wcut.add(drapedIn(func(e, n float64) float64 { return 0 }, x.ring, waterMat, 0, 0, false))
 				exactSurf[x.key] = append(exactSurf[x.key], s)
 				exactBed[x.key] = append(exactBed[x.key], b)
 			}
@@ -808,7 +808,7 @@ func parkingLots(t *terrain, sc *scenery.Scenery, m roadMaterials, roads map[[2]
 	height := func(e, n float64) float64 { return parkingHeight(s.at(e, n), e, n, rs) }
 	var out []parkingLot
 	for _, lot := range sc.Parking {
-		p := drapedIn(height, lot.Outline, m.surface[lot.Surface], 0, parkCellM)
+		p := drapedIn(height, lot.Outline, m.surface[lot.Surface], 0, parkCellM, false)
 		if len(p.Indices) == 0 {
 			continue
 		}
@@ -816,7 +816,7 @@ func parkingLots(t *terrain, sc *scenery.Scenery, m roadMaterials, roads map[[2]
 		if lot.Name != "" {
 			extras["name"] = lot.Name
 		}
-		out = append(out, parkingLot{mesh: p, cut: drapedIn(height, lot.Outline, p.Material, 0, 0), extras: extras, height: height, outline: lot.Outline})
+		out = append(out, parkingLot{mesh: p, cut: drapedIn(height, lot.Outline, p.Material, 0, 0, false), extras: extras, height: height, outline: lot.Outline})
 	}
 	return out
 }

@@ -102,13 +102,14 @@ var allSpecies = []species{
 // Kinds of plant (templates): each species' detailed variants and simple
 // one, then the bushes (one per allBushes), heather, reed, lily, hedges.
 var (
-	speciesKinds = len(allSpecies) * (treeVariants + 1)
-	kBush        = speciesKinds // then one per allBushes
-	kHeather     = kBush + len(allBushes)
-	kReed        = kHeather + 1
-	kLily        = kHeather + 2
-	kMarram      = kHeather + 3
-	kHedge       = kHeather + 4 // then one per hedgeKinds
+	speciesKinds  = len(allSpecies) * (treeVariants + 1)
+	kBush         = speciesKinds // then one per allBushes
+	kHeather      = kBush + len(allBushes)
+	kReed         = kHeather + 1
+	kLily         = kHeather + 2
+	kMarram       = kHeather + 3
+	kMarramFlower = kHeather + 4
+	kHedge        = kHeather + 5 // then one per hedgeKinds
 )
 
 // treeKind is the kind for species sp: its variant v (0..treeVariants-1),
@@ -132,7 +133,7 @@ var plantKinds = func() []plantKind {
 	for _, b := range allBushes {
 		out = append(out, plantKind{"bush " + b.name, b.drawM})
 	}
-	out = append(out, plantKind{"heather", 150}, plantKind{"reed", 150}, plantKind{"lily", 100}, plantKind{"marram", 150})
+	out = append(out, plantKind{"heather", 150}, plantKind{"reed", 150}, plantKind{"lily", 100}, plantKind{"marram", 150}, plantKind{"marram flowering", 150})
 	for _, h := range hedgeKinds {
 		out = append(out, plantKind{h.name, h.drawM})
 	}

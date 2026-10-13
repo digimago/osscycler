@@ -417,7 +417,76 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 	out = append(out, waterPlants(t, land, keys, onRoad, routeDist)...)
 
 	out = append(out, hedges(t, s, sp, wp)...)
-	return clearOverhead(out, t.fine)
+	return clearOverhead(clearTrunks(out), t.fine)
+}
+
+// Plants keep out of trees' trunks: the passes that place them (the grid,
+// avenues, willows) don't see each other (owner, 2026-10-13: a hazel grew
+// through an avenue oak, Velp loop 0.40 km). A bush stands at least
+// bushTrunkM beyond a tree's trunk; of two trees closer than
+// treeTrunkM beyond the larger one's trunk, the smaller goes.
+const (
+	bushTrunkM = 0.8
+	treeTrunkM = 1.0
+)
+
+func clearTrunks(ps []plant) []plant {
+	const cell = 4.0
+	type trunk struct {
+		i       int
+		x, z, r float64
+		s       float32
+	}
+	key := func(x, z float32) [2]int {
+		return [2]int{int(math.Floor(float64(x) / cell)), int(math.Floor(float64(z) / cell))}
+	}
+	grid := map[[2]int][]trunk{}
+	for i, p := range ps {
+		if p.kind < speciesKinds {
+			r := allSpecies[p.kind/(treeVariants+1)].trunkR * float64(p.s)
+			k := key(p.x, p.z)
+			grid[k] = append(grid[k], trunk{i, float64(p.x), float64(p.z), r, p.s})
+		}
+	}
+	// larger orders two trees: by size, then by place (any order of ps).
+	larger := func(a, b trunk) bool {
+		if a.s != b.s {
+			return a.s > b.s
+		}
+		if a.x != b.x {
+			return a.x > b.x
+		}
+		return a.z > b.z
+	}
+	out := ps[:0]
+	for i, p := range ps {
+		isTree, isBush := p.kind < speciesKinds, p.kind >= kBush && p.kind < kHeather
+		if !isTree && !isBush {
+			out = append(out, p)
+			continue
+		}
+		me := trunk{i: i, x: float64(p.x), z: float64(p.z), s: p.s}
+		k := key(p.x, p.z)
+		keep := true
+		for gx := k[0] - 1; gx <= k[0]+1 && keep; gx++ {
+			for gz := k[1] - 1; gz <= k[1]+1 && keep; gz++ {
+				for _, o := range grid[[2]int{gx, gz}] {
+					if o.i == i {
+						continue
+					}
+					d := math.Hypot(o.x-me.x, o.z-me.z)
+					if isBush && d < o.r+bushTrunkM || isTree && d < o.r+treeTrunkM && larger(o, me) {
+						keep = false
+						break
+					}
+				}
+			}
+		}
+		if keep {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // Pollard willows (owner, 2026-10-10): in rows along some farmland ditches

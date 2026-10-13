@@ -40,9 +40,15 @@ func TestDunePlants(t *testing.T) {
 			t.Errorf("%s in the dunes: %v", not, n)
 		}
 	}
-	m, sb := count["marram"], count["bush sea buckthorn"]
+	plain, fl, sb := count["marram"], count["marram flowering"], count["bush sea buckthorn"]
+	m := [2]int{plain[0] + fl[0], plain[1] + fl[1]}
 	if m[0] < 5000 || m[0] < 5*m[1] {
 		t.Errorf("marram: %d on the sand, %d in the thicket", m[0], m[1])
+	}
+	// Only now and then a tuft in flower (owner, 2026-10-13: every tuft
+	// with spikes was far too many).
+	if share := float64(fl[0]+fl[1]) / float64(m[0]+m[1]); share < 0.1 || share > 0.25 {
+		t.Errorf("%.0f%% of the marram in flower", 100*share)
 	}
 	if sb[1] < 1000 || sb[1] < 5*sb[0] {
 		t.Errorf("sea buckthorn: %d on the sand, %d in the thicket", sb[0], sb[1])
@@ -68,12 +74,17 @@ func TestDunePlants(t *testing.T) {
 		}
 		return d
 	}
-	size := map[string]dims{"marram": measure(marramTemplate)}
+	size := map[string]dims{
+		"marram":           measure(func(p *gltf.Primitive) { marramTemplate(p, false) }),
+		"marram flowering": measure(func(p *gltf.Primitive) { marramTemplate(p, true) }),
+	}
 	for _, b := range allBushes {
 		size[b.name] = measure(func(p *gltf.Primitive) { bushTemplate(p, b) })
 	}
-	if d := size["marram"]; d.h < 0.6 || d.h > 1.2 || d.w > 1.4 {
-		t.Errorf("marram %.2f m high, %.2f wide", d.h, d.w)
+	for _, k := range []string{"marram", "marram flowering"} {
+		if d := size[k]; d.h < 0.6 || d.h > 1.2 || d.w > 1.4 {
+			t.Errorf("%s %.2f m high, %.2f wide", k, d.h, d.w)
+		}
 	}
 	for _, low := range []string{"bramble", "creeping willow"} {
 		if d := size[low]; d.h > 1.1 || d.w < 1.5*d.h {

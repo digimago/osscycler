@@ -566,3 +566,39 @@ func TestFieldSliversAreGrass(t *testing.T) {
 		t.Errorf("%d of the field's %d cells kept: want all but its corners", kept, all)
 	}
 }
+
+// Plants keep out of trees' trunks, whichever pass placed them (owner,
+// 2026-10-13: a hazel grew through an avenue oak, Velp loop 0.40 km).
+func TestPlantsKeepOutOfTrunks(t *testing.T) {
+	oak := kindNamed(t, "oak 1")
+	birch := kindNamed(t, "birch 1")
+	hazel := kindNamed(t, "bush hazel")
+	ps := []plant{
+		{kind: oak, x: 0, z: 0, s: 1},
+		{kind: hazel, x: 0.6, z: 0, s: 1},   // in the oak's trunk: goes
+		{kind: hazel, x: 3, z: 0, s: 1},     // clear of it: stays
+		{kind: birch, x: 0, z: 0.9, s: 0.4}, // a young birch in the oak: goes
+		{kind: birch, x: 3, z: 3, s: 0.4},   // clear: stays
+	}
+	got := clearTrunks(append([]plant(nil), ps...))
+	want := []plant{ps[0], ps[2], ps[4]}
+	if len(got) != len(want) {
+		t.Fatalf("kept %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("kept %v, want %v", got, want)
+		}
+	}
+}
+
+func kindNamed(t *testing.T, name string) int {
+	t.Helper()
+	for k, p := range plantKinds {
+		if p.name == name {
+			return k
+		}
+	}
+	t.Fatalf("no plant kind %q", name)
+	return -1
+}

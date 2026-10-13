@@ -239,7 +239,7 @@ func patchMesh(p patch, material int) gltf.Primitive {
 	if p.overlay {
 		lift = overlayLiftM
 	}
-	m := drapedIn(p.height, p.poly, material, lift, 0)
+	m := drapedIn(p.height, p.poly, material, lift, 0, true)
 	if len(m.Indices) == 0 {
 		return m
 	}

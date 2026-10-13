@@ -627,8 +627,18 @@ const (
 	// rounding has the line gTurnClearM either way, and keeps within the
 	// first of gTurnDevs of the node that keeps it on the drawn road.
 	gTurnClearM = 20.0
-	gTurnLookM  = 10.0
-	gTurnMinRad = 25 * math.Pi / 180
+	// A free turn (off the roads, where nothing drawn bounds the sweep)
+	// has the line this far either way: within gTurnClearM a 70° turn
+	// could be no wider than 14 m, and at speed the rider leaned to the
+	// view's 35° limit (owner, 2026-10-13: the Posbank Loop's turn from the
+	// Burgemeester Bloemersweg onto the Lange Juffer at 10.07 km, paths the
+	// map data lacks; round such turns wider).
+	// Only where the course is off the roads all that way: a wider sweep
+	// reaching onto a road the course comes back to left the drawn road
+	// for 10 m (13.19 km).
+	gTurnFreeClearM = 40.0
+	gTurnLookM      = 10.0
+	gTurnMinRad     = 25 * math.Pi / 180
 	// Turns closer than this are one bend: a node reached from two roads
 	// is on the line twice, a hair apart (each road's own end), and two
 	// corners a hair apart leave each other no room to round (owner's A/B,
@@ -670,6 +680,22 @@ var gUnderCos = math.Cos(45 * math.Pi / 180)
 const gOutlineMaxTriM = 5000.0
 
 var gTurnDevs = [...]float64{6, 4.5, 3, 2, maxDevM}
+
+// offRoads tells whether the line through the network is off the roads
+// for m either way of its point i.
+func offRoads(gp gpathOut, i int, m float64) bool {
+	for k := i; k >= 0 && gp.s[i]-gp.s[k] <= m; k-- {
+		if gp.pts[k].on {
+			return false
+		}
+	}
+	for k := i; k < len(gp.pts) && gp.s[k]-gp.s[i] <= m; k++ {
+		if gp.pts[k].on {
+			return false
+		}
+	}
+	return true
+}
 
 // place is the rider's path every step along the course: on the line
 // through the network with its turns at nodes rounded (inside the
@@ -859,18 +885,22 @@ func (gp gpathOut) place(steps int, step float64, onRoad func(e, n float64) bool
 			if q+1 < len(tl) {
 				hi = tl[q+1].at
 			}
+			clearM := gTurnClearM
+			if t.free && offRoads(gp, t.at, gTurnFreeClearM) {
+				clearM = gTurnFreeClearM
+			}
 			jb := t.at
-			for jb+1 <= hi && gp.s[jb+1]-s <= gTurnClearM {
+			for jb+1 <= hi && gp.s[jb+1]-s <= clearM {
 				jb++
 			}
-			if q+1 < len(tl) && gp.s[hi]-s <= 2*gTurnClearM {
+			if q+1 < len(tl) && gp.s[hi]-s <= 2*clearM {
 				jb = hi
 			}
 			ja := t.at
-			for ja-1 >= lo && s-gp.s[ja-1] <= gTurnClearM {
+			for ja-1 >= lo && s-gp.s[ja-1] <= clearM {
 				ja--
 			}
-			if q > 0 && s-gp.s[lo] <= 2*gTurnClearM {
+			if q > 0 && s-gp.s[lo] <= 2*clearM {
 				ja = lo
 			}
 			for k := ja + 1; k < jb; k++ {

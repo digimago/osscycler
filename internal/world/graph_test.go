@@ -971,3 +971,28 @@ func TestGraphPathAcrossADualRoadKeepsItsWay(t *testing.T) {
 		}
 	}
 }
+
+// A sharp turn off the roads (paths the map data lacks) is swept wide:
+// nothing drawn bounds it there, and within the usual window a 70° turn
+// was a 14 m radius, which the 3D view leaned into at its 35° limit
+// (owner, 2026-10-13: the Posbank Loop's turn onto the Lange Juffer at
+// 10.07 km; round it wider).
+func TestGraphFreeTurnIsSweptWide(t *testing.T) {
+	a := 70 * math.Pi / 180
+	end := [2]float64{-300 * math.Sin(a), 200 + 300*math.Cos(a)}
+	pts := along([2]float64{0, 0}, [2]float64{0, 200}, 20)
+	pts = append(pts, along([2]float64{0, 200}, end, 20)...)
+	pts = append(pts, end)
+	c := graphCourse(t, "freeturn", pts)
+	// A road 120 m off, so the course is matched (off the roads).
+	ways := []scenery.Way{{Line: [][2]float64{{120, -100}, {120, 400}}, Nodes: []int64{1, 2}, Name: "Elders", Class: "residential", WidthM: 5}}
+	on := routeOn(c.Distance, func(float64) int { return -1 })
+	w, err := BuildGraph(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 13° per 5 m step is a 22 m radius.
+	if r := w.Check(); r.TurnDeg > 13 {
+		t.Errorf("the rider turns %.1f° in one step %v, want a sweep of 13° or less", r.TurnDeg, r.Turns)
+	}
+}

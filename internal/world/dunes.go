@@ -98,11 +98,18 @@ func elderTemplate(p *gltf.Primitive, leaf, wood [3]float32) {
 	clump(p, 0, 3.3, 0, 1.0, 0.6, shade(leaf, 1.05), 0.3)
 }
 
+// marramFlowering: the share of marram tufts in flower. Most of a dune's
+// marram shows no spikes (owner, 2026-10-13: every tuft with three spikes
+// was far too many).
+const marramFlowering = 1.0 / 6
+
 // marramTemplate is a tuft of marram grass, 0.8 m: stiff leaves rising
 // from a narrow foot and arching out, grey-green, about a third of them
-// straw-coloured (dead); a few flower spikes standing over them.
-func marramTemplate(p *gltf.Primitive) {
-	green, straw, spike := srgbLinear(0x98a470), srgbLinear(0xc4b68a), srgbLinear(0xb8a878)
+// straw-coloured (dead); in flower, two spikes standing over them: pale
+// straw spindles 18 cm long and hardly thicker than their stalks (fat
+// brown clubs read as bulrush, owner, 2026-10-13).
+func marramTemplate(p *gltf.Primitive, flowering bool) {
+	green, straw, spike := srgbLinear(0x98a470), srgbLinear(0xc4b68a), srgbLinear(0xd8cca2)
 	rng := splitmix(0x4e1a)
 	r := func() float64 { rng = splitmix(rng); return unit(rng) }
 	for k := range 26 {
@@ -121,11 +128,15 @@ func marramTemplate(p *gltf.Primitive) {
 		tx, ty, tz := x+lean*math.Cos(la), h*(0.9-0.4*lean), z+lean*math.Sin(la)
 		blade(p, x, 0, z, mx, my, mz, tx, ty, tz, 0.018, 0.011, c)
 	}
-	for k := range 3 {
-		a := 2*math.Pi*float64(k)/3 + 0.7
-		x, z := 0.08*math.Cos(a), 0.08*math.Sin(a)
-		limb(p, x, 0, z, x*2, 0.95, z*2, 0.008, 0.006, 3, spike)
-		blobAt(p, x*2.05, 1.03, z*2.05, 0.025, 0.11, spike, 0, 2, 4)
+	if !flowering {
+		return
+	}
+	for k := range 2 {
+		a := math.Pi*float64(k) + 0.7
+		x, z := 0.06*math.Cos(a), 0.06*math.Sin(a)
+		top := 0.88 + 0.1*float64(k)
+		limb(p, x, 0, z, x*1.6, top, z*1.6, 0.007, 0.006, 3, spike)
+		blobAt(p, x*1.62, top+0.09, z*1.62, 0.012, 0.09, spike, 0, 2, 4)
 	}
 }
 

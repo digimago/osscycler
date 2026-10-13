@@ -20,6 +20,13 @@ public sealed partial class Controller
     bool _fetchingHistory;
     ActivitySummary? _summary;
     bool _summaryFromPicker;
+    // The summary is a finished course ride's (owner, 2026-10-13: a ride
+    // ends at its line with its summary): its heading says how it went,
+    // and closing it ends the ride.
+    bool _summaryRide;
+    string _summaryHeading = "";
+    RidePhase _lastPhase;
+    string _lastCourse = "";
 
     // Graph is the activity being recorded as far as fetched, when the
     // graph is shown and there is something to draw (null otherwise).
@@ -38,6 +45,43 @@ public sealed partial class Controller
             lock (_mu)
                 return _summary;
         }
+    }
+
+    // SummaryHeading heads a finished course ride's summary ("" another's).
+    public string SummaryHeading
+    {
+        get
+        {
+            lock (_mu)
+                return _summaryRide ? _summaryHeading : "";
+        }
+    }
+
+    // RideEnds opens a course ride's summary when it finishes at its line
+    // (not a loop's: laps go on), and closes it when the ride was closed
+    // on another screen; Tick calls it.
+    void RideEnds(State? st)
+    {
+        var r = st?.Ride;
+        var phase = r?.Phase ?? RidePhase.Unspecified;
+        var course = r?.CourseId ?? "";
+        bool finished = phase == RidePhase.Finished && _lastPhase == RidePhase.Riding && course == _lastCourse && r is { Loop: false };
+        (_lastPhase, _lastCourse) = (phase, course);
+        lock (_mu)
+            if (_summaryRide && phase != RidePhase.Finished)
+                (_summary, _summaryRide) = (null, false);
+        if (!finished)
+            return;
+        var heading = $"FINISHED  {r!.CourseName}  {Hud.Format.Clock(r.ElapsedS)}" + (r.Ghost is { } g
+            ? g.GapS < 0 ? $"   NEW PB  {Hud.Format.Secs(-g.GapS)} faster" : $"   {Hud.Format.Secs(g.GapS)} off your {g.Label}"
+            : "   first ride on this stretch");
+        _cmds.RideSummary().ContinueWith(done =>
+        {
+            if (done.Exception != null)
+                return; // the result banner as before
+            lock (_mu)
+                (_summary, _summaryFromPicker, _summaryRide, _summaryHeading) = (done.Result, false, true, heading);
+        }, TaskContinuationOptions.ExecuteSynchronously);
     }
 
     // NeedHistory fetches what the graph lacks; Tick calls it.
@@ -121,6 +165,16 @@ public sealed partial class Controller
                 _summary = null;
                 if (_summaryFromPicker)
                     _screen = Screen.Picker;
+                if (_summaryRide)
+                {
+                    // The course ride ends: back to free riding.
+                    _summaryRide = false;
+                    _cmds.StopRide().ContinueWith(done =>
+                    {
+                        if (done.Exception != null)
+                            Failed("closing the ride", done.Exception.GetBaseException());
+                    }, TaskContinuationOptions.ExecuteSynchronously);
+                }
             }
             return true;
         }

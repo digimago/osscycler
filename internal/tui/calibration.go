@@ -37,6 +37,9 @@ type Commands interface {
 	ActivityHistory(ctx context.Context, name string, since uint32) (*pb.GetActivityHistoryResponse, error)
 	// ActivitySummary sums an activity up, as ActivityHistory names it.
 	ActivitySummary(ctx context.Context, name string) (*pb.ActivitySummary, error)
+	// RideSummary sums up the last course ride of the activity being
+	// recorded: from its start to its finish.
+	RideSummary(ctx context.Context) (*pb.ActivitySummary, error)
 	// SetSimulated puts a simulated rider in place of the trainer, or
 	// takes it away.
 	SetSimulated(ctx context.Context, on bool) error

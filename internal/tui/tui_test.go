@@ -185,6 +185,14 @@ func (s *stubCommands) ActivityHistory(_ context.Context, name string, since uin
 	return out, nil
 }
 
+func (s *stubCommands) RideSummary(_ context.Context) (*pb.ActivitySummary, error) {
+	s.summaryNames = append(s.summaryNames, "last ride")
+	if s.summary == nil {
+		return nil, errors.New("no course ride")
+	}
+	return s.summary, nil
+}
+
 func (s *stubCommands) ActivitySummary(_ context.Context, name string) (*pb.ActivitySummary, error) {
 	s.summaryNames = append(s.summaryNames, name)
 	if s.summary == nil {
@@ -607,6 +615,33 @@ func TestArmedAndFinished(t *testing.T) {
 	run(m, cmd)
 	if cmds.stops != 1 {
 		t.Errorf("enter on the result: StopRide calls %d", cmds.stops)
+	}
+}
+
+// A course ride ends at its line with its own summary, its result on top;
+// closing it ends the ride: back to free riding (owner, 2026-10-13).
+func TestFinishedRideShowsItsSummary(t *testing.T) {
+	cmds := &stubCommands{courses: []*pb.Course{hillCourse()}, summary: &pb.ActivitySummary{
+		TimerS: 754, DistanceM: 6000, AvgPowerW: 245, MaxPowerW: 400, FtpW: 250,
+		PowerCurve: []*pb.PowerBest{{DurationS: 5, PowerW: 400}, {DurationS: 60, PowerW: 300}}}}
+	m := calModel(cmds)
+	next, cmd := m.Update(StateMsg{State: rideState(pb.RidePhase_RIDE_PHASE_RIDING, 2900)})
+	m = run(next.(Model), cmd)
+	next, cmd = m.Update(StateMsg{State: rideState(pb.RidePhase_RIDE_PHASE_FINISHED, 3000)})
+	m = run(next.(Model), cmd)
+	if len(cmds.summaryNames) != 1 || cmds.summaryNames[0] != "last ride" {
+		t.Fatalf("summaries asked for: %v", cmds.summaryNames)
+	}
+	out := plain(m.render())
+	for _, want := range []string{"FINISHED", "Hill Test", "BEST POWER", "6.00 km"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the finished ride's summary lacks %q:\n%s", want, out)
+		}
+	}
+	m, cmd = press(m, "x")
+	run(m, cmd)
+	if cmds.stops != 1 || m.summary != nil {
+		t.Errorf("closing the summary: StopRide calls %d, summary open %v", cmds.stops, m.summary != nil)
 	}
 }
 

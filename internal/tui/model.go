@@ -101,6 +101,7 @@ type Model struct {
 	// was opened from ACTIVITIES, and closing it goes back there.
 	summary        *pb.ActivitySummary
 	summaryFromTab bool
+	summaryRide    bool // the finished course ride's: closing it ends the ride
 }
 
 // ask shows a request for a confirming key press over the screen.
@@ -239,7 +240,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m, c3 := m.animate()
 		m, c4 := m.trackLaps(old)
 		m, c5 := m.needHistory()
-		return m, tea.Batch(c1, c2, c3, c4, c5)
+		var c6 tea.Cmd
+		if r := m.ride(); r.GetPhase() == pb.RidePhase_RIDE_PHASE_FINISHED && old.GetPhase() == pb.RidePhase_RIDE_PHASE_RIDING && r.GetCourseId() == old.GetCourseId() {
+			c6 = m.fetchRideSummary() // the ride ends at its line, with its summary
+		}
+		return m, tea.Batch(c1, c2, c3, c4, c5, c6)
 	case ConnMsg:
 		m.connected, m.connErr = msg.Err == nil, msg.Err
 		if msg.Err != nil {

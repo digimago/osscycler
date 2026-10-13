@@ -441,14 +441,7 @@ func (m Model) rideResult(width, height int, finished bool) string {
 		if s := r.GetStartDistanceM(); s > 0 {
 			from = fmt.Sprintf(" (from %.2f km)", s/1000)
 		}
-		verdict := dimStyle.Render("first ride on this stretch: the PB to beat next time")
-		if g := r.GetGhost(); g != nil {
-			if gap := g.GetGapS(); gap < 0 {
-				verdict = pbStyle.Render(fmt.Sprintf("★ NEW PB  %s faster than %s", secs(-gap), clock(g.GetTimeS())))
-			} else {
-				verdict = warnStyle.Render(fmt.Sprintf("%s off your %s (%s)", secs(gap), g.GetLabel(), clock(g.GetTimeS())))
-			}
-		}
+		verdict := rideVerdict(r)
 		lines = append(lines,
 			bigOK.Render("FINISHED  "+r.GetCourseName()+from), "",
 			bigOK.Render(t), "", verdict, "",
@@ -468,6 +461,18 @@ func (m Model) rideResult(width, height int, finished bool) string {
 	}
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center,
 		lipgloss.JoinVertical(lipgloss.Center, lines...))
+}
+
+// rideVerdict says how a finished course ride went against its ghost.
+func rideVerdict(r *pb.Ride) string {
+	if g := r.GetGhost(); g != nil {
+		if gap := g.GetGapS(); gap < 0 {
+			return pbStyle.Render(fmt.Sprintf("★ NEW PB  %s faster than %s", secs(-gap), clock(g.GetTimeS())))
+		} else {
+			return warnStyle.Render(fmt.Sprintf("%s off your %s (%s)", secs(gap), g.GetLabel(), clock(g.GetTimeS())))
+		}
+	}
+	return dimStyle.Render("first ride on this stretch: the PB to beat next time")
 }
 
 // gradeStrip shows the next lookaheadM metres as heat-coloured cells, like

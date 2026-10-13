@@ -84,6 +84,7 @@ public sealed partial class Controller
         Others(st);
         HardwareTick(st, now);
         NeedHistory(st);
+        RideEnds(st);
         var p = st?.Profile;
         if (_onboard == null && !_onboardLater && p != null && p.Missing.Count > 0 && !Busy(st) &&
             _prompt == null && _form == null && !_ending && _screen != Screen.Picker && double.IsNaN(_countdownTo))

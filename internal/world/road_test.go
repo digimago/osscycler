@@ -233,3 +233,50 @@ func TestSidewalkEndsAreClosed(t *testing.T) {
 		t.Errorf("%d kerb triangles face along the road, want 8: two per end of each sidewalk", across)
 	}
 }
+
+// A junction's surface is fat triangles, not a fan of slivers from one
+// corner (owner, 2026-10-13: diagonal streaks across a junction, Dunes
+// course 13.02 km): the outline's triangles flipped to Delaunay's cover
+// the same area (flips stay inside convex quadrilaterals, so inside the
+// outline), and the thinnest is far fatter than ear clipping's.
+func TestJunctionTrianglesAreFat(t *testing.T) {
+	// A crossing's outline: four 6 m wide arms 20 m long, a point every
+	// 2 m along each side, as a junction's outline has.
+	var poly [][2]float64
+	add := func(a, b [2]float64) {
+		n := int(math.Ceil(math.Hypot(b[0]-a[0], b[1]-a[1]) / 2))
+		for i := range n {
+			f := float64(i) / float64(n)
+			poly = append(poly, [2]float64{a[0] + f*(b[0]-a[0]), a[1] + f*(b[1]-a[1])})
+		}
+	}
+	corners := [][2]float64{{3, -20}, {3, -3}, {20, -3}, {20, 3}, {3, 3}, {3, 20}, {-3, 20}, {-3, 3}, {-20, 3}, {-20, -3}, {-3, -3}, {-3, -20}}
+	for i := range corners {
+		add(corners[i], corners[(i+1)%len(corners)])
+	}
+	minAngle := func(tris [][3]int) (float64, float64) {
+		worst, area := 180.0, 0.0
+		for _, tr := range tris {
+			a, b, c := poly[tr[0]], poly[tr[1]], poly[tr[2]]
+			area += ((b[0]-a[0])*(c[1]-a[1]) - (b[1]-a[1])*(c[0]-a[0])) / 2
+			for k := range 3 {
+				p, q, r := poly[tr[k]], poly[tr[(k+1)%3]], poly[tr[(k+2)%3]]
+				u := [2]float64{q[0] - p[0], q[1] - p[1]}
+				v := [2]float64{r[0] - p[0], r[1] - p[1]}
+				ang := math.Abs(math.Atan2(u[0]*v[1]-u[1]*v[0], u[0]*v[0]+u[1]*v[1])) * 180 / math.Pi
+				worst = math.Min(worst, ang)
+			}
+		}
+		return worst, area
+	}
+	ear := earClip(poly)
+	fat := delaunayFlip(poly, ear)
+	ea, earArea := minAngle(ear)
+	fa, fatArea := minAngle(fat)
+	if math.Abs(fatArea-earArea) > 1e-6 || math.Abs(fatArea-(4*17*6+36)) > 1e-6 {
+		t.Fatalf("area %.2f, ear clipping's %.2f", fatArea, earArea)
+	}
+	if fa < 5 || fa < 10*ea {
+		t.Errorf("thinnest corner %.1f° (ear clipping's %.1f°)", fa, ea)
+	}
+}

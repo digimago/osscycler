@@ -107,6 +107,7 @@ public partial class Main : Node3D
     double _reportedAt, _posErr, _clock;
     string _missing = "";
     WorldSource? _source; // the ride's world: here, or built here (a preview first)
+    WorldAhead? _ahead;   // the courses' worlds, built ahead while nothing is ridden
     string _worldStatus = "";
     string _shownDir = ""; // the directory of the world shown
 
@@ -201,6 +202,7 @@ public partial class Main : Node3D
             {
                 _core = new Core(core, Core.Token(args.File("token-file", "")), head: !watcher);
                 _source = new WorldSource(_core, _worldsDir);
+                _ahead = new WorldAhead(_core, _worldsDir);
                 _head = new Head.Controller(_core, layout) { Watcher = watcher };
                 if (_debug)
                     _head.Note($"debug: space marks a flawed spot ({_marksDir})");
@@ -223,6 +225,7 @@ public partial class Main : Node3D
     public override void _ExitTree()
     {
         _source?.Stop(); // a world being built for this screen: no one to load it now
+        _ahead?.Stop();
         _control?.Dispose();
         _core?.Dispose();
         _trace?.Dispose();
@@ -408,6 +411,8 @@ public partial class Main : Node3D
             var wk = st?.Workout is { } p && p.Id != "" ? _core.Workout(p.Id) : null;
             // Riding a preview: what the world's build is doing.
             string note = _ride != null && _world?.Manifest.Course.Id == _ride.CourseId ? _worldStatus : "";
+            if (_ride == null)
+                note = _ahead?.Status ?? ""; // worlds being built ahead
             if (Math.Abs(Viewed - _distance) > 0.5) // a debug view ahead or behind the rider
                 note = string.Format(CultureInfo.InvariantCulture, "view {0:+0;-0} m, at {1:F2} km · ctrl+↓ back", Viewed - _distance, Viewed / 1000)
                     + (note != "" ? "   " + note : "");
@@ -594,6 +599,19 @@ public partial class Main : Node3D
     {
         var (st, _) = _core!.Latest();
         var r = st?.Ride;
+        // Worlds are built ahead only while nothing is ridden: a ride (its
+        // own world first), a workout or manual control stops it.
+        // The rider's profile says when and how (world_build, world_fetch).
+        _ahead?.Fetch(st?.Profile?.WorldFetch == "allowed");
+        if (Head.AheadQueue.Riding(st))
+        {
+            if (st?.Profile?.WorldBuild == "always")
+                _ahead?.Idle(r?.CourseId ?? "");
+            else
+                _ahead?.Busy();
+        }
+        else if (st != null)
+            _ahead?.Idle();
         if (r == null || r.CourseId == "")
         {
             _ride = null;

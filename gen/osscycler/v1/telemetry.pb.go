@@ -2055,7 +2055,15 @@ type SetProfileRequest struct {
 	// rider) or "eyes" (the rider's own view).
 	View *string `protobuf:"bytes,4,opt,name=view,proto3,oneof" json:"view,omitempty"`
 	// Sets the heart rate zones of ride summaries: 100-230 bpm.
-	MaxHrBpm      *float64 `protobuf:"fixed64,5,opt,name=max_hr_bpm,json=maxHrBpm,proto3,oneof" json:"max_hr_bpm,omitempty"`
+	MaxHrBpm *float64 `protobuf:"fixed64,5,opt,name=max_hr_bpm,json=maxHrBpm,proto3,oneof" json:"max_hr_bpm,omitempty"`
+	// When a 3D renderer builds courses' worlds ahead of a ride: "idle"
+	// (only while nothing is ridden; the default) or "always" (during rides
+	// too, at the lowest priority).
+	WorldBuild *string `protobuf:"bytes,6,opt,name=world_build,json=worldBuild,proto3,oneof" json:"world_build,omitempty"`
+	// Whether building ahead may download what a course not yet ridden
+	// needs (map data, ground model): "cached" (the caches only; the
+	// default) or "allowed".
+	WorldFetch    *string `protobuf:"bytes,7,opt,name=world_fetch,json=worldFetch,proto3,oneof" json:"world_fetch,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2123,6 +2131,20 @@ func (x *SetProfileRequest) GetMaxHrBpm() float64 {
 		return *x.MaxHrBpm
 	}
 	return 0
+}
+
+func (x *SetProfileRequest) GetWorldBuild() string {
+	if x != nil && x.WorldBuild != nil {
+		return *x.WorldBuild
+	}
+	return ""
+}
+
+func (x *SetProfileRequest) GetWorldFetch() string {
+	if x != nil && x.WorldFetch != nil {
+		return *x.WorldFetch
+	}
+	return ""
 }
 
 type SetProfileResponse struct {
@@ -5010,7 +5032,11 @@ type RiderProfile struct {
 	// The rider's view in a 3D renderer: "chase" (the default) or "eyes".
 	View string `protobuf:"bytes,15,opt,name=view,proto3" json:"view,omitempty"`
 	// Optional; 0 when unknown (summaries then leave heart rate zones out).
-	MaxHrBpm      float64 `protobuf:"fixed64,16,opt,name=max_hr_bpm,json=maxHrBpm,proto3" json:"max_hr_bpm,omitempty"`
+	MaxHrBpm float64 `protobuf:"fixed64,16,opt,name=max_hr_bpm,json=maxHrBpm,proto3" json:"max_hr_bpm,omitempty"`
+	// Building worlds ahead (SetProfileRequest): "idle" or "always", and
+	// "cached" or "allowed"; the values in effect, defaults filled in.
+	WorldBuild    string `protobuf:"bytes,17,opt,name=world_build,json=worldBuild,proto3" json:"world_build,omitempty"`
+	WorldFetch    string `protobuf:"bytes,18,opt,name=world_fetch,json=worldFetch,proto3" json:"world_fetch,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5155,6 +5181,20 @@ func (x *RiderProfile) GetMaxHrBpm() float64 {
 		return x.MaxHrBpm
 	}
 	return 0
+}
+
+func (x *RiderProfile) GetWorldBuild() string {
+	if x != nil {
+		return x.WorldBuild
+	}
+	return ""
+}
+
+func (x *RiderProfile) GetWorldFetch() string {
+	if x != nil {
+		return x.WorldFetch
+	}
+	return ""
 }
 
 // The core records every ride to a FIT file on its own disk, whether or
@@ -6416,21 +6456,27 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\tPowerBest\x12\x1d\n" +
 	"\n" +
 	"duration_s\x18\x01 \x01(\rR\tdurationS\x12\x17\n" +
-	"\apower_w\x18\x02 \x01(\x01R\x06powerW\"\xeb\x01\n" +
+	"\apower_w\x18\x02 \x01(\x01R\x06powerW\"\xd7\x02\n" +
 	"\x11SetProfileRequest\x12 \n" +
 	"\tweight_kg\x18\x01 \x01(\x01H\x00R\bweightKg\x88\x01\x01\x12\x18\n" +
 	"\x05ftp_w\x18\x02 \x01(\x01H\x01R\x04ftpW\x88\x01\x01\x12 \n" +
 	"\theight_cm\x18\x03 \x01(\x01H\x02R\bheightCm\x88\x01\x01\x12\x17\n" +
 	"\x04view\x18\x04 \x01(\tH\x03R\x04view\x88\x01\x01\x12!\n" +
 	"\n" +
-	"max_hr_bpm\x18\x05 \x01(\x01H\x04R\bmaxHrBpm\x88\x01\x01B\f\n" +
+	"max_hr_bpm\x18\x05 \x01(\x01H\x04R\bmaxHrBpm\x88\x01\x01\x12$\n" +
+	"\vworld_build\x18\x06 \x01(\tH\x05R\n" +
+	"worldBuild\x88\x01\x01\x12$\n" +
+	"\vworld_fetch\x18\a \x01(\tH\x06R\n" +
+	"worldFetch\x88\x01\x01B\f\n" +
 	"\n" +
 	"_weight_kgB\b\n" +
 	"\x06_ftp_wB\f\n" +
 	"\n" +
 	"_height_cmB\a\n" +
 	"\x05_viewB\r\n" +
-	"\v_max_hr_bpm\"J\n" +
+	"\v_max_hr_bpmB\x0e\n" +
+	"\f_world_buildB\x0e\n" +
+	"\f_world_fetch\"J\n" +
 	"\x12SetProfileResponse\x124\n" +
 	"\aprofile\x18\x01 \x01(\v2\x1a.osscycler.v1.RiderProfileR\aprofile\"\x14\n" +
 	"\x12ListResultsRequest\"I\n" +
@@ -6629,7 +6675,7 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\x04mode\x18\x01 \x01(\x0e2\x19.osscycler.v1.ControlModeR\x04mode\x12\x16\n" +
 	"\x06target\x18\x02 \x01(\x01R\x06target\x12\x1d\n" +
 	"\n" +
-	"changed_ns\x18\x03 \x01(\x03R\tchangedNs\"\xef\x03\n" +
+	"changed_ns\x18\x03 \x01(\x03R\tchangedNs\"\xb1\x04\n" +
 	"\fRiderProfile\x12\x1a\n" +
 	"\bcomplete\x18\x01 \x01(\bR\bcomplete\x12\x1b\n" +
 	"\tweight_kg\x18\x02 \x01(\x01R\bweightKg\x12\x13\n" +
@@ -6650,7 +6696,11 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"cda_forced\x18\x0e \x01(\bR\tcdaForced\x12\x12\n" +
 	"\x04view\x18\x0f \x01(\tR\x04view\x12\x1c\n" +
 	"\n" +
-	"max_hr_bpm\x18\x10 \x01(\x01R\bmaxHrBpm\"\xbc\x01\n" +
+	"max_hr_bpm\x18\x10 \x01(\x01R\bmaxHrBpm\x12\x1f\n" +
+	"\vworld_build\x18\x11 \x01(\tR\n" +
+	"worldBuild\x12\x1f\n" +
+	"\vworld_fetch\x18\x12 \x01(\tR\n" +
+	"worldFetch\"\xbc\x01\n" +
 	"\tRecording\x12\x16\n" +
 	"\x06active\x18\x01 \x01(\bR\x06active\x12\x16\n" +
 	"\x06paused\x18\x02 \x01(\bR\x06paused\x12\x12\n" +

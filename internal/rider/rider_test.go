@@ -212,7 +212,7 @@ func TestViewPreference(t *testing.T) {
 		t.Fatalf("default view %q, want chase", v)
 	}
 	eyes := profile.ViewEyes
-	p, err := f.svc.SetProfile(context.Background(), nil, nil, nil, nil, &eyes)
+	p, err := f.svc.SetProfile(context.Background(), nil, nil, nil, nil, map[string]string{"view": eyes})
 	if err != nil || p.View != profile.ViewEyes || f.state().View != profile.ViewEyes {
 		t.Fatalf("eyes: %+v, %v", p, err)
 	}
@@ -220,7 +220,7 @@ func TestViewPreference(t *testing.T) {
 		t.Error("view not saved")
 	}
 	bad := "drone"
-	if _, err := f.svc.SetProfile(context.Background(), ptr(80), nil, nil, nil, &bad); !errors.Is(err, profile.ErrOutOfRange) {
+	if _, err := f.svc.SetProfile(context.Background(), ptr(80), nil, nil, nil, map[string]string{"view": bad}); !errors.Is(err, profile.ErrOutOfRange) {
 		t.Fatalf("view drone: %v", err)
 	}
 	if p := f.state(); p.WeightKg != 0 || p.View != profile.ViewEyes {

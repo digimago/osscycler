@@ -55,7 +55,14 @@ sealed class Calls : ICommands
     {
         View = view;
         var t = Add("view " + view); // answered at once, as the other calls: no thread in between
-        return t.IsFaulted ? Task.FromException<RiderProfile>(t.Exception!.GetBaseException()) : Task.FromResult(new RiderProfile { View = view });
+        return t.IsFaulted ? Task.FromException<RiderProfile>(t.Exception!.GetBaseException())
+            : Task.FromResult(new RiderProfile { View = view, WorldBuild = Profile.WorldBuild, WorldFetch = Profile.WorldFetch });
+    }
+    public Task<RiderProfile> SetChoice(string name, string value)
+    {
+        var t = Add($"choice {name} {value}");
+        return t.IsFaulted ? Task.FromException<RiderProfile>(t.Exception!.GetBaseException())
+            : Task.FromResult(new RiderProfile { View = View, WorldBuild = name == "world_build" ? value : "idle", WorldFetch = name == "world_fetch" ? value : "cached" });
     }
     public WorkoutDef? SavedWorkout;
     public Task<string> SaveWorkout(string id, WorkoutDef w)
@@ -846,5 +853,42 @@ public class ViewTests
         Assert.DoesNotContain("ride summary", loop.Sent);
     }
 
+    // Building worlds ahead is set in the profile, after the view (owner,
+    // 2026-10-13), when the core keeps it.
+    [Fact]
+    public void ProfileEditGoesOnToBuildingWorldsAhead()
+    {
+        var c = new Calls();
+        c.Profile.View = "chase";
+        c.Profile.WorldBuild = "idle";
+        c.Profile.WorldFetch = "cached";
+        var h = new Controller(c);
+        var st = new State { Profile = new RiderProfile { WeightKg = 75, FtpW = 200, View = "chase", WorldBuild = "idle", WorldFetch = "cached" } };
+        h.Key("m", st, 0);
+        h.Key("p", st, 0);
+        h.Key("enter", st, 0); // weight
+        Thread.Sleep(30);
+        h.Key("enter", st, 0); // height: skipped
+        h.Key("enter", st, 0); // FTP
+        Thread.Sleep(30);
+        h.Key("enter", st, 0); // maximum heart rate: skipped
+        Assert.Contains("behind the rider", h.Dialog(st, 0)!.Big);
+        Assert.Contains("of 7", h.Dialog(st, 0)!.Hint);
+        h.Key("enter", st, 0); // the view as it is
+        Thread.Sleep(30);
+        var d = h.Dialog(st, 0)!;
+        Assert.Equal("Build worlds ahead: ▸ while not riding ◂   also while riding", d.Big);
+        Assert.Contains("step 6 of 7", d.Hint);
+        h.Key("right", st, 0);
+        h.Key("enter", st, 0);
+        Thread.Sleep(30);
+        Assert.Equal("choice world_build always", c.Sent[^1]);
+        Assert.Equal("Downloads for them: ▸ cached only ◂   allowed", h.Dialog(st, 0)!.Big);
+        h.Key("enter", st, 0);
+        Thread.Sleep(30);
+        Assert.Equal("choice world_fetch cached", c.Sent[^1]);
+        Assert.Null(h.Dialog(st, 1));
+        Assert.Contains("profile saved", h.Notice(1));
+    }
 }
 

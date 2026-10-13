@@ -1,3 +1,4 @@
+using System.Linq;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -20,7 +21,19 @@ public sealed partial class Controller
     public sealed record DialogView(string Title, string Big, Hud.Rgb BigColor, IReadOnlyList<string> Lines, string Hint);
 
     // Onboarding: the profile's steps, as the TUI's.
-    enum Step { Weight, Height, Ftp, MaxHr, View }
+    enum Step { Weight, Height, Ftp, MaxHr, View, WorldBuild, WorldFetch }
+
+    // The profile's settings with a fixed set of values, after the view
+    // (owner, 2026-10-13: building worlds ahead set in the profile): the
+    // setting's name, its values (the first the default) with what each
+    // says, and why it is there.
+    static readonly Dictionary<Step, (string Name, string Title, (string Value, string Label)[] Values, string Why)> Choice = new()
+    {
+        [Step.WorldBuild] = ("world_build", "Build worlds ahead", new[] { ("idle", "while not riding"), ("always", "also while riding") },
+            "Courses' 3D worlds are built in the background so a ride starts in its own world. Also while riding: at the lowest priority."),
+        [Step.WorldFetch] = ("world_fetch", "Downloads for them", new[] { ("cached", "cached only"), ("allowed", "allowed") },
+            "A course's first world needs its map data and terrain heights (about 10 MB). Cached only: courses not yet ridden wait until picked."),
+    };
 
     sealed class Onboarding
     {
@@ -161,6 +174,8 @@ public sealed partial class Controller
     static string StepValue(RiderProfile? p, Step s) => s switch
     {
         Step.View => p?.View == "eyes" ? "eyes" : "chase",
+        Step.WorldBuild => p?.WorldBuild == "always" ? "always" : "idle",
+        Step.WorldFetch => p?.WorldFetch == "allowed" ? "allowed" : "cached",
         Step.Weight => p is { WeightKg: > 0 } ? Hud.Format.Fixed(p.WeightKg, 0) : "",
         Step.Height => p is { HeightCm: > 0 } ? Hud.Format.Fixed(p.HeightCm, 0) : "",
         Step.MaxHr => p is { MaxHrBpm: > 0 } ? Hud.Format.Fixed(p.MaxHrBpm, 0) : "",
@@ -299,10 +314,30 @@ public sealed partial class Controller
                     }
                     lock (_mu)
                         if (_onboard == o)
-                        {
-                            _onboard = null;
-                            Say("profile saved");
-                        }
+                            NextChoice(o, Step.View, done.Result);
+                }, TaskContinuationOptions.ExecuteSynchronously);
+                return;
+            }
+            case "left" or "right" or " " or "space" or "up" or "down" when Choice.ContainsKey(o.Step):
+            {
+                var vs = Choice[o.Step].Values;
+                int i = Array.FindIndex(vs, v => v.Value == o.Value);
+                o.Value = vs[(i + (key is "left" or "up" ? vs.Length - 1 : 1)) % vs.Length].Value;
+                return;
+            }
+            case "enter" when Choice.ContainsKey(o.Step):
+            {
+                var step = o.Step;
+                _cmds.SetChoice(Choice[step].Name, o.Value).ContinueWith(done =>
+                {
+                    if (done.Exception != null)
+                    {
+                        Failed("saving the profile", done.Exception.GetBaseException());
+                        return;
+                    }
+                    lock (_mu)
+                        if (_onboard == o)
+                            NextChoice(o, step, done.Result);
                 }, TaskContinuationOptions.ExecuteSynchronously);
                 return;
             }
@@ -376,9 +411,29 @@ public sealed partial class Controller
                 return;
             }
         }
-        if (o.Step != Step.View && key.Length == 1 && (char.IsDigit(key[0]) || key == ".") && o.Value.Length < 5)
+        if (o.Step < Step.View && key.Length == 1 && (char.IsDigit(key[0]) || key == ".") && o.Value.Length < 5)
             o.Value += key;
     }
+
+    // NextChoice goes on from the setting step after saving it: to the
+    // next setting the core keeps (an older core has none: its profile
+    // leaves it empty), else the profile is done.
+    void NextChoice(Onboarding o, Step saved, RiderProfile p)
+    {
+        for (var s = saved + 1; s <= Step.WorldFetch; s++)
+            if (s == Step.WorldBuild && p.WorldBuild != "" || s == Step.WorldFetch && p.WorldFetch != "")
+            {
+                (o.Step, o.Value) = (s, StepValue(p, s));
+                return;
+            }
+        _onboard = null;
+        Say("profile saved");
+    }
+
+    // ProfileSteps is how many steps editing the profile has with the core
+    // giving p: the four numbers, then the settings it keeps.
+    static int ProfileSteps(RiderProfile? p) =>
+        4 + (p?.View is { Length: > 0 } ? 1 : 0) + (p?.WorldBuild is { Length: > 0 } ? 1 : 0) + (p?.WorldFetch is { Length: > 0 } ? 1 : 0);
 
     void End(bool discard) =>
         _cmds.EndActivity(discard).ContinueWith(done =>
@@ -402,7 +457,13 @@ public sealed partial class Controller
             bool chase = ov.Value != "eyes";
             return new("RIDER PROFILE", chase ? "View: ▸ behind the rider ◂   your eyes" : "View:   behind the rider   ▸ your eyes ◂", Hud.Palette.Plain,
                 new[] { "How the 3D view shows your ride: from behind and above you (you see yourself and your ghost), or through your own eyes. v switches while riding." },
-                "step 5 of 5 · ← → choose · enter save · esc back");
+                $"step 5 of {ProfileSteps(st?.Profile)} · ← → choose · enter save · esc back");
+        }
+        if (_onboard is { } oc && Choice.TryGetValue(oc.Step, out var ch))
+        {
+            var big = string.Join("   ", ch.Values.Select(v => v.Value == oc.Value ? $"▸ {v.Label} ◂" : v.Label));
+            return new("RIDER PROFILE", $"{ch.Title}: {big}", Hud.Palette.Plain, new[] { ch.Why },
+                $"step {(int)oc.Step + 1} of {ProfileSteps(st?.Profile)} · ← → choose · enter save · esc back");
         }
         if (_onboard is { } o)
         {
@@ -428,7 +489,7 @@ public sealed partial class Controller
             if (forced)
                 lines.Add("a flag on the core forces this for its run: what you enter is saved for later");
             return new(o.Edit ? "RIDER PROFILE" : "WELCOME TO OSSCYCLER", $"{prompt}: {o.Value}_ {unit}", Hud.Palette.Plain, lines,
-                $"step {(int)o.Step + 1} of {(o.Edit && st?.Profile?.View is { Length: > 0 } ? 5 : 4)} · enter save and go on · esc {(o.Edit && o.Step > Step.Weight ? "back" : "later")}");
+                $"step {(int)o.Step + 1} of {(o.Edit ? ProfileSteps(st?.Profile) : 4)} · enter save and go on · esc {(o.Edit && o.Step > Step.Weight ? "back" : "later")}");
         }
         if (_ending)
         {

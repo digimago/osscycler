@@ -34,6 +34,9 @@ var ahnMinX, ahnMinY, ahnMaxX, ahnMaxY = 10000.0, 306250.0, 280000.0, 618750.0
 // ErrOutside reports that the area has no data in this source.
 var ErrOutside = errors.New("dem: area outside the elevation source")
 
+// ErrNotCached: a tile isn't in the cache, and fetching is off.
+var ErrNotCached = errors.New("not in the cache and fetching is off")
+
 // AHN fetches the AHN ground model in 1 km tiles, coarsened by the server
 // to CellM, and keeps every tile in a cache directory: tiles are shared by
 // courses through the same area, and fetched once.
@@ -140,7 +143,7 @@ func (a *AHN) tile(ctx context.Context, tx, ty int, cell float64) (*Grid, bool, 
 	got := false
 	if errors.Is(err, os.ErrNotExist) {
 		if !a.Fetch {
-			return nil, false, fmt.Errorf("dem: AHN tile %d,%d not in the cache and fetching is off", tx, ty)
+			return nil, false, fmt.Errorf("dem: AHN tile %d,%d: %w", tx, ty, ErrNotCached)
 		}
 		if b, err = a.fetch(ctx, tx, ty, cell); err != nil {
 			return nil, false, err

@@ -502,12 +502,18 @@ func (r *Recorder) appendResult(res Result) {
 }
 
 // lapResult appends a completed lap of a loop to the results file, as a
-// ride of the whole loop: the history then knows the best lap on it.
+// ride of the lap from its start: the history then knows the best lap on
+// it (on a test track the whole course; on a course with a run-in the lap
+// after it).
 func (r *Recorder) lapResult(rd telemetry.Ride, lap int) {
 	l := rd.LastLap
+	start, dist := rd.LapStartM, rd.LapLengthM
+	if dist <= 0 {
+		start, dist = 0, rd.CourseDistanceM
+	}
 	r.appendResult(Result{
 		Finished: l.Finished.UTC().Truncate(time.Second), CourseID: rd.CourseID, CourseName: rd.CourseName,
-		DistanceM: rd.CourseDistanceM, ElapsedS: l.Elapsed.Seconds(), AvgPowerW: l.AvgPowerW, ClimbedM: l.ClimbedM,
+		StartM: start, DistanceM: dist, ElapsedS: l.Elapsed.Seconds(), AvgPowerW: l.AvgPowerW, ClimbedM: l.ClimbedM,
 		DifficultyPct: rd.DifficultyPct, Lap: lap, Sim: SimParams(rd.Sim), StartSpeedMPS: l.StartSpeedMPS,
 		Paused: l.Paused,
 	})

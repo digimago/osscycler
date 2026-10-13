@@ -57,6 +57,9 @@ func Replay(c *course.Course, params sim.Params, startM, startSpeed float64, pow
 	}
 	i := 0
 	trace := []TracePoint{{0, math.Max(0, math.Min(startM, c.Distance-minRideM))}}
+	if c.Lap != nil {
+		trace = []TracePoint{{0, 0}} // a lap, from its start: distances into it
+	}
 	for at := time.Duration(0); at <= end; at += tickInterval {
 		for i+1 < len(power) && power[i+1].At <= at {
 			i++
@@ -71,13 +74,17 @@ func Replay(c *course.Course, params sim.Params, startM, startSpeed float64, pow
 		})
 		s.tick(t0.Add(at))
 		st, _ := hub.Latest()
-		if l := st.Ride.LastLap; c.Loop && l.N > 0 {
-			trace = append(trace, TracePoint{l.Elapsed, c.Distance})
-			return ReplayResult{Finished: true, Elapsed: l.Elapsed, DistanceM: c.Distance, AvgPowerW: l.AvgPowerW, ClimbedM: l.ClimbedM, Trace: trace}
+		if l := st.Ride.LastLap; c.Lap != nil && l.N > 0 {
+			trace = append(trace, TracePoint{l.Elapsed, c.Lap.Length()})
+			return ReplayResult{Finished: true, Elapsed: l.Elapsed, DistanceM: c.Lap.Length(), AvgPowerW: l.AvgPowerW, ClimbedM: l.ClimbedM, Trace: trace}
 		}
 		if st.Ride.Phase == telemetry.RideRiding || st.Ride.Phase == telemetry.RideFinished {
-			if last := trace[len(trace)-1]; st.Ride.Elapsed > last.At {
-				trace = append(trace, TracePoint{st.Ride.Elapsed, st.Ride.DistanceM})
+			at, d := st.Ride.Elapsed, st.Ride.DistanceM
+			if c.Lap != nil {
+				at, d = st.Ride.LapElapsed, st.Ride.LapDistanceM
+			}
+			if last := trace[len(trace)-1]; at > last.At {
+				trace = append(trace, TracePoint{at, d})
 			}
 		}
 		if st.Ride.Phase == telemetry.RideFinished {

@@ -418,7 +418,7 @@ func newRides(hub *telemetry.Hub, trainer ride.Trainer, dir string, user fec.Use
 	}
 	for _, c := range courses {
 		log.Info("course", "id", c.ID, "name", c.Name, "distance_km", fmt.Sprintf("%.2f", c.Distance/1000),
-			"gain_m", fmt.Sprintf("%.0f", c.Gain), "max_grade", fmt.Sprintf("%.1f", c.MaxGrade), "loop", c.Loop)
+			"gain_m", fmt.Sprintf("%.0f", c.Gain), "max_grade", fmt.Sprintf("%.1f", c.MaxGrade), "lapped", c.Lap != nil)
 	}
 	riderKg := user.UserWeightKg
 	if riderKg == 0 {

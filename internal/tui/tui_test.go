@@ -1611,3 +1611,27 @@ func TestHintsFitTheWidth(t *testing.T) {
 		}
 	}
 }
+
+// A course with a run-in and a lap (owner, 2026-10-13): its lap from 500
+// to 3000 m, the course running on 100 m into the lap's start again. Past
+// its end a lap back; the line at the lap's start once, then at its end
+// each lap.
+func TestLapOnACourseWithARunIn(t *testing.T) {
+	c := &pb.Course{DistanceM: 3100, LapStartM: 500, LapEndM: 3000}
+	if !lapped(c) || lapped(&pb.Course{DistanceM: 3100}) {
+		t.Error("lapped: a course with a lap is, a one-way course isn't")
+	}
+	for s, want := range map[float64]float64{400: 400, 3050: 3050, 3150: 650, 5700: 700} {
+		if got := coursePos(c, s); math.Abs(got-want) > 1e-9 {
+			t.Errorf("coursePos(%.0f) = %.0f, want %.0f", s, got, want)
+		}
+	}
+	for _, x := range []struct {
+		from, to float64
+		want     bool
+	}{{490, 510, true}, {1000, 1010, false}, {2990, 3010, true}, {3050, 3060, false}, {5490, 5510, true}} {
+		if got := lapLine(c, x.from, x.to); got != x.want {
+			t.Errorf("lapLine(%.0f, %.0f) = %v", x.from, x.to, got)
+		}
+	}
+}

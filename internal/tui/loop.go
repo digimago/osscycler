@@ -26,6 +26,57 @@ func (m Model) onLoop() bool { return m.rideActive() && m.ride().GetLoop() }
 // trainer is then the ride's alone.
 func (m Model) courseRide() bool { return m.rideActive() && !m.ride().GetLoop() }
 
+// lapLen is a loop ride's lap: the course on a test track, its lap after
+// the run-in on a course whose end comes back to its start.
+func lapLen(r *pb.Ride) float64 {
+	if l := r.GetLapLengthM(); l > 0 {
+		return l
+	}
+	return r.GetCourseDistanceM()
+}
+
+// lapped reports whether course c is ridden lap after lap: a test track,
+// or a course with a lap after its run-in.
+func lapped(c *pb.Course) bool { return c.GetLoop() || c.GetLapEndM() > 0 }
+
+// coursePos is s on course c: on a test track round the loop, past the
+// end of a course with a lap (which runs on into the lap's start again) a
+// lap back, as many times as it takes.
+func coursePos(c *pb.Course, s float64) float64 {
+	f := c.GetDistanceM()
+	switch {
+	case c.GetLoop() && f > 0:
+		return math.Mod(math.Mod(s, f)+f, f)
+	case c.GetLapEndM() > c.GetLapStartM():
+		for l := c.GetLapEndM() - c.GetLapStartM(); s > f; {
+			s -= l
+		}
+	}
+	return s
+}
+
+// lapLine reports whether a lap's line lies in (from, to] on course c:
+// every lap on a test track; on a course with a run-in the lap's start
+// once, then its end each lap (the course running on past it counts on).
+func lapLine(c *pb.Course, from, to float64) bool {
+	if c.GetLoop() {
+		f := c.GetDistanceM()
+		return f > 0 && math.Floor(from/f) != math.Floor(to/f)
+	}
+	s, e := c.GetLapStartM(), c.GetLapEndM()
+	if e <= s {
+		return false
+	}
+	if from < s && s <= to {
+		return true
+	}
+	if to < e {
+		return false
+	}
+	line := e + math.Floor((to-e)/(e-s))*(e-s)
+	return line > from
+}
+
 // loopGhost is the ghost's distance for drawing near pos: on a loop the
 // ghost may be a lap on (just over the line ahead) or back.
 func (m Model) loopGhost(pos float64) float64 { return m.nearPos(m.ghostAt(), pos) }
@@ -33,10 +84,10 @@ func (m Model) loopGhost(pos float64) float64 { return m.nearPos(m.ghostAt(), po
 // nearPos puts distance g on the lap nearest pos, on a loop.
 func (m Model) nearPos(g, pos float64) float64 {
 	r := m.ride()
-	if g < 0 || !r.GetLoop() || r.GetCourseDistanceM() <= 0 {
+	if g < 0 || !r.GetLoop() || lapLen(r) <= 0 {
 		return g
 	}
-	l := r.GetCourseDistanceM()
+	l := lapLen(r)
 	return g + math.Round((pos-g)/l)*l
 }
 

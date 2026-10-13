@@ -665,7 +665,14 @@ public partial class Main : Node3D
             return d;
         double dt = Math.Max(0, _clock - _reportedAt);
         d += r.SpeedMps * Math.Min(dt, 0.5) + _posErr * Math.Max(0, 1 - dt / PosBlendS);
-        return r.Loop ? d : Math.Min(d, r.CourseDistanceM);
+        if (!r.Loop)
+            return Math.Min(d, r.CourseDistanceM);
+        // Past a lapped course's end: a lap back, where the core will put
+        // the rider (course.Lap), rather than standing at the world's end.
+        if (r.LapLengthM > 0 && _world is { } w && !w.Manifest.Course.Loop)
+            while (d > r.CourseDistanceM)
+                d -= r.LapLengthM;
+        return d;
     }
 
     // Place puts the camera at the rider's eyes, facing where the rider is

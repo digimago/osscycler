@@ -121,7 +121,7 @@ func (m Model) followGhost(old *pb.Ride) Model {
 		return m
 	}
 	moved := d - m.ghostD
-	if l := r.GetCourseDistanceM(); r.GetLoop() && moved < -l/2 {
+	if l := lapLen(r); r.GetLoop() && moved < -l/2 {
 		moved += l // over the line
 	}
 	// Faster than any rider is a jump (a new ghost, a new lap), not speed.
@@ -155,6 +155,9 @@ func (m Model) timeTile() metric {
 	t := metric{label: "TIME", value: clock(r.GetElapsedS()), style: lipgloss.NewStyle()}
 	if r.GetLoop() { // a loop is timed lap by lap
 		t.label, t.value = fmt.Sprintf("LAP %d", r.GetLap()), clock(r.GetLapElapsedS())
+		if r.GetLap() == 0 { // on the run-in: the lap comes
+			t.label, t.value = "RUN-IN", clock(r.GetElapsedS())
+		}
 	}
 	g := r.GetGhost()
 	if g == nil {

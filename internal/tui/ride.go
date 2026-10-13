@@ -265,13 +265,13 @@ func (m Model) pickerPanel(width, height int) string {
 				style = style.Bold(true).Foreground(lipgloss.Color("220"))
 			}
 			pbText := ""
-			if r, ok := m.coursePB(c.GetId()); ok && c.GetLoop() {
+			if r, ok := m.coursePB(c.GetId()); ok && lapped(c) {
 				pbText = pbStyle.Render("  lap PB " + lapTime(r.GetElapsedS()))
 			} else if ok {
 				pbText = pbStyle.Render("  PB " + clock(r.GetElapsedS()))
 			}
 			name := c.GetName()
-			if c.GetLoop() {
+			if lapped(c) {
 				name = "↻ " + name
 			}
 			lines = append(lines, style.Render(fmt.Sprintf("%s%-34s %6.2f km  +%4.0f m  max %4.1f%%",
@@ -485,7 +485,7 @@ func gradeStrip(c *pb.Course, pos, ghost float64, width int) string {
 		return ""
 	}
 	finish := c.GetDistanceM()
-	loop := c.GetLoop() && finish > 0
+	loop := lapped(c) && finish > 0
 	bg := make([]color.Color, width) // background per column
 	label := []rune(strings.Repeat(" ", width))
 	ruler := []rune(strings.Repeat(" ", width))
@@ -508,12 +508,12 @@ func gradeStrip(c *pb.Course, pos, ghost float64, width int) string {
 		var cellBG color.Color
 		from, to := pos+float64(i)*lookaheadCellM, pos+float64(i+1)*lookaheadCellM
 		switch {
-		case loop && math.Floor(from/finish) != math.Floor(to/finish):
+		case loop && lapLine(c, from, to):
 			// The line, every lap.
 			cellBG = finishColor(i)
 			put(label, col, "LAP")
 		case loop:
-			g := gradeAt(c, math.Mod(mid, finish))
+			g := gradeAt(c, coursePos(c, mid))
 			cellBG = gradeColor(g)
 			if onLabel {
 				put(label, col, fmt.Sprintf("%.0f%%", g))

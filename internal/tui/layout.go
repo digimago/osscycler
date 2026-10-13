@@ -177,11 +177,17 @@ func (m Model) tile(id string) metric {
 	case "time":
 		return m.timeTile()
 	case "to_go":
-		label := "TO GO"
+		label, togo := "TO GO", r.GetCourseDistanceM()-r.GetDistanceM()
 		if r.GetLoop() {
 			label = "LAP TO GO"
+			if r.GetLapLengthM() > 0 {
+				togo = r.GetLapLengthM() - r.GetLapDistanceM()
+				if d := r.GetLapDistanceM(); d < 0 { // on the run-in
+					label, togo = "TO THE LAP", -d
+				}
+			}
 		}
-		return metric{label, fmt.Sprintf("%.2f", math.Max(0, r.GetCourseDistanceM()-r.GetDistanceM())/1000), "km", speedStyle, nil}
+		return metric{label, fmt.Sprintf("%.2f", math.Max(0, togo)/1000), "km", speedStyle, nil}
 	case "climbed":
 		unit := fmt.Sprintf("of %.0f m", r.GetCourseGainM())
 		if r.GetLoop() {

@@ -633,6 +633,7 @@ func Build(c *course.Course, o Options) (*World, error) {
 	despike(px, py, c.Loop)
 	settleOnRoad(px, py, lanes, c.Loop, newRoadIndex(w.prims, func(mat int) bool { return carriageway[w.doc.MaterialName(mat)] }))
 	limitDrift(lanes, pathStep) // a lane settling narrowed eases there (it only narrows)
+	tailOntoLap(c, pd, px, py, pz, lanes)
 	m.Path.XYZ = m.Path.XYZ[:0]
 	for i := range pd {
 		m.Path.XYZ = append(m.Path.XYZ, round(px[i]), round(pz[i]), round(-py[i]))

@@ -1016,3 +1016,62 @@ func TestPathStepIsThePointsSpacing(t *testing.T) {
 		}
 	}
 }
+
+// A lapped course's tail ends on the lap's own path (owner, 2026-10-13):
+// past the turn into the lap the tail's points ease onto the lap's, so
+// wrapping back by a lap at the course's end lands where the rider was.
+func TestTailOntoLap(t *testing.T) {
+	raw, err := course.New("square", "Square", func() []course.Point {
+		m := 1 / 111195.0
+		k := m / math.Cos(52*math.Pi/180)
+		var pts []course.Point
+		for _, s := range [][4]float64{{0, 0, 500, 0}, {500, 0, 500, 500}, {500, 500, 1000, 500}, {1000, 500, 1000, 0}, {1000, 0, 500, 0}, {500, 0, 0, 0}} {
+			for i := range 50 {
+				f := float64(i) / 50
+				pts = append(pts, course.Point{Lat: 52 + (s[1]+f*(s[3]-s[1]))*m, Lon: 5 + (s[0]+f*(s[2]-s[0]))*k, Ele: 10})
+			}
+		}
+		return append(pts, course.Point{Lat: 52, Lon: 5, Ele: 10})
+	}())
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := raw.Lapped()
+	l := c.Lap
+	if l == nil {
+		t.Fatal("not lapped")
+	}
+	// A path every 5 m along the course, the tail 1.5 m behind the lap
+	// along the road (as a turn rounded otherwise leaves it).
+	n := int(c.Distance/5) + 1
+	step := c.Distance / float64(n-1)
+	pd, px, py, pz, lanes := make([]float64, n), make([]float64, n), make([]float64, n), make([]float64, n), make([]float64, n)
+	for i := range pd {
+		pd[i] = float64(i) * step
+		d := pd[i]
+		if d > l.EndM {
+			d = d - l.Length() - 1.5
+		}
+		px[i], py[i] = c.Project(c.Position(d))
+		pz[i], lanes[i] = d/100, 1+d/1e4
+	}
+	tailOntoLap(c, pd, px, py, pz, lanes)
+	lerp := func(v []float64, d float64) float64 {
+		f := d / step
+		i := min(int(f), len(v)-2)
+		return v[i] + (f-float64(i))*(v[i+1]-v[i])
+	}
+	end, lapAt := pd[n-1], pd[n-1]-l.Length()
+	if g := math.Hypot(px[n-1]-lerp(px, lapAt), py[n-1]-lerp(py, lapAt)); g > 0.01 {
+		t.Errorf("the course's end is %.2f m from the lap's point %.0f m in", g, end-l.EndM)
+	}
+	if math.Abs(pz[n-1]-lerp(pz, lapAt)) > 1e-6 || math.Abs(lanes[n-1]-lerp(lanes, lapAt)) > 1e-6 {
+		t.Errorf("height %.3f / %.3f, lane %.3f / %.3f", pz[n-1], lerp(pz, lapAt), lanes[n-1], lerp(lanes, lapAt))
+	}
+	// The turn into the lap is left as it was.
+	i := int((l.EndM+10)/step) + 1
+	want, _ := c.Project(c.Position(pd[i] - l.Length() - 1.5))
+	if math.Abs(px[i]-want) > 1e-9 {
+		t.Errorf("the tail's turn moved")
+	}
+}

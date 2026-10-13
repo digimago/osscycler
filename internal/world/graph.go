@@ -581,6 +581,14 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 		}
 	}
 	limitDrift(lanes, pathStep)
+	if c.Lap != nil && !c.Loop {
+		// The tail onto the lap: rewritten as eased.
+		tailOntoLap(c, pd, px, py, pz, lanes)
+		m.Path.XYZ = m.Path.XYZ[:0]
+		for i := range pd {
+			m.Path.XYZ = append(m.Path.XYZ, round(px[i]), round(pz[i]), round(-py[i]))
+		}
+	}
 	for _, off := range lanes {
 		m.Path.LaneM = append(m.Path.LaneM, round(off))
 	}

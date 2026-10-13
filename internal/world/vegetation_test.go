@@ -343,7 +343,8 @@ func TestBushesKeepTheirSpreadOffTheRoad(t *testing.T) {
 
 // By the sea trees grow low (owner, 2026-10-10: dune woods stood far too
 // tall): the same forest 300 m from the shore is seaLow of its height
-// inland, and 6 km inland it is as tall as without a coast.
+// inland, and 1.5 km inland it is as tall as without a coast (owner,
+// 2026-10-13: the inner dunes' woods are full grown).
 func TestTreesByTheSeaGrowLow(t *testing.T) {
 	if f := seaFactor(300); f != seaLow {
 		t.Errorf("300 m from the sea: %.2f", f)
@@ -351,8 +352,11 @@ func TestTreesByTheSeaGrowLow(t *testing.T) {
 	if f := seaFactor(math.Inf(1)); f != 1 {
 		t.Errorf("inland: %.2f", f)
 	}
-	if a, b := seaFactor(2000), seaFactor(4000); !(seaLow < a && a < b && b < 1) {
-		t.Errorf("not growing inland: %.2f at 2 km, %.2f at 4 km", a, b)
+	if a, b := seaFactor(600), seaFactor(1200); !(seaLow < a && a < b && b < 1) {
+		t.Errorf("not growing inland: %.2f at 600 m, %.2f at 1.2 km", a, b)
+	}
+	if f := seaFactor(2000); f != 1 {
+		t.Errorf("2 km inland, in the inner dunes: %.2f", f)
 	}
 	c := northCourse(t)
 	kx := 111195 * math.Cos(52*math.Pi/180)
@@ -384,6 +388,54 @@ func TestTreesByTheSeaGrowLow(t *testing.T) {
 	}
 	if n < 100 {
 		t.Errorf("%d trees compared", n)
+	}
+}
+
+// On poor ground by the sea a tree is held back by the poorer of the two,
+// not both (owner, 2026-10-13: the dunes' trees, small for the sand and
+// again for the sea, came out a quarter of their height): a heath's small
+// trees by the shore keep at least seaLow of their size, and those held
+// back more by the heath than by the sea keep their size.
+func TestPoorGroundAndSeaDontStack(t *testing.T) {
+	c := northCourse(t)
+	kx := 111195 * math.Cos(52*math.Pi/180)
+	p := func(x, y float64) scenery.LatLon { return scenery.LatLon{Lat: 52 + y/111195, Lon: 5 + x/kx} }
+	lm := scenery.NewLandMap(c, &scenery.Data{Elements: []scenery.Element{
+		{Type: "way", ID: 1, Tags: map[string]string{"natural": "heath"}, Geometry: []scenery.LatLon{p(-300, -100), p(300, -100), p(300, 1100), p(-300, 1100), p(-300, -100)}},
+	}})
+	sizes := func(sea func(lat, lon float64) float64) map[[2]float32]float32 {
+		tr := testTerrain(c, Options{Land: lm, SeaDistance: sea})
+		s := &surface{t: tr, lists: map[[2]int]chunkLists{}}
+		out := map[[2]float32]float32{}
+		for _, q := range plants(tr, s, lm, tr.chunks(), nil, nil, nil, newRouteGrid(tr.coarse, 400)) {
+			if q.kind < speciesKinds {
+				out[[2]float32{q.x, q.z}] = q.s
+			}
+		}
+		return out
+	}
+	inland := sizes(nil)
+	shore := sizes(func(float64, float64) float64 { return 300 })
+	n, kept := 0, 0
+	for k, s := range shore {
+		in, ok := inland[k]
+		if !ok {
+			continue
+		}
+		n++
+		r := float64(s / in)
+		if r < seaLow-1e-4 {
+			t.Fatalf("a heath tree by the sea at %.2f of its inland size", r)
+		}
+		if r > 0.99 {
+			kept++
+		}
+	}
+	if n < 20 {
+		t.Fatalf("%d trees compared", n)
+	}
+	if kept == 0 {
+		t.Errorf("every one of %d heath trees by the sea is lower than inland: the heath and the sea stack", n)
 	}
 }
 

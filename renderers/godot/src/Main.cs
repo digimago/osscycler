@@ -601,8 +601,15 @@ public partial class Main : Node3D
         var r = st?.Ride;
         // Worlds are built ahead only while nothing is ridden: a ride (its
         // own world first), a workout or manual control stops it.
+        // The rider's profile says when and how (world_build, world_fetch).
+        _ahead?.Fetch(st?.Profile?.WorldFetch == "allowed");
         if (Head.AheadQueue.Riding(st))
-            _ahead?.Busy();
+        {
+            if (st?.Profile?.WorldBuild == "always")
+                _ahead?.Idle(r?.CourseId ?? "");
+            else
+                _ahead?.Busy();
+        }
         else if (st != null)
             _ahead?.Idle();
         if (r == null || r.CourseId == "")

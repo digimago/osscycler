@@ -45,13 +45,23 @@ public sealed class AheadQueue
         || st?.Workout?.Phase is WorkoutPhase.Armed or WorkoutPhase.Running or WorkoutPhase.Paused
         || st?.Control?.Mode is ControlMode.Power or ControlMode.Grade or ControlMode.Level;
 
-    // Next is the next course to build (null when every one has been tried).
-    public (string Id, string Name)? Next()
+    // Next is the next course to build (null when every one has been
+    // tried), other than skip (the course being ridden, whose own world the
+    // ride builds).
+    public (string Id, string Name)? Next(string skip = "")
     {
         foreach (var c in _courses)
-            if (!_done.ContainsKey(c.Id))
+            if (!_done.ContainsKey(c.Id) && c.Id != skip)
                 return c;
         return null;
+    }
+
+    // Retry forgets the courses that ended so: the skipped ones are tried
+    // again once downloads are allowed.
+    public void Retry(Outcome how)
+    {
+        foreach (var id in _done.Where(kv => kv.Value == how).Select(kv => kv.Key).ToList())
+            _done.Remove(id);
     }
 
     // Done records how a course's build ended.
@@ -70,7 +80,7 @@ public sealed class AheadQueue
             int at = _courses.Count(c => _done.ContainsKey(c.Id)) + 1;
             return $"3D worlds ahead: {building} ({Math.Min(at, n)} of {n}){(how != "" ? " · " + how : "")}";
         }
-        if (Next() != null)
+        if (_courses.Any(c => !_done.ContainsKey(c.Id)))
             return "";
         int skipped = _courses.Count(c => _done.TryGetValue(c.Id, out var o) && o == Outcome.Skipped);
         return skipped > 0 ? $"3D worlds ahead: {ready} of {n} ready, {skipped} built when ridden (map data to fetch)" : "";

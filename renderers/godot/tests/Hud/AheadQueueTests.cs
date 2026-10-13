@@ -33,6 +33,23 @@ public class AheadQueueTests
     }
 
     [Fact]
+    public void LeavesTheRiddenCourseToTheRideAndRetriesSkippedOnesWhenDownloadsAreAllowed()
+    {
+        var q = new AheadQueue();
+        q.Courses(Menu, System.Array.Empty<(string, long)>());
+        Assert.Equal("oval-400", q.Next(skip: "figure-8")?.Id); // building during a ride on the figure 8
+        q.Done("figure-8", AheadQueue.Outcome.Skipped);
+        q.Done("oval-400", AheadQueue.Outcome.Ready);
+        q.Done("posbank", AheadQueue.Outcome.Failed);
+        q.Done("velp", AheadQueue.Outcome.Skipped);
+        Assert.Null(q.Next());
+        q.Retry(AheadQueue.Outcome.Skipped);
+        Assert.Equal("figure-8", q.Next()?.Id);
+        q.Done("figure-8", AheadQueue.Outcome.Ready);
+        Assert.Equal("velp", q.Next()?.Id); // the failed one stays failed
+    }
+
+    [Fact]
     public void YieldsToARideUnderWayButNotToOneThatHasEnded()
     {
         Assert.False(AheadQueue.Riding(null));

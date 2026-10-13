@@ -8,15 +8,16 @@ namespace Osscycler;
 
 // WorldAhead builds courses' 3D worlds ahead of a ride, so a course picked
 // from the menu starts in its own world rather than a preview (owner,
-// 2026-10-13: faster ride starts). While nothing is ridden (no course
-// ride, workout or manual control) it takes the core's courses one at a
-// time in AheadQueue's order and runs osscycler-world -if-stale -if-cached
-// at idle priority: a current world is left as it is, a course whose map
-// data or ground model isn't all cached is skipped (built when it is
-// ridden, fetching what it lacks: the owner's choice, nothing is
-// downloaded for courses not ridden). A ride, workout or manual control
-// stops the build going on (WorldSource builds the ride's own world); it
-// is tried again when nothing is ridden.
+// 2026-10-13: faster ride starts). It takes the core's courses one at a
+// time in AheadQueue's order and runs osscycler-world -if-stale at idle
+// priority: a current world is left as it is. The rider's profile says
+// when and how (owner, 2026-10-13: preferences in the profile): by
+// default only while nothing is ridden (a ride, workout or manual control
+// stops the build going on, tried again later) and from the caches only
+// (-if-cached: a course whose map data or ground model isn't all cached
+// is skipped, built when it is ridden); or during rides too (the course
+// being ridden left to WorldSource, which builds its own world), and
+// downloading what a course lacks.
 public sealed class WorldAhead
 {
     readonly Core _core;
@@ -24,7 +25,8 @@ public sealed class WorldAhead
     readonly object _mu = new();
     readonly Head.AheadQueue _queue = new();
     CancellationTokenSource? _run;
-    string _building = "", _how = "";
+    string _building = "", _buildingId = "", _how = "";
+    bool _fetch;
     DateTime _listedAt = DateTime.MinValue;
     bool _listing;
 
@@ -44,12 +46,27 @@ public sealed class WorldAhead
         }
     }
 
-    // Idle is called every frame while nothing is ridden: it lists the
-    // core's courses now and then and builds the next one.
-    public void Idle()
+    // Fetch says whether builds may download what a course lacks (the
+    // profile's world_fetch); allowing it tries the skipped courses again.
+    public void Fetch(bool allowed)
     {
         lock (_mu)
         {
+            if (allowed && !_fetch)
+                _queue.Retry(Head.AheadQueue.Outcome.Skipped);
+            _fetch = allowed;
+        }
+    }
+
+    // Idle is called every frame while worlds may be built: it lists the
+    // core's courses now and then and builds the next one, other than
+    // riding (the course being ridden, "" none), whose build it stops.
+    public void Idle(string riding = "")
+    {
+        lock (_mu)
+        {
+            if (riding != "" && _buildingId == riding)
+                _run?.Cancel();
             if (_run != null || _listing)
                 return;
             if (DateTime.UtcNow - _listedAt > ListEvery)
@@ -58,12 +75,13 @@ public sealed class WorldAhead
                 _ = Task.Run(List);
                 return;
             }
-            if (_queue.Next() is not { } next)
+            if (_queue.Next(riding) is not { } next)
                 return;
             _run = new CancellationTokenSource();
             var token = _run.Token;
-            (_building, _how) = (next.Name, "");
-            _ = Task.Run(() => Build(next.Id, token));
+            (_building, _buildingId, _how) = (next.Name, next.Id, "");
+            var extra = _fetch ? System.Array.Empty<string>() : new[] { "-if-cached" };
+            _ = Task.Run(() => Build(next.Id, extra, token));
         }
     }
 
@@ -97,14 +115,14 @@ public sealed class WorldAhead
         }
     }
 
-    async Task Build(string id, CancellationToken token)
+    async Task Build(string id, string[] extra, CancellationToken token)
     {
         Head.AheadQueue.Outcome? how = null;
         try
         {
             var courses = await WorldSource.FetchCourse(_core, _dir, id, token);
             bool ready = false, skipped = false;
-            var (code, _) = await WorldSource.RunBuilder(WorldSource.Args(courses, _dir, id, "-if-cached"), ProcessPriorityClass.Idle, line =>
+            var (code, _) = await WorldSource.RunBuilder(WorldSource.Args(courses, _dir, id, extra), ProcessPriorityClass.Idle, line =>
             {
                 if (Head.BuildStatus.Parse(line) is { } h)
                     lock (_mu)
@@ -133,7 +151,7 @@ public sealed class WorldAhead
             {
                 if (how is { } o)
                     _queue.Done(id, o);
-                (_run, _building, _how) = (null, "", "");
+                (_run, _building, _buildingId, _how) = (null, "", "", "");
             }
         }
     }

@@ -279,6 +279,9 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 					kind = kHeather
 				case catMarram:
 					kind = kMarram
+					if unit(splitmix(h+29)) < marramFlowering {
+						kind = kMarramFlower
+					}
 				default:
 					// A species: of this land, or now and then near a border
 					// of the land next to it; an orchard's are small.
@@ -625,7 +628,9 @@ func (w *World) addTemplates() error {
 		case k == kLily:
 			lilyTemplate(&p)
 		case k == kMarram:
-			marramTemplate(&p)
+			marramTemplate(&p, false)
+		case k == kMarramFlower:
+			marramTemplate(&p, true)
 		case k >= kHedge:
 			hedgeTemplate(&p, hedgeKinds[k-kHedge])
 		}

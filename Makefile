@@ -129,10 +129,10 @@ replay: build ## Re-ride recorded course rides from $(RIDES) (courses from $(COU
 	$(BIN)/osscycler-replay -rides $(RIDES) -courses $(COURSES) $(REPLAY_FLAGS)
 
 world: build ## Build the 3D world of COURSE (default posbank) into $(WORLDS)/ with BUILDER (graph, the default, or classic, the fallback); ground model tiles cached in $(COURSES)/.dem
-	$(BIN)/osscycler-world -courses $(COURSES) -out $(WORLDS) -builder $(BUILDER) $(WORLD_FLAGS) $(or $(COURSE),posbank)
+	$(BIN)/osscycler-world -courses $(COURSES) -out $(WORLDS) -builder $(BUILDER) $(WORLD_FLAGS) "$(or $(COURSE),posbank)"
 
 world-ab: build ## Build COURSE's world with both builders (classic, graph) and compare them side by side
-	$(BIN)/osscycler-world -courses $(COURSES) -out $(WORLDS) -builder ab $(WORLD_FLAGS) $(or $(COURSE),posbank)
+	$(BIN)/osscycler-world -courses $(COURSES) -out $(WORLDS) -builder ab $(WORLD_FLAGS) "$(or $(COURSE),posbank)"
 
 3d: build ## Build and open the 3D view (from source) on the core at $(ADDR), worlds in $(WORLDS)/ by BUILDER; 3D_FLAGS=--debug marks flaws
 	$(DOTNET) build renderers/godot/OsscyclerGodot.sln -v quiet -nologo

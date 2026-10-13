@@ -24,12 +24,12 @@ import (
 
 // BuilderVersion goes up when a change to the builder should rebuild the
 // worlds riders have (a fix they'd ride into, not every commit).
-const BuilderVersion = 13
+const BuilderVersion = 14
 
 // GraphVersion is BuilderVersion for the graph builder (world.EngineGraph),
 // which goes its own way: it goes up when that builder changes what it
 // builds.
-const GraphVersion = 12
+const GraphVersion = 14
 
 // Builder builds worlds.
 type Builder struct {

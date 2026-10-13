@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/digimago/osscycler/internal/course"
+	"github.com/digimago/osscycler/internal/scenery"
 	"github.com/digimago/osscycler/internal/world"
 )
 
@@ -162,5 +163,28 @@ func TestBuilderFallsBackToClassic(t *testing.T) {
 	}
 	if r.World.Manifest.Stamp != EngineStamp(c, world.EngineGraph) {
 		t.Errorf("stamp %q, want the graph builder's %q", r.World.Manifest.Stamp, EngineStamp(c, world.EngineGraph))
+	}
+}
+
+// A build from the caches only (Complete, Fetch off) never makes a world
+// with grass where data is missing: it says the data isn't all cached, so
+// the course is built when it is ridden and fetches what it lacks (owner,
+// 2026-10-13: worlds built ahead of rides from the caches only).
+func TestCompleteBuildNeedsEverythingCached(t *testing.T) {
+	var c *course.Course
+	for _, ic := range course.Included() {
+		if ic.ID == "posbank" {
+			c = ic
+		}
+	}
+	if c == nil {
+		t.Fatal("no included posbank course")
+	}
+	maps := scenery.NewStore(scenery.Config{CacheDir: t.TempDir(), Fetch: false}, nil)
+	for _, ground := range []string{"ahn", "none"} {
+		b := &Builder{Ground: ground, DEMCache: t.TempDir(), Maps: maps, Complete: true, Options: world.Options{Generator: "test"}}
+		if _, err := b.Build(context.Background(), c, nil); !errors.Is(err, ErrIncomplete) {
+			t.Errorf("ground %s, empty caches: %v, want ErrIncomplete", ground, err)
+		}
 	}
 }

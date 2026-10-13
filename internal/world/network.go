@@ -2165,7 +2165,11 @@ func dropCoveredStubs(ls []*roadLine, rbs []roundabout, stub float64, keepEnds b
 						if l2 := de*de + dn*dn; l2 > 0 {
 							f = math.Max(0, math.Min(1, ((s.e-a.e)*de+(s.n-a.n)*dn)/l2))
 						}
-						if math.Hypot(s.e-a.e-f*de, s.n-a.n-f*dn) < a.hw+0.5*s.hw && (over == nil || !over(a, s)) {
+						slack := 0.5 * s.hw
+						if keepEnds && !alongside(ss, i, de, dn) {
+							slack = 0
+						}
+						if math.Hypot(s.e-a.e-f*de, s.n-a.n-f*dn) < a.hw+slack && (over == nil || !over(a, s)) {
 							covered[i] = true
 							break
 						}
@@ -2173,7 +2177,14 @@ func dropCoveredStubs(ls []*roadLine, rbs []roundabout, stub float64, keepEnds b
 				}
 			}
 		}
-		flipShortRuns(covered, coveredMinSamples)
+		if keepEnds {
+			// A short stretch between two roads the way crosses (the
+			// median of a dual road) keeps its way: handed to the roads, it
+			// was grass under the rider (the Dunes course at 15.27 km).
+			flipShortRunsOf(covered, coveredMinSamples, true)
+		} else {
+			flipShortRuns(covered, coveredMinSamples)
+		}
 		if keepEnds {
 			for i := 0; i < len(covered) && covered[i]; i++ {
 				covered[i] = false
@@ -2208,6 +2219,15 @@ func dropCoveredStubs(ls []*roadLine, rbs []roundabout, stub float64, keepEnds b
 	return out
 }
 
+// alongside tells whether the map road's direction de, dn runs along the
+// route's own way at sample i (within about 45°) rather than across it.
+func alongside(ss []sample, i int, de, dn float64) bool {
+	a, b := ss[max(0, i-1)], ss[min(len(ss)-1, i+1)]
+	re, rn := b.e-a.e, b.n-a.n
+	l := math.Hypot(re, rn) * math.Hypot(de, dn)
+	return l == 0 || math.Abs(re*de+rn*dn)/l > math.Sqrt2/2
+}
+
 // stubM: a stretch of the route's own way shorter than this between
 // stretches lying on roads isn't drawn.
 const stubM = 30.0
@@ -2225,6 +2245,23 @@ func flipShortRuns(b []bool, min int) {
 			j++
 		}
 		if i > 0 && j < len(b) && j-i < min {
+			for k := i; k < j; k++ {
+				b[k] = !b[k]
+			}
+		}
+		i = j
+	}
+}
+
+// flipShortRunsOf flips the runs of value v shorter than min samples that
+// lie between runs of the other value, leaving the other value's alone.
+func flipShortRunsOf(b []bool, min int, v bool) {
+	for i := 0; i < len(b); {
+		j := i
+		for j < len(b) && b[j] == b[i] {
+			j++
+		}
+		if b[i] == v && i > 0 && j < len(b) && j-i < min {
 			for k := i; k < j; k++ {
 				b[k] = !b[k]
 			}

@@ -184,10 +184,16 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 		return f
 	}
 	var out []plant
-	add := func(kind int, e, n float64, h uint64, scale float64) {
+	// poor is the poor ground's share of a tree's height (1: none); by
+	// the sea the lower of it and the sea's counts, not both (owner,
+	// 2026-10-13: the two multiplied made the dunes' trees a quarter of
+	// their height).
+	add := func(kind int, e, n float64, h uint64, scale, poor float64) {
 		size := plantSize(h, scale)
 		if kind < speciesKinds {
-			size *= seaAt(e, n)
+			size *= math.Min(poor, seaAt(e, n))
+		} else {
+			size *= poor
 		}
 		out = append(out, plant{kind: kind, x: float32(e), y: float32(s.stand(e, n)), z: float32(-n),
 			s: float32(size), yaw: float32(2 * math.Pi * unit(h>>24))})
@@ -246,14 +252,14 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 					// height).
 					sp, scale := youngTree(splitmix(h+13), leaf)
 					if clearOf(e, n, math.Max(clearRoadM, allSpecies[sp].crownReach()*plantSize(splitmix(h+1), scale))) && !inArea(e, n) {
-						add(treeKind(sp, formOpen, dist > treeNearM), e, n, splitmix(h+1), scale)
+						add(treeKind(sp, formOpen, dist > treeNearM), e, n, splitmix(h+1), scale, 1)
 					}
 					continue
 				}
 				if kind < 0 || onRoad(e, n) || inArea(e, n) {
 					continue
 				}
-				scale := 1.0
+				scale, poor := 1.0, 1.0
 				switch kind {
 				case catBush:
 					// A species of this land, its own shape and size (bushes.go).
@@ -323,11 +329,11 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 					if poorGround[l] && unit(hb>>48) < heathSolitary {
 						// Heath and dunes are poor ground: trees stay small, bush-like;
 						// only now and then a solitary one grows full.
-						scale *= 0.35 + 0.25*unit(hb>>32)
+						poor = 0.35 + 0.25*unit(hb>>32)
 					}
 					kind = treeKind(sp, form, dist > treeNearM)
 				}
-				add(kind, e, n, splitmix(h+1), scale)
+				add(kind, e, n, splitmix(h+1), scale, poor)
 			}
 		}
 	}
@@ -392,17 +398,19 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 					}
 				}
 				sp := pickSpecies(mix, unit(hs))
-				add(treeKind(sp, formOpen, routeDist(e, n) > treeNearM), e, n, splitmix(h+2), 1)
+				add(treeKind(sp, formOpen, routeDist(e, n) > treeNearM), e, n, splitmix(h+2), 1, 1)
 			}
 		}
 	}
 
 	// addTurned is add facing a given way (yaw).
 	addTurned := func(kind int, e, n float64, h uint64, scale, yaw float64) {
-		add(kind, e, n, h, scale)
+		add(kind, e, n, h, scale, 1)
 		out[len(out)-1].yaw = float32(yaw)
 	}
-	willows(land, keys, t.o.ChunkM, onRoad, inArea, routeDist, landAt, add, addTurned)
+	willows(land, keys, t.o.ChunkM, onRoad, inArea, routeDist, landAt, func(kind int, e, n float64, h uint64, scale float64) {
+		add(kind, e, n, h, scale, 1)
+	}, addTurned)
 	out = append(out, waterPlants(t, land, keys, onRoad, routeDist)...)
 
 	out = append(out, hedges(t, s, sp, wp)...)
@@ -486,10 +494,13 @@ func willows(land *scenery.LandMap, keys [][2]int, chunkM float64, onRoad func(e
 // By the sea woods grow low (owner, 2026-10-10: the forest in the dunes
 // of the Amsterdam Water Supply Dunes course stood far too tall): wind and
 // salt keep trees within seaLowM of the shore at seaLow of their height,
-// growing to full height by seaFullM inland.
+// growing to full height by seaFullM inland. Only the outer dunes (owner,
+// 2026-10-13: with 6 km and poor ground on top, the inner dunes' woods
+// came out a quarter of their height, almost comical; there pine, oak
+// and birch stand 10-20 m).
 const (
-	seaLowM  = 500.0
-	seaFullM = 6000.0
+	seaLowM  = 300.0
+	seaFullM = 1500.0
 	seaLow   = 0.4
 )
 

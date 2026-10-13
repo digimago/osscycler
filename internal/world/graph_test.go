@@ -945,3 +945,29 @@ func TestTraceRemovesSpurs(t *testing.T) {
 		}
 	}
 }
+
+// A course on a path the map lacks, crossing a dual road's two
+// carriageways at a slant, keeps its way across the median between them:
+// the carriageways cover its way only where they lie, not half its width
+// beyond, and the few metres between two roads it crosses aren't handed to
+// them (owner's mark, 2026-10-11: grass under the rider for ~10 m where
+// the Dunes course crosses the Parnassiaweg at 15.27 km).
+func TestGraphPathAcrossADualRoadKeepsItsWay(t *testing.T) {
+	pts := along([2]float64{0, 0}, [2]float64{240, 180}, 20)
+	c := graphCourse(t, "crossing", append(pts, [2]float64{240, 180}))
+	ways := []scenery.Way{
+		{Line: [][2]float64{{116, -100}, {116, 300}}, Nodes: []int64{1, 2}, Name: "Parnassiaweg", Class: "unclassified", WidthM: 3.1, Oneway: 1},
+		{Line: [][2]float64{{124, 300}, {124, -100}}, Nodes: []int64{3, 4}, Name: "Parnassiaweg", Class: "unclassified", WidthM: 3.1, Oneway: 1},
+	}
+	on := routeOn(c.Distance, func(float64) int { return -1 })
+	w, err := BuildGraph(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	road := newRoadIndex(w.prims, func(mat int) bool { return riddenMaterials[w.doc.MaterialName(mat)] })
+	for x := 110.0; x <= 130; x += 0.5 {
+		if y := x * 0.75; !road.on(x, y) {
+			t.Fatalf("nothing to ride at %.1f m east on the path's line (the carriageways at 116 and 124)", x)
+		}
+	}
+}

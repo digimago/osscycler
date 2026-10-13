@@ -1711,7 +1711,11 @@ func (x *GetActivityHistoryResponse) GetSpeedMps() []float32 {
 type GetActivitySummaryRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// As GetActivityHistoryRequest.name.
-	Name          string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// The last course ride of the activity being recorded (name empty): from
+	// its start to its finish, or to now while it is under way, rather than
+	// the whole activity. FAILED_PRECONDITION when it has none.
+	LastRide      bool `protobuf:"varint,2,opt,name=last_ride,json=lastRide,proto3" json:"last_ride,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1751,6 +1755,13 @@ func (x *GetActivitySummaryRequest) GetName() string {
 		return x.Name
 	}
 	return ""
+}
+
+func (x *GetActivitySummaryRequest) GetLastRide() bool {
+	if x != nil {
+		return x.LastRide
+	}
+	return false
 }
 
 type GetActivitySummaryResponse struct {
@@ -6324,9 +6335,10 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\x0eheart_rate_bpm\x18\x04 \x03(\x11R\fheartRateBpm\x12\x1f\n" +
 	"\vcadence_rpm\x18\x05 \x03(\x11R\n" +
 	"cadenceRpm\x12\x1b\n" +
-	"\tspeed_mps\x18\x06 \x03(\x02R\bspeedMps\"/\n" +
+	"\tspeed_mps\x18\x06 \x03(\x02R\bspeedMps\"L\n" +
 	"\x19GetActivitySummaryRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\"U\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1b\n" +
+	"\tlast_ride\x18\x02 \x01(\bR\blastRide\"U\n" +
 	"\x1aGetActivitySummaryResponse\x127\n" +
 	"\asummary\x18\x01 \x01(\v2\x1d.osscycler.v1.ActivitySummaryR\asummary\"\xfd\x04\n" +
 	"\x0fActivitySummary\x12\x12\n" +

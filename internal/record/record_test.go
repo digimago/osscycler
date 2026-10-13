@@ -479,3 +479,31 @@ func TestLapSynced(t *testing.T) {
 		t.Errorf("synced at %v, the lap ended at %v", r.a.synced, end.Add(-time.Second))
 	}
 }
+
+// A course ride's own summary at its finish: the samples from its start to
+// its finish, distances from its start, not the whole activity's (owner,
+// 2026-10-13: a ride that ends at the line shows its summary).
+func TestLastRideIsTheCourseRideOnly(t *testing.T) {
+	r := newRecorder(t)
+	if _, _, ok := r.LastRide(); ok {
+		t.Fatal("a last ride before any activity")
+	}
+	// Free riding 120 s, then a course ride of 60 s, standing at the line
+	// 20 s, then 30 s more free riding (aRide's first five steps).
+	play(r, aRide[:6])
+	name, ss, ok := r.LastRide()
+	if !ok || name == "" {
+		t.Fatalf("no last ride (%q)", name)
+	}
+	if len(ss) != 60 {
+		t.Fatalf("%d seconds in the ride, want 60", len(ss))
+	}
+	for _, s := range ss {
+		if s.PowerW != 250 {
+			t.Fatalf("a sample of %v W in the ride: free riding is 200 W, the course ride 250 W", s.PowerW)
+		}
+	}
+	if ss[0].T != 0 || ss[0].DistM < 0 || ss[0].DistM > 7 || ss[59].DistM < 5*55 {
+		t.Errorf("the ride's samples run from its own start: first %+v, last %+v", ss[0], ss[59])
+	}
+}

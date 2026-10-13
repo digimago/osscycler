@@ -20,6 +20,11 @@ type stubRecorder struct {
 	discards []bool
 	file     string // the activity under way; "" for none
 	samples  []effort.Sample
+	ride     []effort.Sample // the last course ride; nil: none
+}
+
+func (s *stubRecorder) LastRide() (string, []effort.Sample, bool) {
+	return s.file, s.ride, s.ride != nil
 }
 
 func (s *stubRecorder) History(since int) (string, []effort.Sample) {

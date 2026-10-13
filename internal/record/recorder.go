@@ -126,6 +126,38 @@ type Recorder struct {
 	mu       sync.Mutex
 	hist     []effort.Sample
 	histFile string
+	// The last course ride in it: from and to (exclusive) riding second;
+	// to < 0 while it is under way, from < 0 when there is none.
+	rideFrom, rideTo int
+}
+
+// LastRide is the last course ride of the activity under way, its samples
+// from its start to where it ended (or now, while under way), distances
+// from the ride's start; ok is false when it has none (owner, 2026-10-13:
+// a ride's own summary at its finish, not the whole activity's).
+func (r *Recorder) LastRide() (name string, ss []effort.Sample, ok bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.histFile == "" || r.rideFrom < 0 {
+		return r.histFile, nil, false
+	}
+	to := r.rideTo
+	if to < 0 || to > len(r.hist) {
+		to = len(r.hist)
+	}
+	from := min(r.rideFrom, to)
+	ss = append([]effort.Sample(nil), r.hist[from:to]...)
+	if len(ss) > 0 {
+		base := 0.0
+		if from > 0 {
+			base = r.hist[from-1].DistM
+		}
+		for i := range ss {
+			ss[i].T -= float64(from)
+			ss[i].DistM -= base
+		}
+	}
+	return r.histFile, ss, true
 }
 
 // History is the activity under way: its file name (as it will be saved)
@@ -160,7 +192,7 @@ var (
 )
 
 func New(hub *telemetry.Hub, cfg Config, log *slog.Logger) *Recorder {
-	return &Recorder{hub: hub, cfg: cfg, log: log, ends: make(chan endReq), done: make(chan struct{})}
+	return &Recorder{hub: hub, cfg: cfg, log: log, ends: make(chan endReq), done: make(chan struct{}), rideFrom: -1, rideTo: -1}
 }
 
 // End ends the activity under way, as the rider's "end ride": saved, as
@@ -280,6 +312,15 @@ func (r *Recorder) step(st telemetry.State, now time.Time) {
 	// Laps: one for each course ride and each workout.
 	riding := st.Ride.Phase == telemetry.RideRiding
 	working := st.Workout.Phase == telemetry.WorkoutRunning || st.Workout.Phase == telemetry.WorkoutPaused
+	if riding != r.riding {
+		r.mu.Lock()
+		if riding {
+			r.rideFrom, r.rideTo = len(r.hist), -1
+		} else if r.rideFrom >= 0 {
+			r.rideTo = len(r.hist)
+		}
+		r.mu.Unlock()
+	}
 	if riding != r.riding || working != r.working {
 		lap := a.endLap(now, lapManual)
 		if r.riding && !riding && st.Ride.Phase == telemetry.RideFinished {
@@ -357,6 +398,7 @@ func (r *Recorder) open(now time.Time) bool {
 	r.a, r.dist, r.errMsg = a, 0, ""
 	r.mu.Lock()
 	r.hist, r.histFile = nil, filepath.Base(a.path[:len(a.path)-len(".part")])
+	r.rideFrom, r.rideTo = -1, -1
 	r.mu.Unlock()
 	r.log.Info("recording", "file", a.path)
 	return true
@@ -427,6 +469,7 @@ func (r *Recorder) fail(err error) {
 func (r *Recorder) forget() {
 	r.mu.Lock()
 	r.hist, r.histFile = nil, ""
+	r.rideFrom, r.rideTo = -1, -1
 	r.mu.Unlock()
 }
 

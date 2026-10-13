@@ -65,6 +65,16 @@ func TestActivityHistoryAndSummary(t *testing.T) {
 	if err != nil || s.GetSummary().GetTimerS() != 90 || s.GetSummary().GetAvgPowerW() != 180 {
 		t.Errorf("summary under way: %v, %v", s, err)
 	}
+	// The last course ride in it (owner, 2026-10-13: a ride's own summary
+	// at its finish): none yet, then 40 s of it.
+	if _, err := cl.GetActivitySummary(ctx, &pb.GetActivitySummaryRequest{LastRide: true}); status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("last ride with none: %v, want FAILED_PRECONDITION", err)
+	}
+	rec.ride = steady(40, 260, 160)
+	s, err = cl.GetActivitySummary(ctx, &pb.GetActivitySummaryRequest{LastRide: true})
+	if err != nil || s.GetSummary().GetTimerS() != 40 || s.GetSummary().GetAvgPowerW() != 260 {
+		t.Errorf("last ride's summary: %v, %v", s, err)
+	}
 	// A finished one: zones from its own FTP (200: 220 W is Z5) and the
 	// profile's max HR (190: 150 bpm is Z3).
 	s, err = cl.GetActivitySummary(ctx, &pb.GetActivitySummaryRequest{Name: "2026-10-10-090000.fit"})

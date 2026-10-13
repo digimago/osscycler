@@ -128,6 +128,9 @@ type Recorder interface {
 	// History is the activity under way ("" when none) and its samples
 	// from riding second since on.
 	History(since int) (file string, samples []effort.Sample)
+	// LastRide is the last course ride of the activity under way: its
+	// samples, distances from its start; ok false when there is none.
+	LastRide() (file string, samples []effort.Sample, ok bool)
 }
 
 // Services are the optional commands behind the API; nil ones answer
@@ -409,6 +412,18 @@ func (s *telemetryServer) samples(name string, since int) (string, []effort.Samp
 	return name, ss[min(max(0, since), len(ss)):], ftp, nil
 }
 
+// lastRide is the last course ride of the activity being recorded.
+func (s *telemetryServer) lastRide() (string, []effort.Sample, error) {
+	if s.recorder == nil {
+		return "", nil, status.Error(codes.FailedPrecondition, "no ride is being recorded")
+	}
+	name, ss, ok := s.recorder.LastRide()
+	if !ok {
+		return "", nil, status.Error(codes.FailedPrecondition, "no course ride in the activity being recorded")
+	}
+	return name, ss, nil
+}
+
 func (s *telemetryServer) GetActivityHistory(_ context.Context, req *pb.GetActivityHistoryRequest) (*pb.GetActivityHistoryResponse, error) {
 	name, ss, _, err := s.samples(req.GetName(), int(req.GetSinceS()))
 	if err != nil {
@@ -425,11 +440,22 @@ func (s *telemetryServer) GetActivityHistory(_ context.Context, req *pb.GetActiv
 }
 
 func (s *telemetryServer) GetActivitySummary(_ context.Context, req *pb.GetActivitySummaryRequest) (*pb.GetActivitySummaryResponse, error) {
-	name, ss, ftp, err := s.samples(req.GetName(), 0)
+	var name string
+	var ss []effort.Sample
+	var ftp float64
+	var err error
+	if req.GetLastRide() {
+		name, ss, err = s.lastRide()
+	} else {
+		name, ss, ftp, err = s.samples(req.GetName(), 0)
+	}
 	if err != nil {
 		return nil, err
 	}
 	st, _ := s.hub.Latest()
+	if req.GetLastRide() {
+		ftp = st.Workout.FTPW
+	}
 	if ftp <= 0 {
 		ftp = st.Profile.FTPW
 	}

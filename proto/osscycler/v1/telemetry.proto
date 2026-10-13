@@ -244,6 +244,10 @@ message GetActivityHistoryResponse {
 message GetActivitySummaryRequest {
   // As GetActivityHistoryRequest.name.
   string name = 1;
+  // The last course ride of the activity being recorded (name empty): from
+  // its start to its finish, or to now while it is under way, rather than
+  // the whole activity. FAILED_PRECONDITION when it has none.
+  bool last_ride = 2;
 }
 
 message GetActivitySummaryResponse {

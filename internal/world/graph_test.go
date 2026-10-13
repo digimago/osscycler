@@ -996,3 +996,23 @@ func TestGraphFreeTurnIsSweptWide(t *testing.T) {
 		t.Errorf("the rider turns %.1f° in one step %v, want a sweep of 13° or less", r.TurnDeg, r.Turns)
 	}
 }
+
+// The path's step in the manifest is the points' own spacing, the course's
+// length over their number, not the nominal 5 m: a renderer placing the
+// rider at d/StepM was metres off by a course's end (1.7 m at the lapped
+// Posbank Loop's, which the 3D view hopped at each lap's wrap; owner,
+// 2026-10-13). Both builders.
+func TestPathStepIsThePointsSpacing(t *testing.T) {
+	pts := along([2]float64{0, 0}, [2]float64{0, 1003}, 20)
+	c := graphCourse(t, "step", append(pts, [2]float64{0, 1003}))
+	for _, build := range []func(*course.Course, Options) (*World, error){Build, BuildGraph} {
+		w, err := build(c, Options{Generator: "test"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		n := len(w.Manifest.Path.XYZ) / 3
+		if got := w.Manifest.Path.StepM * float64(n-1); math.Abs(got-c.Distance) > 1e-6 {
+			t.Errorf("%s: %d points every %.5f m cover %.3f m of a %.3f m course", w.Manifest.Builder, n, w.Manifest.Path.StepM, got, c.Distance)
+		}
+	}
+}

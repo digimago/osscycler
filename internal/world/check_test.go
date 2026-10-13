@@ -66,11 +66,14 @@ func TestCheck(t *testing.T) {
 	}
 	w.prims = all
 
-	// Land over the road, 400-410 m along: grass through the asphalt.
+	// Land over the road, 406-416 m along: grass through the asphalt (clear
+	// of the 400 m boundary: the path's points are a little under 5 m
+	// apart, so the point 400 m north lies just under 400 m along, and the
+	// check counts a cell at its nearest point's distance).
 	land := w.doc.AddMaterial(gltf.Material{Name: "terrain"})
 	y := float32(20)
 	w.prims = append(w.prims, gltf.Primitive{Material: land,
-		Positions: []float32{-1, y, -400, 1, y, -400, 1, y, -410, -1, y, -410},
+		Positions: []float32{-1, y, -406, 1, y, -406, 1, y, -416, -1, y, -416},
 		Indices:   []uint32{0, 1, 2, 0, 2, 3}})
 	r = w.Check()
 	if math.Abs(r.LandOverRoadM2-20) > 1 || len(r.LandOverRoad) != 1 || r.LandOverRoad[0].D != 400 {

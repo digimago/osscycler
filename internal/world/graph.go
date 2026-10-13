@@ -517,7 +517,14 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 		m.Terrain.LandCover = "OpenStreetMap"
 	}
 	m.Road.WidthM, m.Road.Keep = o.RoadWidthM, "right"
+	// The points' own spacing: the course's length over a whole number of
+	// steps, a little under pathStep. Rounded to pathStep, a renderer
+	// placing a distance at d/StepM was metres off by a course's end (1.7 m
+	// at the lapped Posbank Loop's, which it hopped at each lap's wrap).
 	m.Path.StepM = pathStep
+	if len(pd) > 1 {
+		m.Path.StepM = (pd[len(pd)-1] - pd[0]) / float64(len(pd)-1)
+	}
 	for i := range pd {
 		m.Path.XYZ = append(m.Path.XYZ, round(px[i]), round(pz[i]), round(-py[i]))
 		m.Path.WidthM = append(m.Path.WidthM, math.Round(10*pw[i])/10)

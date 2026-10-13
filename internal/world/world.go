@@ -144,7 +144,9 @@ type Manifest struct {
 		// centre line (Path), which is what distance is measured on.
 		Keep string `json:"keep"`
 	} `json:"road"`
-	// Path is the road's centre line every StepM metres from the start,
+	// Path is the road's centre line every StepM metres from the start
+	// (exactly: the course's length over the points' number, a little under
+	// 5 m),
 	// x y z triples in the frame: the rider at distance d is between
 	// points d/StepM and the next. WidthM is the carriageway's width at
 	// each point (without sidewalks); LaneM is the riding line there: how
@@ -596,7 +598,14 @@ func Build(c *course.Course, o Options) (*World, error) {
 		m.Terrain.LandCover = "OpenStreetMap"
 	}
 	m.Road.WidthM, m.Road.Keep = o.RoadWidthM, "right"
+	// The points' own spacing: the course's length over a whole number of
+	// steps, a little under pathStep. Rounded to pathStep, a renderer
+	// placing a distance at d/StepM was metres off by a course's end (1.7 m
+	// at the lapped Posbank Loop's, which it hopped at each lap's wrap).
 	m.Path.StepM = pathStep
+	if len(pd) > 1 {
+		m.Path.StepM = (pd[len(pd)-1] - pd[0]) / float64(len(pd)-1)
+	}
 	for i := range pd {
 		m.Path.XYZ = append(m.Path.XYZ, round(px[i]), round(pz[i]), round(-py[i]))
 		m.Path.WidthM = append(m.Path.WidthM, math.Round(10*pw[i])/10)

@@ -1,6 +1,7 @@
 package profile
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -79,5 +80,35 @@ func TestBrokenFile(t *testing.T) {
 	os.WriteFile(path, []byte("{not json"), 0o600)
 	if _, err := Open(path); err == nil || !strings.Contains(err.Error(), path) {
 		t.Errorf("broken profile: %v", err)
+	}
+}
+
+// Building worlds ahead is set in the profile (owner, 2026-10-13): only
+// while nothing is ridden and from the caches only unless the rider says
+// otherwise; saved, and nothing else accepted.
+func TestWorldSettings(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "profile.json")
+	m, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := m.Get(); p.Choice("world_build") != WorldBuildIdle || p.Choice("world_fetch") != WorldFetchCached {
+		t.Errorf("defaults: %q, %q", p.Choice("world_build"), p.Choice("world_fetch"))
+	}
+	if _, err := m.SetChoice("world_build", WorldBuildAlways); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.SetChoice("world_fetch", "sometimes"); !errors.Is(err, ErrOutOfRange) {
+		t.Errorf("world_fetch sometimes: %v", err)
+	}
+	if _, err := m.SetChoice("colour", "red"); !errors.Is(err, ErrOutOfRange) {
+		t.Errorf("an unknown setting: %v", err)
+	}
+	again, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := again.Get(); p.Choice("world_build") != WorldBuildAlways || p.Choice("world_fetch") != WorldFetchCached || p.ViewOrDefault() != ViewChase {
+		t.Errorf("read back: %+v", p)
 	}
 }

@@ -222,6 +222,8 @@ type Profile struct {
 	CdAForced        bool   // -cda: the size of the rider doesn't apply
 	Path             string // where it is saved
 	View             string // a 3D renderer's view: "chase" or "eyes"
+	WorldBuild       string // building worlds ahead: "idle" or "always"
+	WorldFetch       string // and its downloads: "cached" or "allowed"
 }
 
 // Recording is the FIT recorder's status.

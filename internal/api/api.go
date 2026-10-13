@@ -113,7 +113,7 @@ type Control interface {
 
 // Profile changes the rider's settings.
 type Profile interface {
-	SetProfile(ctx context.Context, weightKg, ftpW, heightCm, maxHR *float64, view *string) (telemetry.Profile, error)
+	SetProfile(ctx context.Context, weightKg, ftpW, heightCm, maxHR *float64, choices map[string]string) (telemetry.Profile, error)
 }
 
 // Simulator puts a simulated rider in place of the trainer, or takes it
@@ -351,7 +351,13 @@ func (s *telemetryServer) SetProfile(ctx context.Context, req *pb.SetProfileRequ
 	if s.profile == nil {
 		return nil, status.Error(codes.Unimplemented, "this core has no rider profile")
 	}
-	p, err := s.profile.SetProfile(ctx, req.WeightKg, req.FtpW, req.HeightCm, req.MaxHrBpm, req.View)
+	choices := map[string]string{}
+	for name, v := range map[string]*string{"view": req.View, "world_build": req.WorldBuild, "world_fetch": req.WorldFetch} {
+		if v != nil {
+			choices[name] = *v
+		}
+	}
+	p, err := s.profile.SetProfile(ctx, req.WeightKg, req.FtpW, req.HeightCm, req.MaxHrBpm, choices)
 	switch {
 	case errors.Is(err, profile.ErrOutOfRange):
 		return nil, status.Error(codes.InvalidArgument, err.Error())

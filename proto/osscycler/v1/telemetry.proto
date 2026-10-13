@@ -298,6 +298,14 @@ message SetProfileRequest {
   optional string view = 4;
   // Sets the heart rate zones of ride summaries: 100-230 bpm.
   optional double max_hr_bpm = 5;
+  // When a 3D renderer builds courses' worlds ahead of a ride: "idle"
+  // (only while nothing is ridden; the default) or "always" (during rides
+  // too, at the lowest priority).
+  optional string world_build = 6;
+  // Whether building ahead may download what a course not yet ridden
+  // needs (map data, ground model): "cached" (the caches only; the
+  // default) or "allowed".
+  optional string world_fetch = 7;
 }
 
 message SetProfileResponse {
@@ -718,6 +726,10 @@ message RiderProfile {
   string view = 15;
   // Optional; 0 when unknown (summaries then leave heart rate zones out).
   double max_hr_bpm = 16;
+  // Building worlds ahead (SetProfileRequest): "idle" or "always", and
+  // "cached" or "allowed"; the values in effect, defaults filled in.
+  string world_build = 17;
+  string world_fetch = 18;
 }
 
 // The core records every ride to a FIT file on its own disk, whether or

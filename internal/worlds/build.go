@@ -65,7 +65,17 @@ type Builder struct {
 	// fallback build by osscycler-world keeps the stamp of the builder
 	// asked for.
 	Stamp string
+	// Complete builds only from complete data: with Fetch off, a ground
+	// model tile, a stretch of map data or the coastline missing from the
+	// caches is ErrIncomplete rather than a world with grass there, which
+	// would be stamped current and never get its data (a renderer building
+	// worlds ahead of a ride from the caches only, owner 2026-10-13).
+	Complete bool
 }
+
+// ErrIncomplete: Builder.Complete, and data the world needs is missing
+// from the caches.
+var ErrIncomplete = errors.New("worlds: not all the data is cached")
 
 // Phases a build goes through, for its status.
 const (
@@ -143,6 +153,8 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 		switch {
 		case errors.Is(err, dem.ErrOutside) && b.Ground == "auto":
 			log.Info("no ground model for this area: terrain from the course profile", "course", c.ID)
+		case errors.Is(err, dem.ErrNotCached) && b.Complete:
+			return Result{}, fmt.Errorf("%w: ground model: %v", ErrIncomplete, err)
 		case err != nil:
 			return Result{}, err
 		default:
@@ -171,6 +183,9 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 			if ctx.Err() != nil {
 				return Result{}, ctx.Err()
 			}
+			if b.Complete {
+				return Result{}, fmt.Errorf("%w: map data: %v", ErrIncomplete, err)
+			}
 			log.Warn("map data incomplete", "course", c.ID, "err", err)
 		}
 		if len(d.Elements) > 0 {
@@ -196,6 +211,9 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 		if err != nil {
 			if ctx.Err() != nil {
 				return Result{}, ctx.Err()
+			}
+			if b.Complete && !b.Preview {
+				return Result{}, fmt.Errorf("%w: coastline: %v", ErrIncomplete, err)
 			}
 			log.Warn("coastline incomplete", "course", c.ID, "err", err)
 		}

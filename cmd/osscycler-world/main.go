@@ -23,6 +23,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"time"
 
@@ -61,6 +62,7 @@ func run() error {
 		maxStep  = flag.Float64("max-path-step", 3, "fail when the rider's height changes more than this between two points of the path (5 m apart), m")
 		check    = flag.String("check", "fail", "after a build: fail past -max-holes, -max-land-over-road, -max-off-road or -max-path-step, or warn (the world is kept)")
 		progress = flag.Bool("progress", false, "print each phase (\""+worlds.PhasePrefix+"…\") and the world's directory (\""+worlds.WorldPrefix+"…\"), for a program running this one")
+		ifCached = flag.Bool("if-cached", false, "build only from what the caches hold (implies -fetch=false): a course whose ground model, map data or coastline isn't all cached is skipped, saying so (\""+worlds.SkippedPrefix+"…\"); a renderer building worlds ahead of rides asks this way")
 		ifStale  = flag.Bool("if-stale", false, "build only when no current world is there (in -out or -prebuilt); a renderer asks this way")
 		preview  = flag.Bool("preview", false, "with -if-stale: before building a world, build a preview to ride meanwhile (no ground model or map data, made-up countryside; seconds) and say where (\""+worlds.PreviewPrefix+"…\")")
 		engine   = flag.String("builder", envOr("OSSCYCLER_WORLD_BUILDER", world.DefaultEngine), "world builder: graph (the road network first; the default), classic (the terrain first; the fallback, built instead when the graph builder fails or its world fails the check; worlds in <out>/.classic/), or ab to build both and compare them ($OSSCYCLER_WORLD_BUILDER sets the default)")
@@ -85,6 +87,9 @@ func run() error {
 	case "auto", "ahn", "none":
 	default:
 		return fmt.Errorf("-dem %q: want auto, ahn or none", *ground)
+	}
+	if *ifCached {
+		*fetch = false
 	}
 	if *osmCache == "" {
 		*osmCache = filepath.Join(*courses, ".osm")
@@ -122,8 +127,9 @@ func run() error {
 	}, nil)
 	b := &worlds.Builder{
 		Ground: *ground, DEMCache: *cache, DEMCellM: *demCell, Fetch: *fetch, UserAgent: userAgent, Log: log,
-		Options: world.Options{CellM: *cell, ChunkM: *chunk, CorridorM: *corridor, RoadWidthM: *width, Generator: generator},
-		Timing:  &worlds.Timing{File: filepath.Join(*out, ".timing.json")},
+		Options:  world.Options{CellM: *cell, ChunkM: *chunk, CorridorM: *corridor, RoadWidthM: *width, Generator: generator},
+		Timing:   &worlds.Timing{File: filepath.Join(*out, ".timing.json")},
+		Complete: *ifCached,
 	}
 	if *progress {
 		// How far, and the time left: at most twice a second, and at each
@@ -190,6 +196,11 @@ func run() error {
 			eb := *b
 			eb.Engine = eng
 			r, err := buildOne(ctx, &eb, c, worlds.Dir(*out, id, eng), phase)
+			if errors.Is(err, worlds.ErrIncomplete) {
+				// Built when it is ridden, fetching what it lacks.
+				fmt.Println(worlds.SkippedPrefix + strings.ReplaceAll(err.Error(), "\n", "; "))
+				continue
+			}
 			if err != nil {
 				return fmt.Errorf("%s: %w", id, err)
 			}

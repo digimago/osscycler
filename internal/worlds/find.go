@@ -22,6 +22,9 @@ const (
 	// PreviewPrefix: a preview world's directory, to ride until the
 	// world's own comes (-preview).
 	PreviewPrefix = "preview: "
+	// SkippedPrefix: osscycler-world -if-cached left a course unbuilt, its
+	// data not all cached (why follows).
+	SkippedPrefix = "skipped: "
 )
 
 // PreviewDir is where course id's preview world goes in the worlds

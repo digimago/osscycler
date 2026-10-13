@@ -290,6 +290,26 @@ public sealed class Core : IDisposable, Head.ICommands
     public Task StartCalibration() => Call(() => Client().StartCalibrationAsync(new StartCalibrationRequest { Type = CalibrationType.SpinDown }, Opts()).ResponseAsync);
     public Task CancelCalibration() => Call(() => Client().CancelCalibrationAsync(new CancelCalibrationRequest(), Opts()).ResponseAsync);
 
+    public async Task<RiderProfile> SetChoice(string name, string value)
+    {
+        var req = new SetProfileRequest();
+        switch (name)
+        {
+            case "world_build":
+                req.WorldBuild = value;
+                break;
+            case "world_fetch":
+                req.WorldFetch = value;
+                break;
+            case "view":
+                req.View = value;
+                break;
+            default:
+                throw new ArgumentException($"no profile setting \"{name}\"");
+        }
+        return (await Call(() => Client().SetProfileAsync(req, Opts()).ResponseAsync)).Profile;
+    }
+
     public async Task<RiderProfile> SetView(string view) =>
         (await Call(() => Client().SetProfileAsync(new SetProfileRequest { View = view }, Opts()).ResponseAsync)).Profile;
 

@@ -38,6 +38,9 @@ public interface ICommands
     Task ReleaseControl();
     // SetProfile saves what is given (null: unchanged); the profile now.
     Task<RiderProfile> SetProfile(double? weightKg, double? ftpW, double? heightCm, double? maxHrBpm);
+    // SetChoice saves one of the profile's settings with a fixed set of
+    // values (world_build, world_fetch; SetProfileRequest's field names).
+    Task<RiderProfile> SetChoice(string name, string value);
     // SetView saves the rider's view in a 3D renderer ("chase" or "eyes").
     Task<RiderProfile> SetView(string view);
     // EndActivity saves (or discards) the recording; the file saved.

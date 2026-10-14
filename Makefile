@@ -58,8 +58,12 @@ generate: ## Lint the proto schema and regenerate gen/
 test: ## Run tests
 	go test ./...
 
+# -count=1 runs every test again; CI empties it to reuse the results of
+# packages that haven't changed (scripts/ci-mtimes.sh).
+RACE_FLAGS   ?= -count=1
+
 race: ## Run tests with the race detector
-	go test -race -count=1 -timeout 20m ./...
+	go test -race $(RACE_FLAGS) -timeout 20m ./...
 
 vet: ## go vet
 	go vet ./...

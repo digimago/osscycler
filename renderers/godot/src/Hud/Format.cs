@@ -55,12 +55,13 @@ public static class Palette
 
     static readonly (double Grade, Rgb C)[] Heat =
     {
-        (0, Rgb.Hex(0x2c7bb6)), (3, Rgb.Hex(0x00a6ca)), (5, Rgb.Hex(0x00ccbc)), (7, Rgb.Hex(0x90eb9d)),
-        (9, Rgb.Hex(0xffff8c)), (11, Rgb.Hex(0xf9d057)), (13, Rgb.Hex(0xf29e2e)), (14.5, Rgb.Hex(0xd7191c)),
-        (16, Rgb.Hex(0x7f0000)),
+        (0, Rgb.Hex(0x2c7bb6)), (2, Rgb.Hex(0x00a6ca)), (4, Rgb.Hex(0x8fd18c)), (6, Rgb.Hex(0xffd93d)),
+        (7.5, Rgb.Hex(0xf99d1c)), (9, Rgb.Hex(0xe0560f)), (11, Rgb.Hex(0xc8230f)), (13, Rgb.Hex(0x9c0d0d)),
+        (16, Rgb.Hex(0x4a0000)),
     };
 
-    // Grade is the TUI's heat scale: blue on the flat to deep red at 16 %,
+    // Grade is the TUI's heat scale (tui/ride.go heatStops): blue on the
+    // flat, yellow at 6 %, dark orange at 9 %, a very dark red at 16 %,
     // slate for any descent.
     public static Rgb Grade(double g)
     {
@@ -80,6 +81,11 @@ public static class Palette
         }
         return Heat[^1].C;
     }
+
+    // TextOn is black on light cells, white on dark ones (the steep reds),
+    // as the TUI's look-ahead strip (tui/ride.go textOn).
+    public static Rgb TextOn(Rgb bg) =>
+        (0.2126 * bg.R + 0.7152 * bg.G + 0.0722 * bg.B) / 255 < 0.35 ? Rgb.Hex(0xffffff) : Rgb.Hex(0x000000);
 
     static readonly (double UpTo, Rgb C)[] Zones =
     {

@@ -560,11 +560,40 @@ func paint(text []rune, bg []color.Color) string {
 		for end < len(text) && bg[end] == bg[start] {
 			end++
 		}
-		style := lipgloss.NewStyle().Background(bg[start]).Foreground(lipgloss.Color("#000000")).Bold(true)
+		style := lipgloss.NewStyle().Background(bg[start]).Foreground(textOn(bg[start])).Bold(true)
 		b.WriteString(style.Render(string(text[start:end])))
 		start = end
 	}
 	return b.String()
+}
+
+// textOn is black on light cells, white on dark ones (the steep reds).
+func textOn(bg color.Color) color.Color {
+	if luminance(bg) < 0.35 {
+		return lipgloss.Color("#ffffff")
+	}
+	return lipgloss.Color("#000000")
+}
+
+// luminance is a colour's relative luminance, 0 to 1 (Rec. 709 weights
+// on the gamma-encoded values, as Godot's Color.Luminance).
+func luminance(c color.Color) float64 {
+	r, g, b, _ := c.RGBA()
+	return (0.2126*float64(r) + 0.7152*float64(g) + 0.0722*float64(b)) / 0xffff
+}
+
+// readable lifts a colour too dark to read on a dark terminal (the steep
+// reds, the blue on the flat) towards white, keeping its hue, as the 3D
+// view's HUD does (HudView.Readable).
+func readable(c color.Color) color.Color {
+	r, g, b, _ := c.RGBA()
+	x := [3]float64{float64(r >> 8), float64(g >> 8), float64(b >> 8)}
+	for i := 0; i < 8 && (0.2126*x[0]+0.7152*x[1]+0.0722*x[2])/255 < 0.55; i++ {
+		for k := range x {
+			x[k] += (255 - x[k]) * 0.2
+		}
+	}
+	return color.RGBA{R: uint8(math.Round(x[0])), G: uint8(math.Round(x[1])), B: uint8(math.Round(x[2])), A: 0xff}
 }
 
 // gradeAt reads the course profile: the grade from the sample at or before d.
@@ -578,20 +607,22 @@ func gradeAt(c *pb.Course, d float64) float64 {
 	return float64(g[max(0, min(i, len(g)-1))])
 }
 
-// heatStops map grade to colour, from easy blue to deep red at 16 %.
+// heatStops map grade to colour (owner, 2026-10-14: 6 % is already hefty
+// and yellowish, 9 % dark orange, 16 % a very dark red): blue on the flat,
+// green by 4 %, yellow at 6 %, dark orange at 9 %, deepening red to 16 %.
 var heatStops = []struct {
 	grade   float64
 	r, g, b float64
 }{
 	{0, 0x2c, 0x7b, 0xb6},
-	{3, 0x00, 0xa6, 0xca},
-	{5, 0x00, 0xcc, 0xbc},
-	{7, 0x90, 0xeb, 0x9d},
-	{9, 0xff, 0xff, 0x8c},
-	{11, 0xf9, 0xd0, 0x57},
-	{13, 0xf2, 0x9e, 0x2e},
-	{14.5, 0xd7, 0x19, 0x1c},
-	{16, 0x7f, 0x00, 0x00},
+	{2, 0x00, 0xa6, 0xca},
+	{4, 0x8f, 0xd1, 0x8c},
+	{6, 0xff, 0xd9, 0x3d},
+	{7.5, 0xf9, 0x9d, 0x1c},
+	{9, 0xe0, 0x56, 0x0f},
+	{11, 0xc8, 0x23, 0x0f},
+	{13, 0x9c, 0x0d, 0x0d},
+	{16, 0x4a, 0x00, 0x00},
 }
 
 // descentColor is used for any downhill; descents vary little in feel
@@ -611,7 +642,7 @@ func gradeColor(g float64) color.Color {
 			return color.RGBA{R: mix(a.r, b.r), G: mix(a.g, b.g), B: mix(a.b, b.b), A: 0xff}
 		}
 	}
-	return lipgloss.Color("#7f0000")
+	return lipgloss.Color("#4a0000")
 }
 
 // finishColor checkers the cells past the finish line.

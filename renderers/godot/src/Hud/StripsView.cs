@@ -133,7 +133,7 @@ public partial class StripsView : Control
             var at = new Vector2(r.Position.X + i * cw + 4, r.Position.Y + CellH / 2 + 7);
             if (cells[i].Kind != Strips.CellKind.Grade)
                 DrawString(_bold, at + Vector2.Down * -1, cells[i].Label, HorizontalAlignment.Left, -1, 20, Colors.Black);
-            DrawString(_bold, at, cells[i].Label, HorizontalAlignment.Left, -1, 20, cells[i].Kind == Strips.CellKind.Grade ? Colors.Black : new Color("ff3030"));
+            DrawString(_bold, at, cells[i].Label, HorizontalAlignment.Left, -1, 20, cells[i].Kind == Strips.CellKind.Grade ? Color8(Palette.TextOn(cells[i].Color)) : new Color("ff3030"));
         }
         foreach (var (f, text) in Strips.Ticks())
             DrawString(_regular, new Vector2(r.Position.X + (float)f * r.Size.X + 2, r.End.Y - 4), text, HorizontalAlignment.Left, -1, 18, new Color(1, 1, 1, 0.8f));

@@ -95,6 +95,20 @@ public class TilesTests
         Assert.Equal(("INTERVAL 2", "1:01"), (tiles[3].Label, tiles[3].Value));
     }
 
+    // The core's verdict on the cadence against the aim, in words and colour.
+    [Theory]
+    [InlineData(CadenceCheck.Low, "rpm · aim 95 · faster", true)]
+    [InlineData(CadenceCheck.High, "rpm · aim 95 · slower", true)]
+    [InlineData(CadenceCheck.On, "rpm · aim 95 · on target", false)]
+    [InlineData(CadenceCheck.Unspecified, "rpm · aim 95", false)]
+    public void CadenceAgainstTheAim(CadenceCheck check, string unit, bool off)
+    {
+        var st = new State { Workout = new WorkoutProgress { Phase = WorkoutPhase.Running, TargetCadence = 95, CadenceCheck = check } };
+        var t = Tiles.Make("cadence_5s", st, 87);
+        Assert.Equal(("87", unit), (t.Value, t.Unit));
+        Assert.Equal(check == CadenceCheck.Unspecified ? null : off ? Palette.Behind : Palette.Ahead, t.UnitColor);
+    }
+
     [Fact]
     public void TimeAgainstTheGhost()
     {

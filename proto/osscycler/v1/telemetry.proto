@@ -795,6 +795,22 @@ message WorkoutProgress {
   double intensity_pct = 17;
   double avg_power_w = 18;
   int64 phase_changed_ns = 19;
+  // The rider's cadence against target_cadence: averaged over 5 s (as the
+  // CADENCE 5s tile), within 5 % either way on target; none without a
+  // target or a cadence reading (UNSPECIFIED).
+  CadenceCheck cadence_check = 20;
+  // The 5 s cadence the check used; 0 without a reading.
+  double cadence_avg_rpm = 21;
+}
+
+enum CadenceCheck {
+  // No target cadence now, or no cadence reading.
+  CADENCE_CHECK_UNSPECIFIED = 0;
+  // Below the target's tolerance: pedal faster.
+  CADENCE_CHECK_LOW = 1;
+  CADENCE_CHECK_ON = 2;
+  // Above it: pedal slower.
+  CADENCE_CHECK_HIGH = 3;
 }
 
 enum RidePhase {

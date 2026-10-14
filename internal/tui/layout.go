@@ -176,7 +176,7 @@ func (m Model) tile(id string) metric {
 		return metric{"DISTANCE", fmt.Sprintf("%.2f", m.st.GetTrainer().GetDistanceM()/1000), "km", speedStyle, nil}
 	case "grade":
 		g := r.GetGradePct()
-		return metric{"GRADE", fmt.Sprintf("%.1f", g), "%", lipgloss.NewStyle().Foreground(gradeColor(g)), nil}
+		return metric{"GRADE", fmt.Sprintf("%.1f", g), "%", lipgloss.NewStyle().Foreground(readable(gradeColor(g))), nil}
 	case "time":
 		return m.timeTile()
 	case "to_go":

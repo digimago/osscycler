@@ -453,6 +453,24 @@ func hillCourse() *pb.Course {
 	return c
 }
 
+// The steep reds are too dark for black labels on the look-ahead strip
+// and for the GRADE tile's digits on a dark terminal.
+func TestGradeColorsRead(t *testing.T) {
+	for _, tc := range []struct {
+		grade float64
+		white bool
+	}{{2, false}, {6, false}, {9, false}, {11, true}, {16, true}} {
+		if r, _, _, _ := textOn(gradeColor(tc.grade)).RGBA(); (r > 0) != tc.white {
+			t.Errorf("label on %v %%: white %v, want %v", tc.grade, r > 0, tc.white)
+		}
+	}
+	for _, g := range []float64{0, 13, 16} {
+		if l := luminance(readable(gradeColor(g))); l < 0.55 {
+			t.Errorf("GRADE digits at %v %%: luminance %.2f, too dark to read", g, l)
+		}
+	}
+}
+
 func TestGradeColor(t *testing.T) {
 	hex := func(c interface{ RGBA() (r, g, b, a uint32) }) string {
 		r, g, b, _ := c.RGBA()
@@ -462,7 +480,8 @@ func TestGradeColor(t *testing.T) {
 		grade float64
 		want  string
 	}{
-		{0, "#2c7bb6"}, {16, "#7f0000"}, {25, "#7f0000"}, {-3, "#6c7a89"},
+		// Owner, 2026-10-14: 6 % yellowish, 9 % dark orange, 16 % a very dark red.
+		{0, "#2c7bb6"}, {6, "#ffd93d"}, {9, "#e0560f"}, {16, "#4a0000"}, {25, "#4a0000"}, {-3, "#6c7a89"},
 	} {
 		if got := hex(gradeColor(tc.grade)); got != tc.want {
 			t.Errorf("gradeColor(%v) = %s, want %s", tc.grade, got, tc.want)

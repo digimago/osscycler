@@ -27,11 +27,24 @@ public class PaletteTests
     public void GradeFollowsTheTuisHeatScale()
     {
         Assert.Equal(Rgb.Hex(0x2c7bb6), Palette.Grade(0));
-        Assert.Equal(Rgb.Hex(0x90eb9d), Palette.Grade(7));
-        Assert.Equal(Rgb.Hex(0x7f0000), Palette.Grade(25));
+        Assert.Equal(Rgb.Hex(0xffd93d), Palette.Grade(6)); // yellowish: already hefty
+        Assert.Equal(Rgb.Hex(0xe0560f), Palette.Grade(9)); // dark orange
+        Assert.Equal(Rgb.Hex(0x4a0000), Palette.Grade(16)); // a very dark red
+        Assert.Equal(Rgb.Hex(0x4a0000), Palette.Grade(25));
         Assert.Equal(Palette.Descent, Palette.Grade(-3));
-        // Halfway between the 0 and 3 % stops.
-        Assert.Equal(new Rgb(0x16, 0x91, 0xc0), Palette.Grade(1.5));
+        // Halfway between the 0 and 2 % stops.
+        Assert.Equal(new Rgb(0x16, 0x91, 0xc0), Palette.Grade(1));
+    }
+
+    // Labels on the look-ahead strip read on every cell: black on the light
+    // ones, white on the steep reds.
+    [Fact]
+    public void LabelsReadOnEveryGrade()
+    {
+        Assert.Equal(Rgb.Hex(0x000000), Palette.TextOn(Palette.Grade(6)));
+        Assert.Equal(Rgb.Hex(0x000000), Palette.TextOn(Palette.Grade(2)));
+        Assert.Equal(Rgb.Hex(0xffffff), Palette.TextOn(Palette.Grade(11)));
+        Assert.Equal(Rgb.Hex(0xffffff), Palette.TextOn(Palette.Grade(16)));
     }
 
     [Fact]
@@ -84,7 +97,7 @@ public class TilesTests
         Assert.Equal(Tiles.Ride, screen);
         Assert.Equal(new[] { "POWER", "HEART RATE", "CADENCE 5s", "GRADE", "TIME", "TO GO" }, tiles.ConvertAll(t => t.Label));
         Assert.Equal(new[] { "231", "--", "88", "3.0", "2:05", "3.80" }, tiles.ConvertAll(t => t.Value));
-        Assert.Equal(Rgb.Hex(0x00a6ca), tiles[3].ValueColor);
+        Assert.Equal(Palette.Grade(3), tiles[3].ValueColor);
 
         var w = new State { Workout = new WorkoutProgress { Phase = WorkoutPhase.Running, TargetW = 200, FtpW = 200, SegmentLabel = "Interval 2", SegmentRemainingS = 61, TargetCadence = 95 } };
         (screen, tiles) = Tiles.For(w, null);

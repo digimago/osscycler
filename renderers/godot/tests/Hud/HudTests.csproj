@@ -6,6 +6,8 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <RootNamespace>Osscycler.Hud.Tests</RootNamespace>
+    <!-- Run on a newer .NET too: an SDK 10 alone has no 8.0 runtime. -->
+    <RollForward>Major</RollForward>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../src/Hud/Format.cs" />

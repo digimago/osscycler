@@ -23,8 +23,10 @@ WORLDS       ?= _worlds
 # world-ab builds both and compares them.
 BUILDER      ?= graph
 # The 3D view from source: Godot 4.7.2 .NET (the editor binary or a wrapper)
-# and the .NET SDK; 3D_FLAGS for more (e.g. --debug to mark flaws).
-GODOT        ?= godot
+# and the .NET SDK; 3D_FLAGS for more (e.g. --debug to mark flaws). The
+# first .NET-named binary on the PATH wins (Homebrew's godot-mono cask sits
+# beside a plain godot that can't load C#); make 3d checks the choice.
+GODOT        ?= $(firstword $(foreach g,godot-mono godot4-mono godot-dotnet,$(shell command -v $(g) 2>/dev/null)) godot)
 DOTNET       ?= $(shell command -v dotnet 2>/dev/null || echo $(HOME)/.dotnet/dotnet)
 3D_FLAGS     ?=
 
@@ -135,7 +137,13 @@ world-ab: build ## Build COURSE's world with both builders (classic, graph) and 
 	$(BIN)/osscycler-world -courses $(COURSES) -out $(WORLDS) -builder ab $(WORLD_FLAGS) "$(or $(COURSE),posbank)"
 
 3d: build ## Build and open the 3D view (from source) on the core at $(ADDR), worlds in $(WORLDS)/ by BUILDER; 3D_FLAGS=--debug marks flaws
+	@$(GODOT) --version 2>/dev/null | grep -q mono || { \
+		echo "make 3d: $(GODOT) is not the .NET build of Godot ($$($(GODOT) --version 2>/dev/null || echo not found)); install it and set GODOT=/path/to/it"; exit 1; }
 	$(DOTNET) build renderers/godot/OsscyclerGodot.sln -v quiet -nologo
+	@# Assets (the HUD font) load from the git-ignored import cache, which
+	@# only the editor fills: import them (new or changed ones only).
+	$(GODOT) --headless --path renderers/godot --import >/dev/null 2>&1 || { \
+		echo "make 3d: importing the Godot project's assets failed; run $(GODOT) --headless --path renderers/godot --import to see why"; exit 1; }
 	OSSCYCLER_WORLD=$(CURDIR)/$(BIN)/osscycler-world OSSCYCLER_WORLD_BUILDER=$(BUILDER) $(GODOT) --path renderers/godot -- --core $(ADDR) --worlds "$(CURDIR)/$(WORLDS)" \
 		--token-file "$(CURDIR)/$(TOKEN_FILE)" $(3D_FLAGS)
 

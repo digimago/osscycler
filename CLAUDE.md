@@ -175,7 +175,7 @@ Trainer, HRM <-> ANT+ stick <-> telemetry service <-> sim core -> renderer (swap
    - Done 2026-10-09: FIT files upload to Garmin Connect as designed: a ride recorded on the Flux and a `-fake` one import with distance, time, speed, heart rate, cadence and power, a free ride as an indoor ride (owner). Still to see: a course ride (`virtual_activity`) there, and intervals.icu.
    - Manual control: `g -5` against `g 0` (does a negative grade feel lighter?), `l` at a few levels (page 0x30, never sent to the Flux). ERG ramps (`w 150` → `w 250`) tested on the Flux (owner, reported 2026-10-09).
    - Done 2026-10-10 (a scripted hands-off test, `_scratch/trainertest`, its state logged every second): a weight change mid-session works (grade 4 %: +10 kg took 11 % more watts per km/h, back on restoring it); pause sets the trainer flat (3.9 W per km/h against 9.0 at level 40 %) and carry on restores it. The full run the same evening (16 min, all steps): ERG within ~3 W of every target (the ramp ~5 W behind), the workout's free part and its end handing the trainer back to the oval; laps of the oval recorded (46-61 s); the Diepesteeg from 2.6 km at difficulty 40 % reached 3.12 km in 2.5 min (start the next one at 2.9 km for the 7.9 %). Owner's verdicts: the ghost jumpy (item 10b); every resistance change 1-2 s late, grades and ERG alike (the course look-ahead is 2 s now, PR #23); the climb a bit light (difficulty 40 %); 4 % felt heavy for the rider's usual effort there (ridden at a low cadence; the watts match the physics for the rider's weight; the trainer wanted a calibration all session); messages too close to the tiles and heart rate missing on course rides (fixed). Then: - A weight change mid-session (user config page 0x37 sent while connected), the RX fail rate per channel in the metrics, the stick pulled out and plugged back during a ride.
-   - The packages and `osscycler@.service` on the Pi; the `.zwo` reader against real Zwift exports.
+   - The packages and `osscycler@.service` on the Pi (the `.zwo` reader: done 2026-10-14, see `workout`).
 3. Before a wider release: macOS signing/notarisation, and a libusb transport so the core drives the stick on macOS.
 
 ## TODO
@@ -212,7 +212,7 @@ Owner's list, 2026-10-10 (in this order unless said otherwise):
 - World: splitter islands (narrow grass between a slip road and its approach) are flat ground at road level and read as ground through the road: kerb and raise small enclosed areas between roads. Dieren's (23.1 km) went away with its cycle path (2026-10-09); none known on the Posbank Loop now.
 
 - Next trainer session (with manual control): g -5 vs g 0 (does a negative grade feel lighter?), l at a few levels (0x30). ERG ramps: tested.
-- Workouts: repeat groups of 3+ blocks (Zwift-style multi-stage sets). Parked 2026-10-07; first check how Zwift writes them in a real .zwo export.
+- Workouts: repeat groups of 3+ blocks (Zwift-style multi-stage sets). Parked 2026-10-07. The real file checked 2026-10-14 writes its 3 sets as separate blocks (IntervalsT, then a SteadyState recovery, three times), no group element, so reading such files needs nothing more; groups would only be an editing convenience.
 - Recorder: a workout_step / lap per workout segment.
 - Ghosts: choose another ghost than the PB (last ride, a friend's file); workout ghosts (power vs the last attempt).
 - HRM: consider R-R intervals (page 4) for HRV later.

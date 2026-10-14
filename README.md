@@ -100,16 +100,18 @@ repository instead, you also need:
   it and prints the editor's path.
 - The .NET SDK 8 or later (`dotnet` on your `PATH`, or in `~/.dotnet`).
 
-Then import the project once and open the 3D view on a running core:
+Then open the 3D view on a running core:
 
 ```sh
 make core-fake                 # in one terminal (make core with the stick)
 
 # in another:
-GODOT=$(scripts/godot.sh)                            # or the path of your own Godot .NET
-$GODOT --headless --path renderers/godot --import    # once, in a fresh checkout
-make 3d GODOT=$GODOT
+make 3d                        # finds godot-mono (or a similar name) on your PATH
+make 3d GODOT=$(scripts/godot.sh)   # or name your Godot .NET
 ```
+
+`make 3d` refuses a Godot without .NET, and imports the project's assets
+itself (the first time takes a few seconds).
 
 More in [DEVELOPMENT.md](DEVELOPMENT.md) and
 [renderers/godot/README.md](renderers/godot/README.md).

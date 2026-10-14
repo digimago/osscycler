@@ -17,7 +17,10 @@ the core, the TUI and the world builder.
 The 3D view (`make 3d`, `dotnet test renderers/godot/tests/Hud`) also
 needs Godot 4.7 with .NET (the "mono" build; `scripts/godot.sh`
 downloads 4.7.2 and prints its path, for `GODOT=`) and the .NET SDK 8 or
-later. In a fresh checkout, import the project once:
+later. `make 3d` takes the first of `godot-mono`, `godot4-mono` and
+`godot-dotnet` on the `PATH` unless `GODOT=` names one, stops if it isn't
+the .NET build, and imports the project's assets before it starts.
+Running Godot yourself in a fresh checkout, import them once first:
 `godot --headless --path renderers/godot --import` (or the HUD font
 doesn't load).
 

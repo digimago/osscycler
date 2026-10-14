@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
+
+	pb "github.com/digimago/osscycler/gen/osscycler/v1"
 )
 
 // cadenceWindow is what the CADENCE tile averages over during rides and
@@ -66,8 +68,8 @@ func (m Model) cadenceAvg() (float64, bool) {
 }
 
 // cadenceTile is the averaged cadence; aim is the workout's cadence for
-// this part, 0 for none.
-func (m Model) cadenceTile(aim uint32) metric {
+// this part, 0 for none, and check the core's verdict on it.
+func (m Model) cadenceTile(aim uint32, check pb.CadenceCheck) metric {
 	v := "--"
 	if rpm, ok := m.cadenceAvg(); ok {
 		v = fmt.Sprintf("%.0f", rpm)
@@ -76,7 +78,25 @@ func (m Model) cadenceTile(aim uint32) metric {
 	if aim > 0 {
 		unit = fmt.Sprintf("rpm · aim %d", aim)
 	}
-	return metric{"CADENCE 5s", v, unit, cadenceStyle, nil}
+	var style *lipgloss.Style
+	if hint, st := cadenceHint(check); hint != "" {
+		unit, style = unit+" "+hint, st
+	}
+	return metric{"CADENCE 5s", v, unit, cadenceStyle, style}
+}
+
+// cadenceHint says which way to change the cadence to be within the
+// workout's tolerance of its aim (the core decides, erg.CadenceTolerance).
+func cadenceHint(check pb.CadenceCheck) (string, *lipgloss.Style) {
+	switch check {
+	case pb.CadenceCheck_CADENCE_CHECK_LOW:
+		return "▲ faster", &behindStyle
+	case pb.CadenceCheck_CADENCE_CHECK_HIGH:
+		return "▼ slower", &behindStyle
+	case pb.CadenceCheck_CADENCE_CHECK_ON:
+		return "✓", &aheadStyle
+	}
+	return "", nil
 }
 
 // tileGrid lays metrics out as big tiles in two rows (three over two for

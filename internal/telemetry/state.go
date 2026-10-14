@@ -257,6 +257,16 @@ func (p WorkoutPhase) Active() bool {
 	return p == WorkoutArmed || p == WorkoutRunning || p == WorkoutPaused
 }
 
+// CadenceCheck is the rider's cadence against a workout's target cadence.
+type CadenceCheck uint8
+
+const (
+	CadenceNone CadenceCheck = iota // no target now, or no cadence reading
+	CadenceLow                      // below the tolerance: pedal faster
+	CadenceOn
+	CadenceHigh // above it: pedal slower
+)
+
 // Workout is an ERG workout in progress. FTPW and IntensityPct are
 // settings, published with or without a workout.
 type Workout struct {
@@ -271,6 +281,8 @@ type Workout struct {
 	Free             bool    // no ERG target in this segment
 	TargetW          float64 // ERG target; 0 when Free
 	TargetCadence    int
+	CadenceCheck     CadenceCheck // the 5 s cadence against TargetCadence
+	CadenceAvg       float64      // that 5 s cadence; 0 without a reading
 	NextLabel        string
 	NextTargetW      float64
 	NextFree         bool

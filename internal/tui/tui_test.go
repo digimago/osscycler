@@ -1581,6 +1581,19 @@ func TestCadenceTiles(t *testing.T) {
 	if out := plain(next.(Model).render()); !strings.Contains(out, "CADENCE 5s") || !strings.Contains(out, "aim 90") {
 		t.Errorf("workout lacks the cadence and its aim:\n%s", out)
 	}
+	// The core's verdict on the cadence shows beside the aim.
+	for check, want := range map[pb.CadenceCheck]string{
+		pb.CadenceCheck_CADENCE_CHECK_LOW:  "▲ faster",
+		pb.CadenceCheck_CADENCE_CHECK_ON:   "✓",
+		pb.CadenceCheck_CADENCE_CHECK_HIGH: "▼ slower",
+	} {
+		st := workoutState(pb.WorkoutPhase_WORKOUT_PHASE_RUNNING, 300)
+		st.Workout.CadenceCheck = check
+		next, _ := calModel(&stubCommands{workouts: []*pb.WorkoutDef{testWorkoutDef(t)}}).Update(StateMsg{State: st})
+		if out := plain(next.(Model).render()); !strings.Contains(out, "aim 90 "+want) {
+			t.Errorf("%v: no %q beside the aim:\n%s", check, want, out)
+		}
+	}
 }
 
 // dashboard is the TUI on its dashboard, the profile complete.

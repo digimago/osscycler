@@ -322,6 +322,9 @@ func (m Model) workoutInfo(width int) string {
 	cad := m.metrics()[2].value + " rpm"
 	if c := p.GetTargetCadence(); c > 0 {
 		cad += fmt.Sprintf(" (target %d)", c)
+		if hint, st := cadenceHint(p.GetCadenceCheck()); hint != "" {
+			cad += " " + st.Render(hint)
+		}
 	}
 	lines = append(lines, fmt.Sprintf("%s · %s · %s / %s · %s",
 		next, cad, clock(p.GetElapsedS()), clock(p.GetDurationS()), dimStyle.Render(truncate(p.GetName(), 40))))

@@ -184,6 +184,8 @@ func workoutProgressToProto(w telemetry.Workout) *pb.WorkoutProgress {
 		Free:              w.Free,
 		TargetW:           w.TargetW,
 		TargetCadence:     uint32(w.TargetCadence),
+		CadenceCheck:      pb.CadenceCheck(w.CadenceCheck), // the same order, none as unspecified
+		CadenceAvgRpm:     w.CadenceAvg,
 		NextLabel:         w.NextLabel,
 		NextTargetW:       w.NextTargetW,
 		NextFree:          w.NextFree,

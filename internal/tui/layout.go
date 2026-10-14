@@ -13,6 +13,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+
+	pb "github.com/digimago/osscycler/gen/osscycler/v1"
 )
 
 // The rider arranges the tiles of the dashboard, the course ride and the
@@ -160,10 +162,11 @@ func (m Model) tile(id string) metric {
 		return base[2]
 	case "cadence_5s":
 		var aim uint32
+		var check pb.CadenceCheck
 		if m.workoutActive() {
-			aim = p.GetTargetCadence()
+			aim, check = p.GetTargetCadence(), p.GetCadenceCheck()
 		}
-		return m.cadenceTile(aim)
+		return m.cadenceTile(aim, check)
 	case "speed":
 		if m.rideActive() {
 			return metric{"SPEED", fmt.Sprintf("%.1f", r.GetSpeedMps()*3.6), "km/h", speedStyle, nil}

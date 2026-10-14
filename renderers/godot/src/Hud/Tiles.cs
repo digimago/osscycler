@@ -52,8 +52,21 @@ public static class Tiles
             case "cadence":
                 return new("CADENCE", tr != null && tr.HasCadenceRpm ? tr.CadenceRpm.ToString() : "--", "rpm", Palette.Cadence);
             case "cadence_5s":
-                string unit = working && w.TargetCadence > 0 ? $"rpm · aim {w.TargetCadence}" : "rpm";
-                return new("CADENCE 5s", cadence is double c ? Format.Fixed(c, 0) : "--", unit, Palette.Cadence);
+            {
+                string value = cadence is double c ? Format.Fixed(c, 0) : "--";
+                if (!working || w.TargetCadence == 0)
+                    return new("CADENCE 5s", value, "rpm", Palette.Cadence);
+                string unit = $"rpm · aim {w.TargetCadence}";
+                // The core's verdict: within erg.CadenceTolerance of the aim, or which way
+                // to go (in words: the font has no ▲ ▼ ✓).
+                return w.CadenceCheck switch
+                {
+                    CadenceCheck.Low => new("CADENCE 5s", value, unit + " · faster", Palette.Cadence, Palette.Behind),
+                    CadenceCheck.High => new("CADENCE 5s", value, unit + " · slower", Palette.Cadence, Palette.Behind),
+                    CadenceCheck.On => new("CADENCE 5s", value, unit + " · on target", Palette.Cadence, Palette.Ahead),
+                    _ => new("CADENCE 5s", value, unit, Palette.Cadence),
+                };
+            }
             case "speed":
                 if (riding)
                     return new("SPEED", Format.Fixed(r.SpeedMps * 3.6, 1), "km/h", Palette.Speed);

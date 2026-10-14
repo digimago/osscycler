@@ -36,7 +36,7 @@ func Included() []*Course {
 			panic(fmt.Sprintf("course: included route %s: %v", n, err)) // a test reads every one
 		}
 		c.Included = true
-		cs = append(cs, c)
+		cs = append(cs, c.Lapped())
 	}
 	return cs
 }

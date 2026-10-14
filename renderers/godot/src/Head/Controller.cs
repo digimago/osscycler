@@ -54,6 +54,9 @@ public interface ICommands
     Task<GetActivityHistoryResponse> ActivityHistory(string name, uint since);
     // ActivitySummary sums an activity up, named as for ActivityHistory.
     Task<ActivitySummary> ActivitySummary(string name);
+    // RideSummary sums up the last course ride of the activity being
+    // recorded: from its start to its finish.
+    Task<ActivitySummary> RideSummary();
 }
 
 // Controller is the renderer as a head (owner, 2026-10-09: a full

@@ -1711,7 +1711,11 @@ func (x *GetActivityHistoryResponse) GetSpeedMps() []float32 {
 type GetActivitySummaryRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// As GetActivityHistoryRequest.name.
-	Name          string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// The last course ride of the activity being recorded (name empty): from
+	// its start to its finish, or to now while it is under way, rather than
+	// the whole activity. FAILED_PRECONDITION when it has none.
+	LastRide      bool `protobuf:"varint,2,opt,name=last_ride,json=lastRide,proto3" json:"last_ride,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1751,6 +1755,13 @@ func (x *GetActivitySummaryRequest) GetName() string {
 		return x.Name
 	}
 	return ""
+}
+
+func (x *GetActivitySummaryRequest) GetLastRide() bool {
+	if x != nil {
+		return x.LastRide
+	}
+	return false
 }
 
 type GetActivitySummaryResponse struct {
@@ -3646,6 +3657,12 @@ type Course struct {
 	// The finish is the start: rides go round until the rider stops, lap
 	// after lap (osscycler's built-in test tracks).
 	Loop bool `protobuf:"varint,16,opt,name=loop,proto3" json:"loop,omitempty"`
+	// A lapped course (loop, or a course whose end comes back to its start):
+	// its lap from lap_start_m to lap_end_m along it (lap_end_m 0: none). Past
+	// the course's end a ride goes on a lap back (lap_end_m - lap_start_m):
+	// the course runs on past lap_end_m into the lap's start again.
+	LapStartM float64 `protobuf:"fixed64,23,opt,name=lap_start_m,json=lapStartM,proto3" json:"lap_start_m,omitempty"`
+	LapEndM   float64 `protobuf:"fixed64,24,opt,name=lap_end_m,json=lapEndM,proto3" json:"lap_end_m,omitempty"`
 	// The core is still fetching this course's map data: land_use and
 	// buildings will come. Renderers ask for the course again later (every
 	// 15 s or so) while it matters to them.
@@ -3801,6 +3818,20 @@ func (x *Course) GetLoop() bool {
 		return x.Loop
 	}
 	return false
+}
+
+func (x *Course) GetLapStartM() float64 {
+	if x != nil {
+		return x.LapStartM
+	}
+	return 0
+}
+
+func (x *Course) GetLapEndM() float64 {
+	if x != nil {
+		return x.LapEndM
+	}
+	return 0
 }
 
 func (x *Course) GetMapDataPending() bool {
@@ -5492,8 +5523,16 @@ type Ride struct {
 	// The earlier ride raced against (the PB on this stretch); absent
 	// without one. On a loop: the best lap so far, raced lap by lap.
 	Ghost *RideGhost `protobuf:"bytes,19,opt,name=ghost,proto3" json:"ghost,omitempty"`
-	// A loop ride: no finish; distance_m is along the current lap.
+	// A loop ride: no finish, lap after lap until the rider stops (a test
+	// track, or a course whose end comes back to its start: its run-in, then
+	// its lap). distance_m stays along the course.
 	Loop bool `protobuf:"varint,20,opt,name=loop,proto3" json:"loop,omitempty"`
+	// The lap: where it starts along the course and how long it is; how far
+	// into the lap under way the rider is (negative on the run-in before the
+	// first lap: how far to it).
+	LapStartM    float64 `protobuf:"fixed64,28,opt,name=lap_start_m,json=lapStartM,proto3" json:"lap_start_m,omitempty"`
+	LapLengthM   float64 `protobuf:"fixed64,29,opt,name=lap_length_m,json=lapLengthM,proto3" json:"lap_length_m,omitempty"`
+	LapDistanceM float64 `protobuf:"fixed64,30,opt,name=lap_distance_m,json=lapDistanceM,proto3" json:"lap_distance_m,omitempty"`
 	// The lap under way, from 1, and its time so far.
 	Lap         uint32  `protobuf:"varint,21,opt,name=lap,proto3" json:"lap,omitempty"`
 	LapElapsedS float64 `protobuf:"fixed64,22,opt,name=lap_elapsed_s,json=lapElapsedS,proto3" json:"lap_elapsed_s,omitempty"`
@@ -5680,6 +5719,27 @@ func (x *Ride) GetLoop() bool {
 		return x.Loop
 	}
 	return false
+}
+
+func (x *Ride) GetLapStartM() float64 {
+	if x != nil {
+		return x.LapStartM
+	}
+	return 0
+}
+
+func (x *Ride) GetLapLengthM() float64 {
+	if x != nil {
+		return x.LapLengthM
+	}
+	return 0
+}
+
+func (x *Ride) GetLapDistanceM() float64 {
+	if x != nil {
+		return x.LapDistanceM
+	}
+	return 0
 }
 
 func (x *Ride) GetLap() uint32 {
@@ -6364,9 +6424,10 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\x0eheart_rate_bpm\x18\x04 \x03(\x11R\fheartRateBpm\x12\x1f\n" +
 	"\vcadence_rpm\x18\x05 \x03(\x11R\n" +
 	"cadenceRpm\x12\x1b\n" +
-	"\tspeed_mps\x18\x06 \x03(\x02R\bspeedMps\"/\n" +
+	"\tspeed_mps\x18\x06 \x03(\x02R\bspeedMps\"L\n" +
 	"\x19GetActivitySummaryRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\"U\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1b\n" +
+	"\tlast_ride\x18\x02 \x01(\bR\blastRide\"U\n" +
 	"\x1aGetActivitySummaryResponse\x127\n" +
 	"\asummary\x18\x01 \x01(\v2\x1d.osscycler.v1.ActivitySummaryR\asummary\"\xfd\x04\n" +
 	"\x0fActivitySummary\x12\x12\n" +
@@ -6510,7 +6571,7 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\x0edifficulty_pct\x18\x01 \x01(\x01R\rdifficultyPct\"\x14\n" +
 	"\x12ListCoursesRequest\"E\n" +
 	"\x13ListCoursesResponse\x12.\n" +
-	"\acourses\x18\x01 \x03(\v2\x14.osscycler.v1.CourseR\acourses\"\xf4\x05\n" +
+	"\acourses\x18\x01 \x03(\v2\x14.osscycler.v1.CourseR\acourses\"\xb0\x06\n" +
 	"\x06Course\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1d\n" +
@@ -6529,7 +6590,9 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\bland_use\x18\r \x01(\fR\alandUse\x124\n" +
 	"\tbuildings\x18\x0e \x03(\v2\x16.osscycler.v1.BuildingR\tbuildings\x12 \n" +
 	"\vattribution\x18\x0f \x01(\tR\vattribution\x12\x12\n" +
-	"\x04loop\x18\x10 \x01(\bR\x04loop\x12(\n" +
+	"\x04loop\x18\x10 \x01(\bR\x04loop\x12\x1e\n" +
+	"\vlap_start_m\x18\x17 \x01(\x01R\tlapStartM\x12\x1a\n" +
+	"\tlap_end_m\x18\x18 \x01(\x01R\alapEndM\x12(\n" +
 	"\x10map_data_pending\x18\x11 \x01(\bR\x0emapDataPending\x124\n" +
 	"\tjunctions\x18\x12 \x03(\v2\x16.osscycler.v1.JunctionR\tjunctions\x123\n" +
 	"\aparking\x18\x13 \x03(\v2\x19.osscycler.v1.ParkingAreaR\aparking\x128\n" +
@@ -6670,7 +6733,7 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\x05ftp_w\x18\x10 \x01(\x01R\x04ftpW\x12#\n" +
 	"\rintensity_pct\x18\x11 \x01(\x01R\fintensityPct\x12\x1e\n" +
 	"\vavg_power_w\x18\x12 \x01(\x01R\tavgPowerW\x12(\n" +
-	"\x10phase_changed_ns\x18\x13 \x01(\x03R\x0ephaseChangedNs\"\xc3\a\n" +
+	"\x10phase_changed_ns\x18\x13 \x01(\x03R\x0ephaseChangedNs\"\xab\b\n" +
 	"\x04Ride\x12-\n" +
 	"\x05phase\x18\x01 \x01(\x0e2\x17.osscycler.v1.RidePhaseR\x05phase\x12\x1b\n" +
 	"\tcourse_id\x18\x02 \x01(\tR\bcourseId\x12\x1f\n" +
@@ -6695,7 +6758,11 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\flatitude_deg\x18\x11 \x01(\x01R\vlatitudeDeg\x12#\n" +
 	"\rlongitude_deg\x18\x12 \x01(\x01R\flongitudeDeg\x12-\n" +
 	"\x05ghost\x18\x13 \x01(\v2\x17.osscycler.v1.RideGhostR\x05ghost\x12\x12\n" +
-	"\x04loop\x18\x14 \x01(\bR\x04loop\x12\x10\n" +
+	"\x04loop\x18\x14 \x01(\bR\x04loop\x12\x1e\n" +
+	"\vlap_start_m\x18\x1c \x01(\x01R\tlapStartM\x12 \n" +
+	"\flap_length_m\x18\x1d \x01(\x01R\n" +
+	"lapLengthM\x12$\n" +
+	"\x0elap_distance_m\x18\x1e \x01(\x01R\flapDistanceM\x12\x10\n" +
 	"\x03lap\x18\x15 \x01(\rR\x03lap\x12\"\n" +
 	"\rlap_elapsed_s\x18\x16 \x01(\x01R\vlapElapsedS\x120\n" +
 	"\blast_lap\x18\x17 \x01(\v2\x15.osscycler.v1.RideLapR\alastLap\x120\n" +

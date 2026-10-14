@@ -78,6 +78,9 @@ func rideToProto(r telemetry.Ride) *pb.Ride {
 		LongitudeDeg:    r.Lon,
 		Ghost:           ghostToProto(r.Ghost),
 		Loop:            r.Loop,
+		LapStartM:       r.LapStartM,
+		LapLengthM:      r.LapLengthM,
+		LapDistanceM:    r.LapDistanceM,
 		Lap:             uint32(r.Lap),
 		LapElapsedS:     r.LapElapsed.Seconds(),
 		LastLap:         lapToProto(r.LastLap),
@@ -158,6 +161,9 @@ func CourseToProto(c *course.Course, sc *scenery.Scenery) *pb.Course {
 		ProfileGradePct:   make([]float32, len(grade)),
 		ProfileEastM:      make([]float32, len(east)),
 		ProfileNorthM:     make([]float32, len(north)),
+	}
+	if l := c.Lap; l != nil {
+		pc.LapStartM, pc.LapEndM = l.StartM, l.EndM
 	}
 	for i := range ele {
 		pc.ProfileElevationM[i], pc.ProfileGradePct[i] = float32(ele[i]), float32(grade[i])

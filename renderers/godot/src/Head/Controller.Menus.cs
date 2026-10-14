@@ -468,8 +468,8 @@ public sealed partial class Controller
                 case Tab.Courses:
                     foreach (var c in _courses ?? new List<Course>())
                     {
-                        var pb = c.Loop ? null : _results?.FirstOrDefault(r => r.CourseId == c.Id && r.StartM < 1 && r.PersonalBest);
-                        rows.Add(new("", (c.Loop ? "↻ " : "") + c.Name,
+                        var pb = Hud.Laps.Lapped(c) ? null : _results?.FirstOrDefault(r => r.CourseId == c.Id && r.StartM < 1 && r.PersonalBest);
+                        rows.Add(new("", (Hud.Laps.Lapped(c) ? "↻ " : "") + c.Name,
                             $"{Hud.Format.Fixed(c.DistanceM / 1000, 1)} km · {Hud.Format.Fixed(c.GainM, 0)} m up" + (pb != null ? " · PB " + Hud.Format.Clock(pb.ElapsedS) : ""), pb != null));
                     }
                     hint = "enter ride · tab history, activities · esc back";

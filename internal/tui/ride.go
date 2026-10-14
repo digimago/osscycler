@@ -265,13 +265,13 @@ func (m Model) pickerPanel(width, height int) string {
 				style = style.Bold(true).Foreground(lipgloss.Color("220"))
 			}
 			pbText := ""
-			if r, ok := m.coursePB(c.GetId()); ok && c.GetLoop() {
+			if r, ok := m.coursePB(c.GetId()); ok && lapped(c) {
 				pbText = pbStyle.Render("  lap PB " + lapTime(r.GetElapsedS()))
 			} else if ok {
 				pbText = pbStyle.Render("  PB " + clock(r.GetElapsedS()))
 			}
 			name := c.GetName()
-			if c.GetLoop() {
+			if lapped(c) {
 				name = "↻ " + name
 			}
 			lines = append(lines, style.Render(fmt.Sprintf("%s%-34s %6.2f km  +%4.0f m  max %4.1f%%",
@@ -441,14 +441,7 @@ func (m Model) rideResult(width, height int, finished bool) string {
 		if s := r.GetStartDistanceM(); s > 0 {
 			from = fmt.Sprintf(" (from %.2f km)", s/1000)
 		}
-		verdict := dimStyle.Render("first ride on this stretch: the PB to beat next time")
-		if g := r.GetGhost(); g != nil {
-			if gap := g.GetGapS(); gap < 0 {
-				verdict = pbStyle.Render(fmt.Sprintf("★ NEW PB  %s faster than %s", secs(-gap), clock(g.GetTimeS())))
-			} else {
-				verdict = warnStyle.Render(fmt.Sprintf("%s off your %s (%s)", secs(gap), g.GetLabel(), clock(g.GetTimeS())))
-			}
-		}
+		verdict := rideVerdict(r)
 		lines = append(lines,
 			bigOK.Render("FINISHED  "+r.GetCourseName()+from), "",
 			bigOK.Render(t), "", verdict, "",
@@ -470,6 +463,18 @@ func (m Model) rideResult(width, height int, finished bool) string {
 		lipgloss.JoinVertical(lipgloss.Center, lines...))
 }
 
+// rideVerdict says how a finished course ride went against its ghost.
+func rideVerdict(r *pb.Ride) string {
+	if g := r.GetGhost(); g != nil {
+		if gap := g.GetGapS(); gap < 0 {
+			return pbStyle.Render(fmt.Sprintf("★ NEW PB  %s faster than %s", secs(-gap), clock(g.GetTimeS())))
+		} else {
+			return warnStyle.Render(fmt.Sprintf("%s off your %s (%s)", secs(gap), g.GetLabel(), clock(g.GetTimeS())))
+		}
+	}
+	return dimStyle.Render("first ride on this stretch: the PB to beat next time")
+}
+
 // gradeStrip shows the next lookaheadM metres as heat-coloured cells, like
 // Zwift's climb bar: blue is easy, deep red is 16 % and up, slate is
 // downhill, chequered is past the finish. Three lines: grade labels on the
@@ -480,7 +485,7 @@ func gradeStrip(c *pb.Course, pos, ghost float64, width int) string {
 		return ""
 	}
 	finish := c.GetDistanceM()
-	loop := c.GetLoop() && finish > 0
+	loop := lapped(c) && finish > 0
 	bg := make([]color.Color, width) // background per column
 	label := []rune(strings.Repeat(" ", width))
 	ruler := []rune(strings.Repeat(" ", width))
@@ -503,12 +508,12 @@ func gradeStrip(c *pb.Course, pos, ghost float64, width int) string {
 		var cellBG color.Color
 		from, to := pos+float64(i)*lookaheadCellM, pos+float64(i+1)*lookaheadCellM
 		switch {
-		case loop && math.Floor(from/finish) != math.Floor(to/finish):
+		case loop && lapLine(c, from, to):
 			// The line, every lap.
 			cellBG = finishColor(i)
 			put(label, col, "LAP")
 		case loop:
-			g := gradeAt(c, math.Mod(mid, finish))
+			g := gradeAt(c, coursePos(c, mid))
 			cellBG = gradeColor(g)
 			if onLabel {
 				put(label, col, fmt.Sprintf("%.0f%%", g))

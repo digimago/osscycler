@@ -30,9 +30,16 @@ func TestIncluded(t *testing.T) {
 		t.Fatal("no posbank")
 	}
 	if p.Name != "Posbank Loop" || p.Loop || p.Builtin ||
-		p.Distance < 31000 || p.Distance > 34000 || p.Gain < 140 || p.Gain > 200 || p.MaxGrade < 6 {
+		p.Distance < 29000 || p.Distance > 31000 || p.Gain < 140 || p.Gain > 200 || p.MaxGrade < 6 {
 		t.Errorf("posbank: %q loop %v builtin %v, %.0f m, gain %.0f m, max %.1f %%",
 			p.Name, p.Loop, p.Builtin, p.Distance, p.Gain, p.MaxGrade)
+	}
+	// Lapped (owner, 2026-10-13): the run-in from Rheden to the Diepesteeg,
+	// then the lap round and back along the main road to it, the course
+	// ending LapTailM up the Diepesteeg again.
+	if l := p.Lap; l == nil || l.StartM < 2200 || l.StartM > 2450 || l.EndM < 29400 || l.EndM > 29800 ||
+		math.Abs(p.Distance-l.EndM-LapTailM) > p.Spacing {
+		t.Errorf("posbank's lap: %+v, course %.0f m", p.Lap, p.Distance)
 	}
 	// It passes the Posbank on the Beekhuizenseweg, not through the car park
 	// north of it, where the first version's waypoint lay (a jog of two

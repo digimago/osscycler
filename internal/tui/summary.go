@@ -15,13 +15,27 @@ import (
 // The end-of-ride summary (owner's list, item 6): averages, the power
 // curve and the time in each power and heart rate zone, from the core
 // (GetActivitySummary). It opens after the rider ends a ride and saves it,
-// and on i in ACTIVITIES; x, enter or esc close it (back to the list when
-// it was opened there).
+// on i in ACTIVITIES, and when a course ride finishes at its line (owner,
+// 2026-10-13: the ride ends there with its summary: the course ride's own,
+// its result on top); x, enter or esc close it (back to the list when it
+// was opened there; after a course ride, back to free riding).
 
 type summaryMsg struct {
 	s       *pb.ActivitySummary
 	fromTab bool
+	ride    bool // the finished course ride's
 	err     error
+}
+
+// fetchRideSummary asks for the finished course ride's summary.
+func (m Model) fetchRideSummary() tea.Cmd {
+	cmds := m.cmds
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+		defer cancel()
+		s, err := cmds.RideSummary(ctx)
+		return summaryMsg{s: s, ride: true, err: err}
+	}
 }
 
 func (m Model) fetchSummary(name string, fromTab bool) tea.Cmd {
@@ -30,7 +44,7 @@ func (m Model) fetchSummary(name string, fromTab bool) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
 		defer cancel()
 		s, err := cmds.ActivitySummary(ctx, name)
-		return summaryMsg{s, fromTab, err}
+		return summaryMsg{s: s, fromTab: fromTab, err: err}
 	}
 }
 
@@ -39,9 +53,12 @@ func (m Model) onSummary(msg summaryMsg) Model {
 		if msg.fromTab { // after ending a ride, "ride saved" stays
 			m.notice = "the ride's summary: " + friendlyErr(msg.err)
 		}
-		return m
+		return m // after a course ride: its result screen as before
 	}
-	m.summary, m.summaryFromTab = msg.s, msg.fromTab
+	if msg.ride && m.ride().GetPhase() != pb.RidePhase_RIDE_PHASE_FINISHED {
+		return m // closed meanwhile (here or on another screen)
+	}
+	m.summary, m.summaryFromTab, m.summaryRide = msg.s, msg.fromTab, msg.ride
 	m.picking = false
 	return m
 }
@@ -55,6 +72,13 @@ func (m Model) summaryKey(key string) (Model, tea.Cmd, bool) {
 	case "x", "enter", "esc", "i", "q":
 		m.summary = nil
 		m.picking = m.summaryFromTab
+		if m.summaryRide {
+			// The course ride ends: back to free riding.
+			m.summaryRide = false
+			if m.ride().GetPhase() == pb.RidePhase_RIDE_PHASE_FINISHED {
+				return m, m.command("close ride", m.cmds.StopRide), true
+			}
+		}
 	}
 	return m, nil, true
 }
@@ -70,6 +94,13 @@ func (m Model) summaryPanel(width, height int) string {
 	}
 	lines := []string{titleStyle.Render(title),
 		fmt.Sprintf("%s riding · %.2f km", clock(s.GetTimerS()), s.GetDistanceM()/1000), ""}
+	if m.summaryRide {
+		// The course ride's result on top: its time and how it went.
+		r := m.ride()
+		lines = []string{bigOK.Render("FINISHED  " + r.GetCourseName()), "",
+			bigOK.Render(clock(r.GetElapsedS())) + "   " + rideVerdict(r), "",
+			fmt.Sprintf("%.2f km · %.0f m climbed", s.GetDistanceM()/1000, r.GetClimbedM()), ""}
+	}
 	label := func(l string) string { return labelStyle.Render(fmt.Sprintf("%-11s", l)) }
 	if s.GetAvgPowerW() > 0 {
 		np := ""

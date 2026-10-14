@@ -44,6 +44,10 @@ type Course struct {
 	// Loop: the finish is the start, and rides go round and round. At and
 	// Position wrap past the line.
 	Loop bool
+	// Lap is the part rides go round and round (lap.go): the whole course
+	// on a Loop, a course's lap after its run-in when its end comes back
+	// to its start (Lapped); nil on a one-way course.
+	Lap *Lap
 	// Builtin marks osscycler's own test tracks: no GPX file, and no map
 	// data to fetch for them.
 	Builtin bool
@@ -166,7 +170,7 @@ func (c *Course) clamp(d float64) float64 {
 		}
 		return d
 	}
-	return math.Max(0, math.Min(d, c.Distance))
+	return math.Max(0, math.Min(c.lapWrap(d), c.Distance))
 }
 
 // Profile returns elevation and grade every Spacing metres from the start
@@ -414,7 +418,7 @@ func LoadDir(dir string) ([]*Course, error) {
 			errs = append(errs, fmt.Errorf("%s: %w", p, err))
 			continue
 		}
-		courses = append(courses, c)
+		courses = append(courses, c.Lapped())
 	}
 	return courses, errors.Join(errs...)
 }

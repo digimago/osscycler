@@ -114,5 +114,6 @@ func track(id, name string, length float64, at func(s float64) (x, y float64), e
 		panic("course: built-in track " + id + ": " + err.Error())
 	}
 	c.Loop, c.Builtin = true, true
+	c.Lap = &Lap{StartM: 0, EndM: c.Distance}
 	return c
 }

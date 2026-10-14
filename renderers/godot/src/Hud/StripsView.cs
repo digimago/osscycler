@@ -109,8 +109,7 @@ public partial class StripsView : Control
     {
         Panel(r);
         var c = _course!;
-        double loopLen = c.Loop ? c.DistanceM : 0;
-        var (cells, ghostAt) = Strips.LookAhead(c, loopLen > 0 ? _pos % loopLen : _pos, _ghost >= 0 && loopLen > 0 ? _ghost % loopLen : _ghost);
+        var (cells, ghostAt) = Strips.LookAhead(c, Laps.CoursePos(c, _pos), _ghost >= 0 ? Laps.CoursePos(c, _ghost) : _ghost);
         float cw = r.Size.X / cells.Count;
         for (int i = 0; i < cells.Count; i++)
         {
@@ -156,7 +155,7 @@ public partial class StripsView : Control
             return;
         float cw = r.Size.X / cols.Count;
         double len = c.DistanceM;
-        double pos = c.Loop && len > 0 ? _pos % len : _pos;
+        double pos = Laps.CoursePos(c, _pos);
         int here = (int)(pos / len * (cols.Count - 1));
         for (int x = 0; x < cols.Count; x++)
         {
@@ -168,7 +167,7 @@ public partial class StripsView : Control
         }
         if (_ghost >= 0)
         {
-            double g = c.Loop && len > 0 ? _ghost % len : _ghost;
+            double g = Laps.CoursePos(c, _ghost);
             float gx = r.Position.X + (float)(g / len) * r.Size.X;
             DrawLine(new Vector2(gx, r.Position.Y), new Vector2(gx, r.End.Y), Color8(Palette.Ghost), 3);
         }
@@ -249,7 +248,7 @@ public partial class StripsView : Control
         if (m.Points.Count < 2)
             return;
         var c = _course!;
-        double len = c.DistanceM, pos = c.Loop && len > 0 ? _pos % len : _pos;
+        double len = c.DistanceM, pos = Laps.CoursePos(c, _pos);
         Vector2 P(double x, double y) => r.Position + new Vector2((float)x, (float)y) * r.Size.X;
         Color ahead = new(1, 1, 1, 0.9f), ridden = new(1, 1, 1, 0.35f);
         for (int i = 1; i < m.Points.Count; i++)

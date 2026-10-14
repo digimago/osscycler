@@ -185,6 +185,14 @@ func (s *stubCommands) ActivityHistory(_ context.Context, name string, since uin
 	return out, nil
 }
 
+func (s *stubCommands) RideSummary(_ context.Context) (*pb.ActivitySummary, error) {
+	s.summaryNames = append(s.summaryNames, "last ride")
+	if s.summary == nil {
+		return nil, errors.New("no course ride")
+	}
+	return s.summary, nil
+}
+
 func (s *stubCommands) ActivitySummary(_ context.Context, name string) (*pb.ActivitySummary, error) {
 	s.summaryNames = append(s.summaryNames, name)
 	if s.summary == nil {
@@ -607,6 +615,33 @@ func TestArmedAndFinished(t *testing.T) {
 	run(m, cmd)
 	if cmds.stops != 1 {
 		t.Errorf("enter on the result: StopRide calls %d", cmds.stops)
+	}
+}
+
+// A course ride ends at its line with its own summary, its result on top;
+// closing it ends the ride: back to free riding (owner, 2026-10-13).
+func TestFinishedRideShowsItsSummary(t *testing.T) {
+	cmds := &stubCommands{courses: []*pb.Course{hillCourse()}, summary: &pb.ActivitySummary{
+		TimerS: 754, DistanceM: 6000, AvgPowerW: 245, MaxPowerW: 400, FtpW: 250,
+		PowerCurve: []*pb.PowerBest{{DurationS: 5, PowerW: 400}, {DurationS: 60, PowerW: 300}}}}
+	m := calModel(cmds)
+	next, cmd := m.Update(StateMsg{State: rideState(pb.RidePhase_RIDE_PHASE_RIDING, 2900)})
+	m = run(next.(Model), cmd)
+	next, cmd = m.Update(StateMsg{State: rideState(pb.RidePhase_RIDE_PHASE_FINISHED, 3000)})
+	m = run(next.(Model), cmd)
+	if len(cmds.summaryNames) != 1 || cmds.summaryNames[0] != "last ride" {
+		t.Fatalf("summaries asked for: %v", cmds.summaryNames)
+	}
+	out := plain(m.render())
+	for _, want := range []string{"FINISHED", "Hill Test", "BEST POWER", "6.00 km"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the finished ride's summary lacks %q:\n%s", want, out)
+		}
+	}
+	m, cmd = press(m, "x")
+	run(m, cmd)
+	if cmds.stops != 1 || m.summary != nil {
+		t.Errorf("closing the summary: StopRide calls %d, summary open %v", cmds.stops, m.summary != nil)
 	}
 }
 
@@ -1573,6 +1608,30 @@ func TestHintsFitTheWidth(t *testing.T) {
 	for _, w := range []int{60, 80, 100, 160} {
 		if f := dashboard(t, sample(), w).footer(); strings.Count(f, "\n")+1 != 3 {
 			t.Errorf("width %d: footer is %d lines, want 3:\n%s", w, strings.Count(f, "\n")+1, plain(f))
+		}
+	}
+}
+
+// A course with a run-in and a lap (owner, 2026-10-13): its lap from 500
+// to 3000 m, the course running on 100 m into the lap's start again. Past
+// its end a lap back; the line at the lap's start once, then at its end
+// each lap.
+func TestLapOnACourseWithARunIn(t *testing.T) {
+	c := &pb.Course{DistanceM: 3100, LapStartM: 500, LapEndM: 3000}
+	if !lapped(c) || lapped(&pb.Course{DistanceM: 3100}) {
+		t.Error("lapped: a course with a lap is, a one-way course isn't")
+	}
+	for s, want := range map[float64]float64{400: 400, 3050: 3050, 3150: 650, 5700: 700} {
+		if got := coursePos(c, s); math.Abs(got-want) > 1e-9 {
+			t.Errorf("coursePos(%.0f) = %.0f, want %.0f", s, got, want)
+		}
+	}
+	for _, x := range []struct {
+		from, to float64
+		want     bool
+	}{{490, 510, true}, {1000, 1010, false}, {2990, 3010, true}, {3050, 3060, false}, {5490, 5510, true}} {
+		if got := lapLine(c, x.from, x.to); got != x.want {
+			t.Errorf("lapLine(%.0f, %.0f) = %v", x.from, x.to, got)
 		}
 	}
 }

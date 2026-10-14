@@ -332,8 +332,13 @@ type Ride struct {
 	Ghost RideGhost
 
 	// Loop: the course goes round, and the ride with it until the rider
-	// stops; DistanceM is then along the current lap.
-	Loop bool
+	// stops (a test track, or a course whose end comes back to its start:
+	// course.Lap). The lap starts LapStartM along the course and is
+	// LapLengthM long; LapDistanceM is how far into the lap under way the
+	// rider is (negative on the run-in before the first: how far to it).
+	Loop                  bool
+	LapStartM, LapLengthM float64
+	LapDistanceM          float64
 	// Lap is the lap under way, from 1; LapElapsed its time so far.
 	Lap        int
 	LapElapsed time.Duration

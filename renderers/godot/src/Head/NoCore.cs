@@ -40,4 +40,5 @@ public sealed class NoCore : ICommands
     public Task<string> SaveActivity(string name) => Task.FromException<string>(new InvalidOperationException("no core"));
     public Task<GetActivityHistoryResponse> ActivityHistory(string name, uint since) => Task.FromException<GetActivityHistoryResponse>(new InvalidOperationException("no core"));
     public Task<ActivitySummary> ActivitySummary(string name) => Task.FromException<ActivitySummary>(new InvalidOperationException("no core"));
+    public Task<ActivitySummary> RideSummary() => Task.FromException<ActivitySummary>(new InvalidOperationException("no core"));
 }

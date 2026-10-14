@@ -116,6 +116,12 @@ sealed class Calls : ICommands
         r.HeartRateBpm.AddRange(History.HeartRateBpm.Skip((int)since));
         return Task.FromResult(r);
     }
+    public ActivitySummary? Ride;
+    public Task<ActivitySummary> RideSummary()
+    {
+        Add("ride summary");
+        return Ride != null ? Task.FromResult(Ride) : Task.FromException<ActivitySummary>(new InvalidOperationException("no course ride"));
+    }
     public Task<ActivitySummary> ActivitySummary(string name)
     {
         Add("summary " + name);
@@ -814,6 +820,37 @@ public class ViewTests
         Thread.Sleep(30);
         Assert.Equal("view eyes", c.Sent[^1]);
         Assert.Null(h.Dialog(st, 1));
+    }
+
+    // A course ride ends at its line with its own summary, its result as
+    // the heading; closing it ends the ride (owner, 2026-10-13). A loop's
+    // laps go on: no summary.
+    [Fact]
+    public void FinishedRideOpensItsSummaryAndClosingItEndsTheRide()
+    {
+        var c = new Calls { Ride = new ActivitySummary { TimerS = 754, DistanceM = 6000, AvgPowerW = 245 } };
+        var h = new Controller(c);
+        State At(RidePhase p) => new()
+        {
+            Profile = new RiderProfile { WeightKg = 75, FtpW = 200 },
+            Ride = new Ride { Phase = p, CourseId = "hill", CourseName = "Hill Test", ElapsedS = 754, Ghost = new RideGhost { GapS = -3.2, Label = "PB 7 Oct" } },
+        };
+        h.Tick(At(RidePhase.Riding), 0);
+        h.Tick(At(RidePhase.Finished), 1);
+        Assert.Contains("ride summary", c.Sent);
+        Assert.NotNull(h.Summary);
+        Assert.Equal("FINISHED  Hill Test  12:34   NEW PB  3.2 s faster", h.SummaryHeading);
+        h.Key("x", At(RidePhase.Finished), 2);
+        Thread.Sleep(30);
+        Assert.Null(h.Summary);
+        Assert.Equal("stop ride", c.Sent[^1]);
+
+        var loop = new Calls { Ride = new ActivitySummary() };
+        var hl = new Controller(loop);
+        State OnLoop(RidePhase p) => new() { Ride = new Ride { Phase = p, CourseId = "oval", Loop = true } };
+        hl.Tick(OnLoop(RidePhase.Riding), 0);
+        hl.Tick(OnLoop(RidePhase.Finished), 1);
+        Assert.DoesNotContain("ride summary", loop.Sent);
     }
 
     // Building worlds ahead is set in the profile, after the view (owner,

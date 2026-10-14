@@ -344,6 +344,8 @@ public sealed class Core : IDisposable, Head.ICommands
     public Task<GetActivityHistoryResponse> ActivityHistory(string name, uint since) =>
         Call(() => Client().GetActivityHistoryAsync(new GetActivityHistoryRequest { Name = name, SinceS = since }, Opts()).ResponseAsync);
 
+    public async Task<ActivitySummary> RideSummary() =>
+        (await Call(() => Client().GetActivitySummaryAsync(new GetActivitySummaryRequest { LastRide = true }, Opts()).ResponseAsync)).Summary;
     public async Task<ActivitySummary> ActivitySummary(string name) =>
         (await Call(() => Client().GetActivitySummaryAsync(new GetActivitySummaryRequest { Name = name }, Opts()).ResponseAsync)).Summary;
 

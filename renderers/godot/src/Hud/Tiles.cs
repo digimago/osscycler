@@ -63,7 +63,10 @@ public static class Tiles
             case "time":
                 return Time(r);
             case "to_go":
-                return new(r.Loop ? "LAP TO GO" : "TO GO", Format.Fixed(Math.Max(0, r.CourseDistanceM - r.DistanceM) / 1000, 2), "km", Palette.Speed);
+            {
+                var (label, metres) = Laps.ToGo(r);
+                return new(label, Format.Fixed(Math.Max(0, metres) / 1000, 2), "km", Palette.Speed);
+            }
             case "climbed":
                 return new("CLIMBED", Format.Fixed(r.ClimbedM, 0), r.Loop ? "m" : $"of {Format.Fixed(r.CourseGainM, 0)} m", Palette.Plain);
             case "avg_power":
@@ -87,7 +90,7 @@ public static class Tiles
     {
         string label = "TIME", value = Format.Clock(r.ElapsedS);
         if (r.Loop)
-            (label, value) = ($"LAP {r.Lap}", Format.Clock(r.LapElapsedS));
+            (label, value) = r.Lap == 0 ? ("RUN-IN", Format.Clock(r.ElapsedS)) : ($"LAP {r.Lap}", Format.Clock(r.LapElapsedS));
         var g = r.Ghost;
         if (g == null)
             return new(label, value, "", Palette.Plain);

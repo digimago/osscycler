@@ -57,7 +57,10 @@ public partial class ListPanel : Control
         if (DateTime.TryParseExact(s.Name.Replace(".fit", ""), "yyyy-MM-dd-HHmmss", System.Globalization.CultureInfo.InvariantCulture,
                 System.Globalization.DateTimeStyles.AssumeLocal, out var t))
             when = "   " + t.ToString("ddd d MMM HH:mm", System.Globalization.CultureInfo.InvariantCulture);
-        DrawString(_bold, new Vector2(x, y), "RIDE SUMMARY" + when, HorizontalAlignment.Left, -1, 30, Dim);
+        if (_summaryHeading != "") // a finished course ride: how it went
+            DrawString(_bold, new Vector2(x, y), _summaryHeading, HorizontalAlignment.Left, pw - 2 * Pad, 30, Colors.White);
+        else
+            DrawString(_bold, new Vector2(x, y), "RIDE SUMMARY" + when, HorizontalAlignment.Left, -1, 30, Dim);
         y += 44;
         DrawString(_bold, new Vector2(x, y), $"{Format.Clock(s.TimerS)} riding · {Format.Fixed(s.DistanceM / 1000, 2)} km", HorizontalAlignment.Left, -1, 30, Colors.White);
         y += 50;
@@ -138,13 +141,15 @@ public partial class ListPanel : Control
 
     Osscycler.V1.ActivitySummary? _summary;
 
+    string _summaryHeading = "";
+
     // ShowSummary draws a ride's summary (null: none) over everything else
     // this panel shows.
-    public void ShowSummary(Osscycler.V1.ActivitySummary? s)
+    public void ShowSummary(Osscycler.V1.ActivitySummary? s, string heading = "")
     {
-        if (!ReferenceEquals(s, _summary))
+        if (!ReferenceEquals(s, _summary) || heading != _summaryHeading)
             QueueRedraw();
-        _summary = s;
+        (_summary, _summaryHeading) = (s, heading);
     }
 
     public override void _Draw()

@@ -244,6 +244,10 @@ message GetActivityHistoryResponse {
 message GetActivitySummaryRequest {
   // As GetActivityHistoryRequest.name.
   string name = 1;
+  // The last course ride of the activity being recorded (name empty): from
+  // its start to its finish, or to now while it is under way, rather than
+  // the whole activity. FAILED_PRECONDITION when it has none.
+  bool last_ride = 2;
 }
 
 message GetActivitySummaryResponse {
@@ -486,6 +490,12 @@ message Course {
   // The finish is the start: rides go round until the rider stops, lap
   // after lap (osscycler's built-in test tracks).
   bool loop = 16;
+  // A lapped course (loop, or a course whose end comes back to its start):
+  // its lap from lap_start_m to lap_end_m along it (lap_end_m 0: none). Past
+  // the course's end a ride goes on a lap back (lap_end_m - lap_start_m):
+  // the course runs on past lap_end_m into the lap's start again.
+  double lap_start_m = 23;
+  double lap_end_m = 24;
   // The core is still fetching this course's map data: land_use and
   // buildings will come. Renderers ask for the course again later (every
   // 15 s or so) while it matters to them.
@@ -832,8 +842,16 @@ message Ride {
   // without one. On a loop: the best lap so far, raced lap by lap.
   RideGhost ghost = 19;
 
-  // A loop ride: no finish; distance_m is along the current lap.
+  // A loop ride: no finish, lap after lap until the rider stops (a test
+  // track, or a course whose end comes back to its start: its run-in, then
+  // its lap). distance_m stays along the course.
   bool loop = 20;
+  // The lap: where it starts along the course and how long it is; how far
+  // into the lap under way the rider is (negative on the run-in before the
+  // first lap: how far to it).
+  double lap_start_m = 28;
+  double lap_length_m = 29;
+  double lap_distance_m = 30;
   // The lap under way, from 1, and its time so far.
   uint32 lap = 21;
   double lap_elapsed_s = 22;

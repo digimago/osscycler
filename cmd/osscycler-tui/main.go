@@ -271,6 +271,11 @@ func (c commands) ActivitySummary(ctx context.Context, name string) (*pb.Activit
 	return resp.GetSummary(), err
 }
 
+func (c commands) RideSummary(ctx context.Context) (*pb.ActivitySummary, error) {
+	resp, err := c.c.GetActivitySummary(ctx, &pb.GetActivitySummaryRequest{LastRide: true})
+	return resp.GetSummary(), err
+}
+
 func (c commands) ListResults(ctx context.Context) ([]*pb.RideResult, error) {
 	resp, err := c.c.ListResults(ctx, &pb.ListResultsRequest{})
 	return resp.GetResults(), err

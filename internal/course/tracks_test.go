@@ -65,12 +65,14 @@ func TestLoopWraps(t *testing.T) {
 		e, g := c.At(d)
 		e2, g2 := c.At(d + c.Distance)
 		e3, g3 := c.At(d - c.Distance)
-		if e != e2 || g != g2 || e != e3 || g != g3 {
+		// A lap on is d + Distance wrapped back, which floats round (by
+		// about 3e-14 m at 3999 m): the same within that.
+		if !near(e, e2, 1e-9) || !near(g, g2, 1e-9) || !near(e, e3, 1e-9) || !near(g, g3, 1e-9) {
 			t.Errorf("At(%v) differs a lap on or back", d)
 		}
 		la, lo := c.Position(d)
 		la2, lo2 := c.Position(d + c.Distance)
-		if la != la2 || lo != lo2 {
+		if !near(la, la2, 1e-9) || !near(lo, lo2, 1e-9) {
 			t.Errorf("Position(%v) differs a lap on", d)
 		}
 	}

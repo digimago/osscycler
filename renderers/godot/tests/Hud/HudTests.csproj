@@ -6,6 +6,8 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <RootNamespace>Osscycler.Hud.Tests</RootNamespace>
+    <!-- Run on a newer .NET too: an SDK 10 alone has no 8.0 runtime. -->
+    <RollForward>Major</RollForward>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../src/Hud/Format.cs" />
@@ -37,6 +39,7 @@
     <Compile Include="../../src/Plants/Bleed.cs" />
     <Compile Include="../../src/Plants/Fields.cs" />
     <Compile Include="../../src/ControlSocket.cs" />
+    <Compile Include="../../src/RenderScale.cs" />
     <Protobuf Include="../../../../proto/osscycler/v1/telemetry.proto" ProtoRoot="../../../../proto" GrpcServices="None" />
   </ItemGroup>
   <ItemGroup>

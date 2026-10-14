@@ -1,8 +1,10 @@
 // Package workout models structured workouts: blocks of target power as a
 // fraction of FTP, read from and written to Zwift's .zwo format.
 //
-// The .zwo layout is written from memory and marked VERIFY until checked
-// against real files exported by Zwift.
+// The .zwo layout was written from memory, then checked against a real
+// workout file (2026-10-14): it reads it and writes it back byte for byte
+// (TestRealZWOLayout). Text events, Cadence, Ramp, FreeRide and MaxEffort
+// weren't in that file.
 package workout
 
 import (
@@ -127,9 +129,9 @@ func (b Block) validate() error {
 }
 
 // rampEnds returns the start and end power of a ramp block. Zwift files
-// write PowerLow as the start and PowerHigh as the end, except that
-// cooldowns are often written low-to-high yet always ridden downwards.
-// VERIFY against Zwift exports.
+// write PowerLow as the start and PowerHigh as the end; a real file's
+// cooldown has PowerLow="0.65" PowerHigh="0.5". Cooldowns written
+// low-to-high are still ridden downwards.
 func (b Block) rampEnds() (from, to float64) {
 	if b.Type == Cooldown {
 		return math.Max(b.PowerLow, b.PowerHigh), math.Min(b.PowerLow, b.PowerHigh)

@@ -11,7 +11,15 @@ Each package documents its own part: start with `go doc ./internal/telemetry`,
 ## Setup
 
 You need Go 1.27 or newer. Code generation (`buf`) and the linters run
-through `go run` / `go tool`, so there is nothing else to install.
+through `go run` / `go tool`, so there is nothing else to install for
+the core, the TUI and the world builder.
+
+The 3D view (`make 3d`, `dotnet test renderers/godot/tests/Hud`) also
+needs Godot 4.7 with .NET (the "mono" build; `scripts/godot.sh`
+downloads 4.7.2 and prints its path, for `GODOT=`) and the .NET SDK 8 or
+later. In a fresh checkout, import the project once:
+`godot --headless --path renderers/godot --import` (or the HUD font
+doesn't load).
 
 ```sh
 make help            # list targets

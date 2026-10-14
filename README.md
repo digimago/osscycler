@@ -90,6 +90,30 @@ osscycler on a Linux machine, or to try it out without a trainer (see
 below). The programs aren't signed yet, so after unpacking
 run `xattr -d com.apple.quarantine osscycler-*`.
 
+**From source:** the releases carry the 3D view ready to run, with
+everything it needs inside. To run it from a checkout of this
+repository instead, you also need:
+
+- Godot 4.7 with .NET, the editor build Godot calls "mono"
+  (`Godot_v4.7.2-stable_mono_linux_x86_64`), not the standard build: the
+  3D view is written in C#. `scripts/godot.sh` downloads 4.7.2, checks
+  it and prints the editor's path.
+- The .NET SDK 8 or later (`dotnet` on your `PATH`, or in `~/.dotnet`).
+
+Then import the project once and open the 3D view on a running core:
+
+```sh
+make core-fake                 # in one terminal (make core with the stick)
+
+# in another:
+GODOT=$(scripts/godot.sh)                            # or the path of your own Godot .NET
+$GODOT --headless --path renderers/godot --import    # once, in a fresh checkout
+make 3d GODOT=$GODOT
+```
+
+More in [DEVELOPMENT.md](DEVELOPMENT.md) and
+[renderers/godot/README.md](renderers/godot/README.md).
+
 ## First ride
 
 osscycler has a **core**, which talks to the trainer, records your

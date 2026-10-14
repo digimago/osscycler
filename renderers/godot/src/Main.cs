@@ -187,6 +187,8 @@ public partial class Main : Node3D
         AddChild(fadeLayer);
         _hud = new Hud.HudView(GetViewport());
         AddChild(_hud.Node);
+        Scale3D();
+        GetViewport().SizeChanged += Scale3D;
 
         var core = args.Get("core", "");
         // The HUD's arrangement, kept on this machine (as the TUI's tui.json).
@@ -940,6 +942,16 @@ public partial class Main : Node3D
             // world ends 300 m from the road, so it must hide that edge.
             return new Weather(f(22, 58), f(0, 360), f(60, 140), f(360, 460), f(-1, 1));
         }
+    }
+
+    // Scale3D renders the 3D view at RenderScale's share of the window's
+    // height (the window's pixels: on a Retina screen, the panel's own).
+    void Scale3D()
+    {
+        var vp = GetViewport();
+        float s = RenderScale.Of(GetWindow().Size.Y);
+        vp.Scaling3DMode = s < 1 ? Viewport.Scaling3DModeEnum.Fsr : Viewport.Scaling3DModeEnum.Bilinear;
+        vp.Scaling3DScale = s;
     }
 
     // Sky is a daylight sky, its haze by distance: clear up close (the

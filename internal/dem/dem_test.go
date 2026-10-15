@@ -90,3 +90,22 @@ func TestFill(t *testing.T) {
 		t.Errorf("hole filled with %v, want 1", g.Z[4])
 	}
 }
+
+func TestToLambert93(t *testing.T) {
+	// Pairs from PROJ (pyproj, EPSG:4326 → EPSG:2154).
+	for _, c := range []struct{ lat, lon, x, y float64 }{
+		{46.5, 3.0, 700000.000, 6600000.000}, // the origin
+		{48.0051, 6.87651, 988964.594, 6774284.918},
+		{48.0376142, 7.0162929, 999191.830, 6778414.095},
+		{48.85837, 2.29448, 648235.804, 6862268.359},
+		{43.29695, 5.38107, 893303.382, 6247112.783},
+		{48.39039, -4.48628, 146619.608, 6836262.482},
+		{50.62925, 3.05726, 704058.307, 7059142.159},
+		{42.69764, 2.89541, 691419.476, 6177564.854},
+	} {
+		x, y := ToLambert93(c.lat, c.lon)
+		if math.Hypot(x-c.x, y-c.y) > 0.01 {
+			t.Errorf("ToLambert93(%v, %v) = %.3f, %.3f, want %.3f, %.3f", c.lat, c.lon, x, y, c.x, c.y)
+		}
+	}
+}

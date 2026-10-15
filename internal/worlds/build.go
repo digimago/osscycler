@@ -33,11 +33,11 @@ const GraphVersion = 22
 
 // Builder builds worlds.
 type Builder struct {
-	// Ground is "auto" (AHN inside the Netherlands, else the profile),
-	// "ahn" or "none".
+	// Ground is "auto" (the national ground model where there is one
+	// (Grounds), else the profile), one of Grounds by name, or "none".
 	Ground   string
-	DEMCache string  // AHN tile cache
-	DEMCellM float64 // AHN resolution to fetch, m (default 5)
+	DEMCache string  // ground model tile cache
+	DEMCellM float64 // ground model resolution to fetch, m (default 5)
 	Fetch    bool    // fetch what the caches lack
 	// Maps is the map data (OpenStreetMap); nil builds without.
 	Maps *scenery.Store
@@ -71,6 +71,31 @@ type Builder struct {
 	// would be stamped current and never get its data (a renderer building
 	// worlds ahead of a ride from the caches only, owner 2026-10-13).
 	Complete bool
+}
+
+// grounds are the national ground models, tried in this order by "auto".
+var grounds = []struct {
+	name, source, attribution string
+	load                      func(context.Context, dem.Source, []dem.LatLon, float64) (*dem.Mosaic, error)
+}{
+	{"ahn", "AHN DTM", dem.AHNAttribution, func(ctx context.Context, s dem.Source, pts []dem.LatLon, r float64) (*dem.Mosaic, error) {
+		a := dem.AHN(s)
+		return a.Load(ctx, pts, r)
+	}},
+	{"rgealti", "IGN RGE ALTI", dem.RGEAltiAttribution, func(ctx context.Context, s dem.Source, pts []dem.LatLon, r float64) (*dem.Mosaic, error) {
+		a := dem.RGEAlti(s)
+		return a.Load(ctx, pts, r)
+	}},
+}
+
+// Grounds names the ground models Builder.Ground takes besides "auto" and
+// "none".
+func Grounds() []string {
+	var n []string
+	for _, g := range grounds {
+		n = append(n, g.name)
+	}
+	return n
 }
 
 // ErrIncomplete: Builder.Complete, and data the world needs is missing
@@ -134,7 +159,7 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 		if cell <= 0 {
 			cell = 5
 		}
-		a := &dem.AHN{CacheDir: b.DEMCache, Fetch: b.Fetch, CellM: cell, Log: log, UserAgent: b.UserAgent,
+		src := dem.Source{CacheDir: b.DEMCache, Fetch: b.Fetch, CellM: cell, Log: log, UserAgent: b.UserAgent,
 			Progress: func(done, total int) { tr.step(done, total, float64(done)/float64(max(1, total))) }}
 		var pts []dem.LatLon
 		for d := 0.0; d <= c.Distance; d += 20 {
@@ -149,7 +174,22 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 			chunk = 250
 		}
 		// The corridor plus a chunk: every terrain vertex is inside.
-		m, err := a.Load(ctx, pts, corridor+1.5*chunk)
+		radius := corridor + 1.5*chunk
+		var (
+			m   *dem.Mosaic
+			err = dem.ErrOutside
+		)
+		// The national ground models in turn (auto), or the one asked for.
+		for _, g := range grounds {
+			if b.Ground != "auto" && b.Ground != g.name || !errors.Is(err, dem.ErrOutside) {
+				continue
+			}
+			if m, err = g.load(ctx, src, pts, radius); err == nil {
+				o.Elevation = m.Elevation
+				o.TerrainSource = fmt.Sprintf("%s, %g m", g.source, cell)
+				o.Attribution = append(o.Attribution, g.attribution)
+			}
+		}
 		switch {
 		case errors.Is(err, dem.ErrOutside) && b.Ground == "auto":
 			log.Info("no ground model for this area: terrain from the course profile", "course", c.ID)
@@ -157,10 +197,6 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 			return Result{}, fmt.Errorf("%w: ground model: %v", ErrIncomplete, err)
 		case err != nil:
 			return Result{}, err
-		default:
-			o.Elevation = m.Elevation
-			o.TerrainSource = fmt.Sprintf("AHN DTM, %g m", cell)
-			o.Attribution = append(o.Attribution, dem.AHNAttribution)
 		}
 	}
 	mapInfo := "no map data"

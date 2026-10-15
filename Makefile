@@ -18,6 +18,10 @@ COURSES      ?= _gpx
 WORKOUTS     ?= _workouts
 RIDES        ?= _rides
 WORLDS       ?= _worlds
+# make 3d-marks: where marks go (empty: the renderer's default,
+# ~/osscycler/marks) and the control port for looking along.
+MARKS        ?=
+CONTROL_PORT ?= 7431
 # The world builder: graph (the road network first; the default), or
 # classic (the fallback; its worlds go in $(WORLDS)/.classic/). make
 # world-ab builds both and compares them.
@@ -47,7 +51,7 @@ export BIN LOG_DIR ADDR TOKEN_FILE ANT_KEY_FILE PORT COURSES WORKOUTS RIDES
         core core-fake tui stack stack-fake demo demo-free demo-files replay world world-ab release clean
 
 help: ## List targets
-	@awk 'BEGIN {FS = ":.*## "} /^[a-z-]+:.*## / {printf "  %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*## "} /^[a-z0-9-]+:.*## / {printf "  %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 build: ## Build all binaries into $(BIN)/
 	go build -o $(BIN)/ ./cmd/...
@@ -150,6 +154,9 @@ world-ab: build ## Build COURSE's world with both builders (classic, graph) and 
 		echo "make 3d: importing the Godot project's assets failed; run $(GODOT) --headless --path renderers/godot --import to see why"; exit 1; }
 	OSSCYCLER_WORLD=$(CURDIR)/$(BIN)/osscycler-world OSSCYCLER_WORLD_BUILDER=$(BUILDER) $(GODOT) --path renderers/godot -- --core $(ADDR) --worlds "$(CURDIR)/$(WORLDS)" \
 		--token-file "$(CURDIR)/$(TOKEN_FILE)" $(3D_FLAGS)
+
+3d-marks: ## The 3D view in debug mode for a marks ride: space marks a flaw (into $(MARKS), default ~/osscycler/marks), ctrl+arrows jump; the control port $(CONTROL_PORT) lets Claude look along
+	$(MAKE) 3d 3D_FLAGS="--debug --control $(CONTROL_PORT)$(if $(MARKS), --marks $(MARKS)) $(3D_FLAGS)"
 
 # Release builds with the ANT+ network key built in (see scripts/release.sh):
 # Linux tar.gz, .deb and .rpm, and a macOS universal tar.gz.

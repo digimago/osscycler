@@ -86,6 +86,14 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 	mat := w.doc.AddMaterial(gltf.Material{Name: "roadside", Color: [4]float32{1, 1, 1, 1}, Roughness: 0.75})
 	marks := map[[2]int]*gltf.Primitive{}
 	items := map[[2]int]*gltf.Primitive{}
+	// Surfaces the renderer details (shaders/surfaces.gdshader: courses,
+	// rock and netting, setts, a grate's bars), each its own material.
+	stoneMat := w.doc.AddMaterial(gltf.Material{Name: "stone wall", Color: [4]float32{1, 1, 1, 1}, Roughness: 0.95})
+	rockMat := w.doc.AddMaterial(gltf.Material{Name: "rock", Color: [4]float32{1, 1, 1, 1}, Roughness: 0.9})
+	settsMat := w.doc.AddMaterial(gltf.Material{Name: "setts", Color: [4]float32{1, 1, 1, 1}, Roughness: 0.9})
+	grateMat := w.doc.AddMaterial(gltf.Material{Name: "grate", Color: [4]float32{1, 1, 1, 1}, Roughness: 0.6})
+	walls, rocks := map[[2]int]*gltf.Primitive{}, map[[2]int]*gltf.Primitive{}
+	gutters, grates := map[[2]int]*gltf.Primitive{}, map[[2]int]*gltf.Primitive{}
 	prim := func(m map[[2]int]*gltf.Primitive, e, n float64, material int) *gltf.Primitive {
 		k := [2]int{int(math.Floor(e / t.o.ChunkM)), int(math.Floor(n / t.o.ChunkM))}
 		if m[k] == nil {
@@ -254,8 +262,12 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 						h[k-r.from] = sum / float64(c)
 					}
 				}
-				p := prim(items, t.fine[ln.from+r.from].e, t.fine[ln.from+r.from].n, mat)
-				retaining(p, t, ln.from, r, h, sign, 2*rock > r.to-r.from+1, func(k int, off float64) (float64, float64) {
+				isRock := 2*rock > r.to-r.from+1
+				p := prim(walls, t.fine[ln.from+r.from].e, t.fine[ln.from+r.from].n, stoneMat)
+				if isRock {
+					p = prim(rocks, t.fine[ln.from+r.from].e, t.fine[ln.from+r.from].n, rockMat)
+				}
+				retaining(p, t, ln.from, r, h, sign, isRock, func(k int, off float64) (float64, float64) {
 					a := t.fine[ln.from+k]
 					return at(k, sign*(a.hw+a.wide[si]+off))
 				})
@@ -282,6 +294,53 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 				}
 			}
 		}
+		// The inside of tight bends: a paved gutter (caniveau) of setts
+		// along the edge with a white kerb stone beyond (owner's hairpin
+		// shot of the D13B), in its runs.
+		inside := [2][]bool{make([]bool, n), make([]bool, n)}
+		for k := 3; k+3 < n; k++ {
+			a := t.fine[ln.from+k]
+			if !near[k] || a.walk[0] || a.walk[1] {
+				continue
+			}
+			turn := dir[k-3][0]*dir[k+3][1] - dir[k-3][1]*dir[k+3][0]
+			if math.Abs(turn) < math.Sin(28*math.Pi/180) {
+				continue
+			}
+			si := 1
+			if turn > 0 {
+				si = 0
+			}
+			if !sides[si].wall[k] && !a.open[si] {
+				inside[si][k] = true
+			}
+		}
+		for si, sign := range []float64{-1, 1} {
+			for _, r := range runs(inside[si]) {
+				from, to := max(0, r.from-2), min(n-1, r.to+2)
+				gutter(prim(gutters, t.fine[ln.from+from].e, t.fine[ln.from+from].n, settsMat), prim(items, t.fine[ln.from+from].e, t.fine[ln.from+from].n, mat),
+					t, ln.from, sideRun{from, to}, func(k int, off float64) (float64, float64) {
+						a := t.fine[ln.from+k]
+						return at(k, sign*(a.hw+a.wide[si]+off))
+					})
+			}
+		}
+		// Drains: a grate in the carriageway at the kerb, every 30 m in
+		// town.
+		for si, sign := range []float64{-1, 1} {
+			for k := 1; k < n; k++ {
+				a := t.fine[ln.from+k]
+				if math.Floor((dist[k]+7*float64(si))/30) == math.Floor((dist[k-1]+7*float64(si))/30) {
+					continue
+				}
+				if !near[k] || !a.walk[si] || a.open[si] || !builtUp(a.e, a.n) {
+					continue
+				}
+				e, nn := at(k, sign*(a.hw-0.2))
+				drain(prim(grates, e, nn, grateMat), e, a.ele+0.008, nn, dir[k])
+			}
+		}
+
 		for k := 3; k+3 < n; k++ {
 			a := t.fine[ln.from+k]
 			if !near[k] || builtUp(a.e, a.n) {
@@ -343,6 +402,14 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 	}
 	if err := add(marks, "markings"); err != nil {
 		return err
+	}
+	for _, g := range []struct {
+		m    map[[2]int]*gltf.Primitive
+		kind string
+	}{{walls, "stone walls"}, {rocks, "rock"}, {gutters, "gutters"}, {grates, "drains"}} {
+		if err := add(g.m, g.kind); err != nil {
+			return err
+		}
 	}
 	return add(items, "roadside")
 }
@@ -415,7 +482,7 @@ func guardRail(p *gltf.Primitive, t *terrain, from int, r sideRun, dist []float6
 // (or rock under netting) along run, h its height at each sample.
 func retaining(p *gltf.Primitive, t *terrain, from int, r sideRun, h []float64, sign float64, rock bool, pos func(k int, off float64) (float64, float64)) {
 	stone, coping := srgbLinear(0x6c665c), srgbLinear(0x5c5850)
-	rockC, moss, net := srgbLinear(0x5e5a54), srgbLinear(0x4a5a34), srgbLinear(0xb0b6ba)
+	rockC := srgbLinear(0x5e5a54)
 	batter := 0.18 // the face leans back this much per metre up
 	if rock {
 		batter = 0.35
@@ -438,31 +505,27 @@ func retaining(p *gltf.Primitive, t *terrain, from int, r sideRun, h []float64, 
 	}
 	// Courses of stone 0.45 m high, each block its own shade; rock in
 	// rows that jut in and out.
-	rows := []float64{0}
-	step := 0.45
+	// The courses, the rock's grain and its netting are the renderer's
+	// (stone wall, rock: shaders/surfaces.gdshader); rock keeps rows that
+	// jut in and out, its outline.
+	rows := []float64{0, 1}
 	if rock {
-		step = 0.6
-	}
-	hMax := 0.0
-	for _, x := range h {
-		hMax = math.Max(hMax, x)
-	}
-	nr := max(2, int(math.Ceil(hMax/step)))
-	for i := 1; i <= nr; i++ {
-		rows = append(rows, float64(i)/float64(nr))
+		hMax := 0.0
+		for _, x := range h {
+			hMax = math.Max(hMax, x)
+		}
+		rows = []float64{0}
+		nr := max(2, int(math.Ceil(hMax/0.6)))
+		for i := 1; i <= nr; i++ {
+			rows = append(rows, float64(i)/float64(nr))
+		}
 	}
 	for k := r.from; k < r.to; k++ {
 		for ri := 0; ri+1 < len(rows); ri++ {
-			hb := splitmix(uint64(from+k)<<8 ^ uint64(ri))
-			shade := float32(0.82 + 0.3*unit(hb))
 			c := stone
 			if rock {
 				c = rockC
-				if unit(hb>>20) < 0.3 {
-					c = moss
-				}
 			}
-			c = [3]float32{c[0] * shade, c[1] * shade, c[2] * shade}
 			a0, a1, b0, b1 := top(k, rows[ri]), top(k+1, rows[ri]), top(k, rows[ri+1]), top(k+1, rows[ri+1])
 			if ri == 0 {
 				a0, a1 = foot(k), foot(k+1)
@@ -477,16 +540,6 @@ func retaining(p *gltf.Primitive, t *terrain, from int, r sideRun, h []float64, 
 			e0, n0 := pos(k, wallOffM+hk0*batter+0.4)
 			e1, n1 := pos(k+1, wallOffM+hk1*batter+0.4)
 			quad(p, t0, t1, [3]float64{e1, t1[1], -n1}, [3]float64{e0, t0[1], -n0}, [3]float64{0, 1, 0}, coping)
-		} else {
-			// The netting: cables crossing the face, a little in front.
-			lo, hi := foot(k), top(k+1, 1)
-			lo2, hi2 := foot(k+1), top(k, 1)
-			lift := func(q [3]float64) [3]float64 { return [3]float64{q[0], q[1] + 0.02, q[2]} }
-			beam(p, lift(lo), lift(hi), 0.04, 0.04, net)
-			beam(p, lift(lo2), lift(hi2), 0.04, 0.04, net)
-			for _, f := range []float64{0.33, 0.66, 1} {
-				beam(p, lift(top(k, f)), lift(top(k+1, f)), 0.04, 0.04, net)
-			}
 		}
 	}
 }
@@ -543,4 +596,43 @@ func kmMarker(p *gltf.Primitive, e, y, n float64, dir [2]float64, top uint32) {
 	beam(p, [3]float64{e, y + 0.62, -n}, [3]float64{e, y + 0.82, -n}, 0.36, 0.16, capC)
 	beam(p, [3]float64{e, y + 0.82, -n}, [3]float64{e, y + 0.9, -n}, 0.24, 0.12, capC)
 	_ = dir
+}
+
+// gutter is a paved gutter along run: setts 0.45 m wide from the
+// carriageway's edge (pos's offset 0) at its height, and a white kerb
+// stone beyond, 12 cm up.
+func gutter(setts, kerb *gltf.Primitive, t *terrain, from int, r sideRun, pos func(k int, off float64) (float64, float64)) {
+	grey, white := srgbLinear(0x8c8a84), srgbLinear(0xdcdad2)
+	pt := func(k int, off, y float64) [3]float64 {
+		e, n := pos(k, off)
+		return [3]float64{e, t.fine[from+k].ele + y, -n}
+	}
+	for k := r.from; k < r.to; k++ {
+		quad(setts, pt(k, -0.02, 0.006), pt(k+1, -0.02, 0.006), pt(k+1, 0.45, 0.006), pt(k, 0.45, 0.006), [3]float64{0, 1, 0}, grey)
+		// The kerb's face, looking back at the road.
+		in0, out0 := pt(k, 0, 0), pt(k, 1, 0)
+		face := [3]float64{in0[0] - out0[0], 0, in0[2] - out0[2]}
+		if l := math.Hypot(face[0], face[2]); l > 0 {
+			face = [3]float64{face[0] / l, 0, face[2] / l}
+		}
+		quad(kerb, pt(k, 0.45, 0.006), pt(k+1, 0.45, 0.006), pt(k+1, 0.45, 0.12), pt(k, 0.45, 0.12), face, white)
+		quad(kerb, pt(k, 0.45, 0.12), pt(k+1, 0.45, 0.12), pt(k+1, 0.6, 0.12), pt(k, 0.6, 0.12), [3]float64{0, 1, 0}, white)
+	}
+}
+
+// drain is a cast-iron grate, 0.5 m along the road and 0.3 across, at y;
+// its UVs run across (the bars along the road).
+func drain(p *gltf.Primitive, e, y, n float64, dir [2]float64) {
+	ax, an := dir[0]*0.25, dir[1]*0.25  // half along
+	cx, cn := dir[1]*0.15, -dir[0]*0.15 // half across
+	c := srgbLinear(0x3a3a3c)
+	base := uint32(len(p.Positions) / 3)
+	for _, q := range [4][3]float64{{-1, -1, 0}, {1, -1, 0}, {1, 1, 1}, {-1, 1, 1}} {
+		p.Positions = append(p.Positions, float32(e+q[0]*ax+q[1]*cx), float32(y), float32(-(n + q[0]*an + q[1]*cn)))
+		p.Normals = append(p.Normals, 0, 1, 0)
+		p.Colors = append(p.Colors, c[0], c[1], c[2])
+		p.UVs = append(p.UVs, float32(q[2]), float32((q[0]+1)/2))
+	}
+	tri(p, base, base+1, base+2, [3]float64{0, 1, 0})
+	tri(p, base, base+2, base+3, [3]float64{0, 1, 0})
 }

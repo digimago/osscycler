@@ -36,6 +36,17 @@ vec3 field_colour(int crop, float ridge, vec3 soil) {
 
 #include "res://shaders/noise.gdshaderinc"
 
+// bumped is the normal n (view space) at view position v tilted by the
+// height h's slopes across the screen (as shaders/surfaces.gdshader).
+vec3 bumped(vec3 n, vec3 v, float h) {
+	vec3 dx = dFdx(v), dy = dFdy(v);
+	float hx = dFdx(h), hy = dFdy(h);
+	vec3 r1 = cross(dy, n), r2 = cross(n, dx);
+	float det = dot(dx, r1);
+	vec3 grad = sign(det) * (hx * r1 + hy * r2);
+	return normalize(abs(det) * n - grad);
+}
+
 void vertex() {
 	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
@@ -113,6 +124,17 @@ void fragment() {
 			NORMAL = normalize(NORMAL + tilt * slope);
 		}
 	}
+	// Micro relief the 5 m ground model hasn't (owner, 2026-10-15: a
+	// detail surface over the coarse terrain): undulations, tussocks and
+	// the odd stone, as bump (lit as relief, no geometry), fading out
+	// beyond 60 m; less on fields and lawns, kept off sown rows.
+	float relief = 1.0 - smoothstep(25.0, 60.0, d);
+	float lumps = 0.6 * vnoise(p * 0.9) + 0.4 * vnoise(p * 2.3);
+	float tuft = vnoise(p * 6.0);
+	float rough_ground = mix(1.0, 0.5, grassy) * (1.0 - field.x);
+	float hgt = (0.10 * lumps + 0.03 * tuft * near) * relief * (0.4 + 0.6 * rough_ground);
+	c *= 0.94 + 0.12 * lumps * relief;
+	NORMAL = bumped(NORMAL, VERTEX, hgt);
 	ALBEDO = c;
 	ROUGHNESS = 1.0;
 	SPECULAR = 0.2;

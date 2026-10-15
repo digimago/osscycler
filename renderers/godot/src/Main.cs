@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using Godot;
+using Osscycler.Hud;
 using Osscycler.V1;
 
 namespace Osscycler;
@@ -65,6 +66,8 @@ public partial class Main : Node3D
     readonly List<(int Frame, string Key)> _keys = new();
     float _relief = 1;
     int _seed;
+    Weather _weather;
+    DirectionalLight3D? _sun;
     bool _debug;          // --debug: space marks the spot (Mark)
     string _marksDir = "";
 
@@ -150,8 +153,11 @@ public partial class Main : Node3D
         _marksDir = args.File("marks", Path.Combine(Core.Home(), "marks"));
         _bloom = Grass.Bloom(seed % 1000); // the seed's day of the year
         var weather = Weather.From(seed);
+        _weather = weather;
         AddChild(Sky(weather));
-        AddChild(Sun(weather));
+        _sun = Sun();
+        AddChild(_sun);
+        PlaceSun(48);
         // Godot's field of view is vertical by default: 70° made about 102°
         // across on a wide screen, which looked flat and far away.
         _camera = new Camera3D
@@ -346,6 +352,8 @@ public partial class Main : Node3D
         }
         _world = w;
         AddChild(w.Scene);
+        if (w.Manifest.Origin.Lat != 0 || w.Manifest.Origin.Lon != 0)
+            PlaceSun(w.Manifest.Origin.Lat);
         // Grass beside the scene, not in it: the scene is scaled by the
         // relief, the grass shouldn't be.
         if (w.Ground != null)
@@ -932,16 +940,38 @@ public partial class Main : Node3D
     // Weather is a ride's light and air: the sun's height and direction,
     // how far the haze reaches, the sky's tint. Picked from a seed (the
     // day, or --seed), so rides vary and a seed repeats a look.
-    readonly record struct Weather(float SunHeight, float SunYaw, float HazeFrom, float HazeTo, float Tint)
+    // The sun's place comes from the world's latitude, the seed's day and
+    // a time of day from the seed (Solar; owner, 2026-10-15: the sun had
+    // stood high in the north-east over the Vosges, picked at random), so
+    // it is set when a world is shown (PlaceSun); until then at 48° N.
+    // The hour is picked for 48° N; another latitude moves the sun a few
+    // degrees, which keeps a low sun low.
+    readonly record struct Weather(float Hours, int Day, float HazeFrom, float HazeTo, float Tint)
     {
         public static Weather From(int seed)
         {
             var r = new Random(seed);
             float f(float lo, float hi) => lo + (float)r.NextDouble() * (hi - lo);
+            float hours = (float)Solar.RideHours(48, Solar.DayOfYear(seed), r.NextDouble(), r.NextDouble());
             // The haze is clear near the rider and full by 360-460 m: the
             // world ends 300 m from the road, so it must hide that edge.
-            return new Weather(f(22, 58), f(0, 360), f(60, 140), f(360, 460), f(-1, 1));
+            return new Weather(hours, Solar.DayOfYear(seed), f(60, 140), f(360, 460), f(-1, 1));
         }
+    }
+
+    // PlaceSun puts the sun where it stands at latitude lat for the
+    // weather's day and hour (at least 5° up: a ride is lit), warmer and
+    // dimmer when low.
+    void PlaceSun(double lat)
+    {
+        if (_sun == null)
+            return;
+        var (height, az) = Solar.Position(lat, _weather.Day, _weather.Hours);
+        height = Math.Max(5, height);
+        _sun.RotationDegrees = new Vector3(-(float)height, (float)Solar.LightYaw(az), 0);
+        _sun.LightEnergy = 0.9f + (float)height / 100f;
+        float warm = Math.Clamp((float)(20 - height) / 15f, 0, 1); // golden below 20°
+        _sun.LightColor = new Color(1, 1, 1).Lerp(new Color(1f, 0.78f, 0.55f), warm);
     }
 
     // Scale3D renders the 3D view at RenderScale's share of the window's
@@ -984,10 +1014,8 @@ public partial class Main : Node3D
         return new WorldEnvironment { Environment = env };
     }
 
-    static DirectionalLight3D Sun(Weather w) => new()
+    static DirectionalLight3D Sun() => new()
     {
-        RotationDegrees = new Vector3(-w.SunHeight, w.SunYaw, 0),
-        LightEnergy = 0.9f + w.SunHeight / 100f,
         ShadowEnabled = true,
         DirectionalShadowMaxDistance = 150,
     };

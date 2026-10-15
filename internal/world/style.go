@@ -13,26 +13,32 @@ type style struct {
 	name string
 	// species: the trees of each land use (speciesMix); town and townWater
 	// a town's street and park trees, by water those that like it wet.
-	species          map[scenery.Land]speciesMix
-	town, townWater  map[string]float64
-	pioneer          string // the young tree that comes up where a stand lets light in
-	bushes           map[scenery.Land]map[string]float64
-	avenue           map[string]float64 // along roads through open land
-	countryAvenue    map[string]float64 // along minor country roads
-	canalAvenue      map[string]float64 // along those with water beside them
-	townAvenuesOnly  bool               // no avenues in open country, only in and by towns
-	willows          bool               // pollard willows along ditches between fields
-	medianHedges     bool               // a low hedge between a road and its service road
-	gardens          [4]float64         // front gardens' hedges: the share of plots with each hedge kind
-	meadowGates      bool               // a steel five-bar gate in a long meadow fence
-	pasture          pastureFence       // meadow fences' posts and wire
-	walls, roofs     []uint32           // houses
-	flatWalls        []uint32           // flats, offices, shops
-	barnWalls        []uint32           // barns and sheds
-	barnRoofs        []uint32           //
-	dryAboveM        float64            // grass dries towards straw above this height (0: never; Manifest.Ground.DryAboveM)
-	cycleLane        uint32             // a cycle lane's surface
-	roundaboutCentre uint32             // a flat roundabout's paved centre
+	species         map[scenery.Land]speciesMix
+	town, townWater map[string]float64
+	pioneer         string // the young tree that comes up where a stand lets light in
+	bushes          map[scenery.Land]map[string]float64
+	avenue          map[string]float64      // along roads through open land
+	countryAvenue   map[string]float64      // along minor country roads
+	canalAvenue     map[string]float64      // along those with water beside them
+	townAvenuesOnly bool                    // no avenues in open country, only in and by towns
+	willows         bool                    // pollard willows along ditches between fields
+	medianHedges    bool                    // a low hedge between a road and its service road
+	gardens         [hedgeKindCount]float64 // front gardens' hedges and walls: the share of plots with each
+	meadowGates     bool                    // a steel five-bar gate in a long meadow fence
+	pasture         pastureFence            // meadow fences' posts and wire
+	walls, roofs    []uint32                // houses
+	flatWalls       []uint32                // flats, offices, shops
+	barnWalls       []uint32                // barns and sheds
+	barnRoofs       []uint32                //
+	// cover: the terrain's colour for these lands instead of the shared
+	// palette's.
+	cover            map[scenery.Land]uint32
+	dryAboveM        float64 // grass dries towards straw above this height (0: never; Manifest.Ground.DryAboveM)
+	roadside         bool    // barriers, retaining walls, rock netting, bend posts, kilometre markers (roadside.go)
+	markings         bool    // white centre and edge lines
+	snowPoleAboveM   float64 // snow poles along roads above this height (0: none)
+	cycleLane        uint32  // a cycle lane's surface
+	roundaboutCentre uint32  // a flat roundabout's paved centre
 	// bands: by height above the datum, the trees that grow there
 	// (replacing species for the lands a band names) and how tall they
 	// get; the last band reaches up without end. None: no bands.
@@ -47,6 +53,15 @@ type altitudeBand struct {
 	// openSize: solitary trees on meadows and open land grow this much
 	// smaller again (0: as size); above the treeline they are bushes.
 	openSize float64
+}
+
+// landColour is the terrain's colour for land l: the style's own where
+// it has one, else the shared palette's.
+func (st *style) landColour(l scenery.Land) [3]float32 {
+	if c, ok := st.cover[l]; ok {
+		return srgbLinear(c)
+	}
+	return landColors[l]
 }
 
 // band is the altitude band at height z; nil for a style without bands.
@@ -154,7 +169,7 @@ var styleFR = style{
 	townAvenuesOnly: true, // mountain roads run through the woods and the pastures as they are
 	// Thuja (the conifer hedge) above all, some clipped hornbeam
 	// (charmille); low walls come with the street furniture.
-	gardens: [4]float64{hHornbeam: 0.08, hHornbeamTall: 0.04, hConifer: 0.3},
+	gardens: [hedgeKindCount]float64{hHornbeam: 0.06, hHornbeamTall: 0.03, hConifer: 0.22, hWall: 0.3},
 	// Rendered walls (crépi), as on the reference shots: pale grey,
 	// cream, pale yellow, peach; the odd one in sandstone or with timber
 	// cladding.
@@ -169,7 +184,14 @@ var styleFR = style{
 	pasture: pastureFence{postM: 5.5, postH: 1.0, postR: 0.06, leanDeg: 9, strands: []float64{0.8}, colour: 0x7a746a},
 	// The chaumes' grass, tawny in summer (owner's shots on the
 	// Hohneck's summit road), green still in the valleys.
+	// Built-up land on a mountain village's slopes is gardens and meadow
+	// between the houses, not paving: the shared grey read as concrete
+	// walls on La Bresse's hillsides.
+	cover:            map[scenery.Land]uint32{scenery.LandBuilt: 0x6f8a52},
 	dryAboveM:        1150,
+	roadside:         true,
+	markings:         true,
+	snowPoleAboveM:   800,      // the jalons along the D430 and the passes
 	cycleLane:        0x4c4d50, // bandes cyclables: asphalt, marked by a line
 	roundaboutCentre: 0x9c6052, // reddish setts, as the aprons round La Bresse's roundabouts (owner's shots)
 	bands: []altitudeBand{

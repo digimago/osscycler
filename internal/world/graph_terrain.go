@@ -681,7 +681,7 @@ func (g *gland) chunk(key [2]int, material, waterMaterial int) (ground, water gl
 		if gap < verge {
 			land = verdure
 		}
-		c := landColors[land]
+		c := styleFor(t.o.Region).landColour(land)
 		p.Colors = append(p.Colors, c[0], c[1], c[2])
 		return v
 	}

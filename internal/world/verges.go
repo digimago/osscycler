@@ -91,7 +91,7 @@ func (v *verger) across(x, z, dx, dz, base, limit, y0 float64, line int) []vpt {
 		if k == 0 {
 			h = y0
 		}
-		c := landColors[land]
+		c := styleFor(v.t.o.Region).landColour(land)
 		pts[k] = vpt{px, h, pz, [3]float32{c[0], c[1], c[2]}}
 	}
 	return pts

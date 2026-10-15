@@ -25,6 +25,10 @@ type hedgeKind struct {
 	bump         float64 // how irregular the clipped faces are
 	colour       uint32
 	mottle, dark float64 // colour variation; shade at the foot (light gets in less)
+	// region: the style whose worlds have it ("" every world); wall: a
+	// low garden wall with a railing rather than a clipped hedge.
+	region string
+	wall   bool
 }
 
 var hedgeKinds = []hedgeKind{
@@ -32,6 +36,9 @@ var hedgeKinds = []hedgeKind{
 	hHornbeamTall: {name: "hedge tall", drawM: 350, h: 1.8, base: 0.42, top: 0.32, shoulder: 0.1, bump: 0.03, colour: 0x587c34, mottle: 0.2, dark: 0.65},
 	hConifer:      {name: "hedge conifer", drawM: 350, h: 1.9, base: 0.45, top: 0.3, shoulder: 0.2, bump: 0.02, colour: 0x37542c, mottle: 0.12, dark: 0.75},
 	hIvy:          {name: "hedge ivy", drawM: 350, h: 1.7, base: 0.2, top: 0.18, shoulder: 0.04, bump: 0.045, colour: 0x2b4621, mottle: 0.3, dark: 0.8},
+	// A French front garden's (owner's shot of the Rue Paul Claudel): a
+	// rendered wall 0.6 m with a coping, a white railing to 1.2 m.
+	hWall: {name: "garden wall", drawM: 250, h: 1.2, colour: 0xd6d0c2, region: RegionFR, wall: true},
 }
 
 const (
@@ -39,6 +46,8 @@ const (
 	hHornbeamTall
 	hConifer
 	hIvy
+	hWall
+	hedgeKindCount
 )
 
 const (
@@ -57,12 +66,16 @@ const (
 
 // gardenMix: the share of front-garden plots with each kind of hedge;
 // the rest have none (an open lawn, a fence, a wall).
-var gardenMix = [...]float64{hHornbeam: 0.3, hHornbeamTall: 0.12, hConifer: 0.14, hIvy: 0.08}
+var gardenMix = [hedgeKindCount]float64{hHornbeam: 0.3, hHornbeamTall: 0.12, hConifer: 0.14, hIvy: 0.08}
 
 // hedgeTemplate is a segment of clipped hedge along x, standing on y = 0
 // (its foot 0.2 m into the ground), irregular as clipped hedges are, light
 // on top and darker towards the foot.
 func hedgeTemplate(p *gltf.Primitive, k hedgeKind) {
+	if k.wall {
+		gardenWallTemplate(p, k)
+		return
+	}
 	mid := (k.base + k.top) / 2
 	// The cross-section, z across and y up, from one foot over the top to
 	// the other.
@@ -313,7 +326,7 @@ func hedges(t *terrain, s *surface, sp *spots, wp *wayPlaces) []plant {
 }
 
 // gardenKind is the hedge (if any: -1) a front-garden plot seeded h has.
-func gardenKind(gardens [4]float64, h uint64) int {
+func gardenKind(gardens [hedgeKindCount]float64, h uint64) int {
 	r := unit(h)
 	for k, share := range gardens {
 		if r < share {
@@ -322,4 +335,28 @@ func gardenKind(gardens [4]float64, h uint64) int {
 		r -= share
 	}
 	return -1
+}
+
+// gardenWallTemplate is a segment of garden wall along x, hedgeSegM long
+// (neighbours overlap a little): a rendered wall 0.6 m high and 0.25
+// thick under a coping, its foot 0.2 m into the ground, and a white
+// railing on it, bars every 12 cm to a top rail at k.h.
+func gardenWallTemplate(p *gltf.Primitive, k hedgeKind) {
+	wall, cope, rail := srgbLinear(k.colour), srgbLinear(0xb8b2a6), srgbLinear(0xeceae4)
+	x0, x1 := -hedgeSegM/2, hedgeSegM/2
+	// A box's two long faces and its top (its ends hide in the
+	// neighbours').
+	box := func(xa, xb, ya, yb, za, zb float64, c [3]float32) {
+		q := func(a, b, cc, d, n [3]float64) { quad(p, a, b, cc, d, n, c) }
+		q([3]float64{xa, ya, zb}, [3]float64{xb, ya, zb}, [3]float64{xb, yb, zb}, [3]float64{xa, yb, zb}, [3]float64{0, 0, 1})
+		q([3]float64{xb, ya, za}, [3]float64{xa, ya, za}, [3]float64{xa, yb, za}, [3]float64{xb, yb, za}, [3]float64{0, 0, -1})
+		q([3]float64{xa, yb, zb}, [3]float64{xb, yb, zb}, [3]float64{xb, yb, za}, [3]float64{xa, yb, za}, [3]float64{0, 1, 0})
+	}
+	box(x0, x1, -0.2, 0.6, -0.125, 0.125, wall)
+	box(x0, x1, 0.6, 0.66, -0.16, 0.16, cope)
+	for x := x0 + 0.06; x < x1; x += 0.12 {
+		box(x-0.01, x+0.01, 0.66, k.h, -0.01, 0.01, rail)
+	}
+	box(x0, x1, k.h-0.03, k.h, -0.025, 0.025, rail)
+	box(x0, x1, 0.74, 0.77, -0.015, 0.015, rail)
 }

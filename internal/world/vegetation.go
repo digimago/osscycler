@@ -776,6 +776,11 @@ func templateKinds(region string) []int {
 				continue
 			}
 		}
+		if k >= kHedge && k < kPruned {
+			if r := hedgeKinds[k-kHedge].region; r != "" && r != region {
+				continue
+			}
+		}
 		out = append(out, k)
 	}
 	return out

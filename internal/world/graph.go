@@ -470,6 +470,9 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 	if err := w.addFences(&t, fences); err != nil {
 		return nil, err
 	}
+	if err := w.addRoadside(&t, ways, o.Buildings, parks); err != nil {
+		return nil, err
+	}
 	nearRoute := newRouteGrid(coarse, 400)
 	progress(0.75)
 	drawn := newLandSurface(w.prims, func(m int) bool { return w.doc.MaterialName(m) == "terrain" })

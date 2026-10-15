@@ -148,7 +148,7 @@ func (t *terrain) chunk(key [2]int, material, waterMaterial int) (ground, water 
 		nx, ny, nz := -dhde, 1.0, dhdn
 		ln := math.Sqrt(nx*nx + ny*ny + nz*nz)
 		p.Normals = append(p.Normals, float32(nx/ln), float32(ny/ln), float32(nz/ln))
-		c := landColors[land[hj*side+hi]]
+		c := styleFor(t.o.Region).landColour(land[hj*side+hi])
 		p.Colors = append(p.Colors, c[0], c[1], c[2])
 		return v
 	}

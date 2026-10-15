@@ -50,6 +50,9 @@ func buildingMesh(p *gltf.Primitive, s *surface, st *style, f scenery.Footprint)
 		lo, hi = math.Min(lo, g), math.Max(hi, g)
 	}
 	base, eave := lo-plinthM, hi+f.WallM
+	if f.FromLowest {
+		eave = math.Max(lo+f.WallM, hi+2.2) // a storey at least on the uphill side
+	}
 	rng := splitmix(uint64(f.ID))
 	wall, roof := colours(st, f, rng)
 

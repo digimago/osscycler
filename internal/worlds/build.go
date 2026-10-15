@@ -36,9 +36,12 @@ type Builder struct {
 	// Ground is "auto" (the national ground model where there is one
 	// (Grounds), else the profile), one of Grounds by name, or "none".
 	Ground   string
-	DEMCache string  // ground model tile cache
-	DEMCellM float64 // ground model resolution to fetch, m (default 5)
-	Fetch    bool    // fetch what the caches lack
+	DEMCache string // ground model tile cache
+	// BuildingsCache: France's BD TOPO buildings (default: .bdtopo beside
+	// DEMCache).
+	BuildingsCache string
+	DEMCellM       float64 // ground model resolution to fetch, m (default 5)
+	Fetch          bool    // fetch what the caches lack
 	// Maps is the map data (OpenStreetMap); nil builds without.
 	Maps *scenery.Store
 	// Options are the world's settings (cell, chunk, corridor, road width,
@@ -233,6 +236,27 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 			o.Attribution = append(o.Attribution, scenery.Attribution+" (ODbL)")
 		}
 		mapInfo = fmt.Sprintf("%d map elements", len(d.Elements))
+		// France's own buildings, measured (BD TOPO), where they can be had.
+		if o.Region == world.RegionFR {
+			cache := b.BuildingsCache
+			if cache == "" {
+				cache = filepath.Join(filepath.Dir(b.DEMCache), ".bdtopo")
+			}
+			bt := &scenery.BDTopo{CacheDir: cache, Fetch: b.Fetch, UserAgent: b.UserAgent, Log: log}
+			fps, err := bt.Footprints(ctx, c)
+			switch {
+			case err == nil && len(fps) > 0:
+				o.Buildings = fps
+				o.Attribution = append(o.Attribution, scenery.BDTopoAttribution)
+				mapInfo += fmt.Sprintf(", %d buildings from BD TOPO", len(fps))
+			case err != nil && ctx.Err() != nil:
+				return Result{}, ctx.Err()
+			case errors.Is(err, scenery.ErrNoBDTopo) && b.Complete:
+				return Result{}, fmt.Errorf("%w: buildings: %v", ErrIncomplete, err)
+			case err != nil:
+				log.Warn("BD TOPO buildings: keeping OpenStreetMap's", "course", c.ID, "err", err)
+			}
+		}
 	}
 	if b.Preview && !c.Builtin {
 		t := scenery.Countryside(c)

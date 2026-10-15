@@ -49,6 +49,12 @@ type species struct {
 	// pollard: cut back to its head every few years (knotwilg): a short,
 	// thick trunk, a knobbly head and a crown of thin straight shoots.
 	pollard bool
+	// region: the style whose worlds have it (style.go); "" every world.
+	region string
+	// forestBare: the share of its crown a tree in a stand loses below
+	// (0: 0.3, drawn up by its neighbours); a shade-tolerant one keeps
+	// its low branches.
+	forestBare float64
 }
 
 // crownReach is how far the species' open form reaches out from its
@@ -97,6 +103,22 @@ var allSpecies = []species{
 	{name: "chestnut", h: 20, bare: 3, trunkR: 0.5, branches: 7, spread: 0.9, rise: 35, crownR: 6, clumpR: 3, clumps: 1, bark: 0x5e5244, leaf: 0x3f6a26},
 	{name: "cherry", h: 8, bare: 1.8, trunkR: 0.18, branches: 5, spread: 0.85, rise: 35, crownR: 3.2, clumpR: 1.6, bark: 0x5a3e34, leaf: 0x4e7a32},
 	{name: "alder", h: 16, bare: 3, trunkR: 0.22, branches: 6, spread: 0.55, rise: 50, crownR: 3, clumpR: 1.6, clumps: 1, bark: 0x4a4640, leaf: 0x2f5a26},
+	// The Vosges' (styleFR): Norway spruce (épicéa), planted on the
+	// mountain, 30-35 m in a grown stand, a narrow spire of drooping
+	// tiers; silver fir (sapin pectiné), as tall, darker and blue-green,
+	// its tiers flatter and broader, its top rounding off with age; both
+	// shade-tolerant, branched low at a road's edge (owner's shot on the
+	// Route des Américains): the lowest tier just over a rider's head, as
+	// a low-poly tier at eye height reads as a wall;
+	// small-leaved lime (tilleul), the village tree, 20 m with a dense
+	// round crown on a stout trunk.
+	{name: "spruce", h: 32, bare: 2.5, trunkR: 0.35, bark: 0x4e3c30, leaf: 0x263f2a, fir: true, tierCount: 7, tierShape: 0.12, region: RegionFR, forestBare: 0.02},
+	{name: "silver fir", h: 32, bare: 2.5, trunkR: 0.4, bark: 0x5e5c56, leaf: 0x22382e, fir: true, tierCount: 6, tierShape: 0.14, region: RegionFR, forestBare: 0.02},
+	// Mountain beech (hêtraie d'altitude): beech wind-shorn and stunted
+	// near the crests, 6-10 m, branched from the foot into a dense low
+	// crown, a wall of leaves along the road (owner's shot of the D430).
+	{name: "mountain beech", h: 8, bare: 0.6, trunkR: 0.22, branches: 8, spread: 0.95, rise: 25, crownR: 3.4, clumpR: 2.1, clumps: 2, bark: 0x7e796e, leaf: 0x4a7230, region: RegionFR, forestBare: 0.05},
+	{name: "lime", h: 20, bare: 3, trunkR: 0.42, branches: 7, spread: 0.8, rise: 45, crownR: 5, clumpR: 2.7, clumps: 1, bark: 0x6a6458, leaf: 0x557f30, region: RegionFR},
 }
 
 // Kinds of plant (templates): each species' detailed variants and simple
@@ -245,7 +267,11 @@ func addTreeTemplate(p *gltf.Primitive, sp species, v int, far bool) {
 		// Drawn up by its neighbours: bare higher, crown narrower.
 		// At most two thirds bare: a stand's crowns are a third of
 		// their height or more (Scots pine, oak, beech in Dutch stands).
-		sp.bare = math.Max(sp.bare, math.Min(sp.bare+(sp.h-sp.bare)*0.3, sp.h*0.65))
+		lose := sp.forestBare
+		if lose == 0 {
+			lose = 0.3
+		}
+		sp.bare = math.Max(sp.bare, math.Min(sp.bare+(sp.h-sp.bare)*lose, sp.h*0.65))
 		sp.crownR *= 0.7
 		sp.clumpR *= 0.85
 		sp.tierShape *= 0.7

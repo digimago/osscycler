@@ -52,7 +52,7 @@ func meadowFences(t *terrain, land *scenery.LandMap, fps []scenery.Footprint, pa
 		var run [][2]float64
 		flush := func() {
 			if len(run) > 1 && polyLength(run) >= meadowMinM {
-				out = append(out, meadowFence(run))
+				out = append(out, meadowFence(run, styleFor(t.o.Region).meadowGates))
 			}
 			run = nil
 		}
@@ -96,9 +96,9 @@ func meadowFences(t *terrain, land *scenery.LandMap, fps []scenery.Footprint, pa
 
 // meadowFence is the fence along run, with a gate in a long one, where
 // its place's seed puts it.
-func meadowFence(run [][2]float64) scenery.Fence {
+func meadowFence(run [][2]float64, gates bool) scenery.Fence {
 	f := scenery.Fence{Line: run, Wire: true}
-	if l := polyLength(run); l >= meadowGateM {
+	if l := polyLength(run); gates && l >= meadowGateM {
 		h := splitmix(uint64(int64(math.Round(run[0][0]*10)))<<32 ^ uint64(int64(math.Round(run[0][1]*10))) ^ 0x6a7e)
 		at := l * (0.25 + 0.5*unit(h))
 		f.GateFromM, f.GateToM = at-meadowGateWideM/2, at+meadowGateWideM/2

@@ -38,7 +38,7 @@ var (
 
 // buildingMesh adds one building to p (vertex colours on a white
 // material).
-func buildingMesh(p *gltf.Primitive, s *surface, f scenery.Footprint) {
+func buildingMesh(p *gltf.Primitive, s *surface, st *style, f scenery.Footprint) {
 	pts := f.Outline
 	n := len(pts)
 	if n < 3 {
@@ -51,7 +51,7 @@ func buildingMesh(p *gltf.Primitive, s *surface, f scenery.Footprint) {
 	}
 	base, eave := lo-plinthM, hi+f.WallM
 	rng := splitmix(uint64(f.ID))
-	wall, roof := colours(f, rng)
+	wall, roof := colours(st, f, rng)
 
 	add := func(c [3]float32, n [3]float64, v ...[3]float64) {
 		first := uint32(len(p.Positions) / 3)
@@ -220,13 +220,13 @@ func convex(pts [][2]float64) bool {
 
 // colours are a building's walls and roof (linear RGB): from the map's
 // tags, else from the palette for its kind, with a little variation.
-func colours(f scenery.Footprint, rng uint64) (wall, roof [3]float32) {
-	walls, roofs := brickWalls, tileRoofs
+func colours(st *style, f scenery.Footprint, rng uint64) (wall, roof [3]float32) {
+	walls, roofs := st.walls, st.roofs
 	switch f.Kind {
 	case scenery.KindFlat:
-		walls, roofs = flatWalls, flatRoofs
+		walls, roofs = st.flatWalls, flatRoofs
 	case scenery.KindBarn:
-		walls, roofs = barnWalls, barnRoofs
+		walls, roofs = st.barnWalls, st.barnRoofs
 	}
 	if f.RoofM <= 0 {
 		roofs = flatRoofs

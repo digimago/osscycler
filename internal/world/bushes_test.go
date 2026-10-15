@@ -14,7 +14,7 @@ func TestBushSpecies(t *testing.T) {
 	for _, l := range []scenery.Land{scenery.LandForest, scenery.LandHeath, scenery.LandBuilt, scenery.LandMeadow} {
 		seen[l] = map[string]int{}
 		for i := range 4000 {
-			k, s, ok := pickBush(l, splitmix(uint64(i)))
+			k, s, ok := pickBush(&styleNL, l, splitmix(uint64(i)))
 			if !ok {
 				t.Fatalf("no bush on land %v", l)
 			}

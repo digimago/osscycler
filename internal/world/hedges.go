@@ -154,6 +154,7 @@ func hedgeTemplate(p *gltf.Primitive, k hedgeKind) {
 // hedges places the hedges along the roads: in the strip between two
 // roads side by side, and along front gardens in built-up land.
 func hedges(t *terrain, s *surface, sp *spots, wp *wayPlaces) []plant {
+	sty := styleFor(t.o.Region)
 	var out []plant
 	heading := func(i int) (float64, float64) {
 		a, b := t.fine[max(0, i-1)], t.fine[min(len(t.fine)-1, i+1)]
@@ -220,7 +221,7 @@ func hedges(t *terrain, s *surface, sp *spots, wp *wayPlaces) []plant {
 				}
 			}
 			if gap >= 0 {
-				if a.walk[side] {
+				if a.walk[side] || !sty.medianHedges {
 					continue // the strip is the sidewalk's verge
 				}
 				// One of the two roads plants the strip: the one whose way
@@ -270,7 +271,7 @@ func hedges(t *terrain, s *surface, sp *spots, wp *wayPlaces) []plant {
 				pk := plotKey{key, wside, plot}
 				kind, seen := plots[pk]
 				if !seen {
-					kind = gardenKind(hp)
+					kind = gardenKind(sty.gardens, hp)
 					if kind >= 0 {
 						// A house behind the plot's middle, on this side of
 						// any other road.
@@ -312,9 +313,9 @@ func hedges(t *terrain, s *surface, sp *spots, wp *wayPlaces) []plant {
 }
 
 // gardenKind is the hedge (if any: -1) a front-garden plot seeded h has.
-func gardenKind(h uint64) int {
+func gardenKind(gardens [4]float64, h uint64) int {
 	r := unit(h)
-	for k, share := range gardenMix {
+	for k, share := range gardens {
 		if r < share {
 			return k
 		}

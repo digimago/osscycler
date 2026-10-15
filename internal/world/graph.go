@@ -80,7 +80,7 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 	w := &World{doc: gltf.New(o.Generator)}
 	ground := w.doc.AddMaterial(gltf.Material{Name: "terrain", Color: [4]float32{1, 1, 1, 1}, Roughness: 1})
 	waterMat := w.doc.AddMaterial(gltf.Material{Name: "water", Color: [4]float32{0.05, 0.16, 0.36, 1}, Roughness: 0.1})
-	roadMats := addRoadMaterials(w.doc)
+	roadMats := addRoadMaterials(w.doc, styleFor(o.Region))
 	roadMats.ground = ground
 
 	t := terrain{o: o, c: c, coarse: coarse, lift: lift,
@@ -475,7 +475,7 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 	drawn := newLandSurface(w.prims, func(m int) bool { return w.doc.MaterialName(m) == "terrain" })
 	ps := plants(&t, &surface{t: &t, lists: map[[2]int]chunkLists{}, drawn: drawn}, o.Land, keys, o.Buildings, parks, ways, nearRoute)
 	if len(ps) > 0 {
-		if err := w.addTemplates(); err != nil {
+		if err := w.addTemplates(o.Region); err != nil {
 			return nil, err
 		}
 		var groups []instanceGroup
@@ -499,6 +499,7 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 		w.ground = gm
 		g := &w.Manifest.Ground
 		g.File, g.CellM, g.Layout, g.Classes, g.Chunks = GroundFile, groundCellM, GroundLayout, GroundClasses, index
+		g.DryAboveM = styleFor(o.Region).dryAboveM
 	}
 
 	m := &w.Manifest

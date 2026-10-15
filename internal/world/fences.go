@@ -42,7 +42,7 @@ func (w *World) addFences(t *terrain, fences []scenery.Fence) error {
 			entryStrip(p, s, f.Entry)
 		}
 		if f.Wire {
-			wireFence(p, s, f, post, steel)
+			wireFence(p, s, f, styleFor(t.o.Region).pasture, steel)
 			continue
 		}
 		l := math.Hypot(b[0]-a[0], b[1]-a[1])
@@ -91,16 +91,22 @@ func (w *World) addFences(t *terrain, fences []scenery.Fence) error {
 	return nil
 }
 
-// A pasture's wire fence: wooden posts every wirePostM, strands of plain
-// galvanised wire at these heights (barbed wire's barbs are too small to
-// see from the road), a five-bar gate in its gap.
-const wirePostM = 3.5
+// A pasture's wire fence (the style's pastureFence): wooden posts, strands
+// of plain galvanised wire (barbed wire's barbs are too small to see from
+// the road), a five-bar gate in its gap.
+type pastureFence struct {
+	postM, postH, postR float64 // posts this far apart, this tall and thick (half width)
+	leanDeg             float64 // each leans up to this much, its own way (0: kept straight)
+	strands             []float64
+	colour              uint32
+}
 
-var wireStrands = []float64{0.45, 0.75, 1.05}
+// A Dutch farmer's: posts every 3.5 m, three strands.
+var keptFence = pastureFence{postM: 3.5, postH: 1.15, postR: 0.09, strands: []float64{0.45, 0.75, 1.05}, colour: 0x6e5f4a}
 
 // wireFence draws fence f, posts and wire along its (bending) line.
-func wireFence(p *gltf.Primitive, s *surface, f scenery.Fence, post, steel [3]float32) {
-	wire := srgbLinear(0x7c8084)
+func wireFence(p *gltf.Primitive, s *surface, f scenery.Fence, pf pastureFence, steel [3]float32) {
+	wire, post := srgbLinear(0x7c8084), srgbLinear(pf.colour)
 	l := polyLength(f.Line)
 	at := func(d, y float64) [3]float64 {
 		q := polyAt(f.Line, d)
@@ -110,7 +116,7 @@ func wireFence(p *gltf.Primitive, s *surface, f scenery.Fence, post, steel [3]fl
 	inGate := func(d float64) bool { return gate && d > f.GateFromM-0.01 && d < f.GateToM+0.01 }
 	// The posts: along the line, and at the gate's sides.
 	var posts []float64
-	steps := max(1, int(math.Ceil(l/wirePostM)))
+	steps := max(1, int(math.Ceil(l/pf.postM)))
 	for i := 0; i <= steps; i++ {
 		if d := l * float64(i) / float64(steps); !inGate(d) {
 			posts = append(posts, d)
@@ -120,8 +126,25 @@ func wireFence(p *gltf.Primitive, s *surface, f scenery.Fence, post, steel [3]fl
 		posts = append(posts, f.GateFromM, f.GateToM)
 		sort.Float64s(posts)
 	}
+	// A post's point y up it: leaning by its own seeded lean (none in a
+	// kept fence), so the wire hangs from where the post is.
+	tilt := func(d float64) (float64, float64) {
+		if pf.leanDeg == 0 {
+			return 0, 0
+		}
+		q := polyAt(f.Line, d)
+		h := splitmix(uint64(int64(math.Round(q[0]*10)))<<32 ^ uint64(int64(math.Round(q[1]*10))) ^ 0x1ea7)
+		lean := math.Tan(pf.leanDeg * math.Pi / 180 * unit(h))
+		az := 2 * math.Pi * unit(h>>20)
+		return lean * math.Cos(az), lean * math.Sin(az)
+	}
+	on := func(d, y float64) [3]float64 {
+		q := at(d, y)
+		tx, tz := tilt(d)
+		return [3]float64{q[0] + tx*math.Max(0, y), q[1], q[2] + tz*math.Max(0, y)}
+	}
 	for _, d := range posts {
-		beam(p, at(d, -0.3), at(d, 1.15), 0.09, 0.09, post)
+		beam(p, on(d, -0.3), on(d, pf.postH), pf.postR, pf.postR, post)
 	}
 	// The wire, either side of the gate: one piece as long as the posts it
 	// passes stay within 10 cm of it (a straight, level stretch is one).
@@ -134,11 +157,11 @@ func wireFence(p *gltf.Primitive, s *surface, f scenery.Fence, post, steel [3]fl
 		}
 		for i := 0; i+1 < len(ds); {
 			j := i + 1
-			for j+1 < len(ds) && straight(at(ds[i], 0), at(ds[j+1], 0), ds[i:j+2], at) {
+			for pf.leanDeg == 0 && j+1 < len(ds) && straight(at(ds[i], 0), at(ds[j+1], 0), ds[i:j+2], at) {
 				j++
 			}
-			for _, y := range wireStrands {
-				beam(p, at(ds[i], y), at(ds[j], y), 0.012, 0.012, wire)
+			for _, y := range pf.strands {
+				beam(p, on(ds[i], y), on(ds[j], y), 0.012, 0.012, wire)
 			}
 			i = j
 		}

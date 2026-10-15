@@ -30,7 +30,7 @@ func TestBuildings(t *testing.T) {
 	house := scenery.Footprint{ID: 1, Kind: scenery.KindHouse, WallM: 5, RoofM: 4,
 		Outline: [][2]float64{{-30, 400}, {-18, 400}, {-18, 408}, {-30, 408}}}
 	var p gltf.Primitive
-	buildingMesh(&p, s, house)
+	buildingMesh(&p, s, &styleNL, house)
 	top := math.Inf(-1)
 	for _, q := range house.Outline {
 		top = math.Max(top, s.at(q[0], q[1]))
@@ -54,7 +54,7 @@ func TestBuildings(t *testing.T) {
 	block := scenery.Footprint{ID: 2, Kind: scenery.KindFlat, WallM: 12,
 		Outline: [][2]float64{{30, 500}, {50, 500}, {50, 520}, {30, 520}}}
 	p = gltf.Primitive{}
-	buildingMesh(&p, s, block)
+	buildingMesh(&p, s, &styleNL, block)
 	lo, hi := ys(&p)
 	glo, ghi := math.Inf(1), math.Inf(-1)
 	for _, q := range block.Outline {
@@ -75,12 +75,12 @@ func TestBuildings(t *testing.T) {
 	// colours, every build.
 	tagged := house
 	tagged.WallColour, tagged.RoofColour = "#ffffff", "red"
-	wall, roof := colours(tagged, 7)
+	wall, roof := colours(&styleNL, tagged, 7)
 	if wall != srgbLinear(0xffffff) || roof != srgbLinear(namedColor["red"]) {
 		t.Errorf("tagged colours %v %v", wall, roof)
 	}
-	a1, b1 := colours(house, splitmix(1))
-	a2, b2 := colours(house, splitmix(1))
+	a1, b1 := colours(&styleNL, house, splitmix(1))
+	a2, b2 := colours(&styleNL, house, splitmix(1))
 	if a1 != a2 || b1 != b2 {
 		t.Error("colours differ between builds")
 	}

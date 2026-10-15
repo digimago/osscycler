@@ -102,6 +102,7 @@ type plant struct {
 // route), off roads, buildings, car parks and water; and trees along open
 // roads.
 func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []scenery.Footprint, parks []scenery.Parking, ways []scenery.Way, route *routeGrid) []plant {
+	sty := styleFor(t.o.Region)
 	sp := newSpots(t, land, fps, parks)
 	roadNear, inArea := sp.roadNear, sp.inArea
 	clearOf := func(e, n, m float64) bool {
@@ -250,7 +251,8 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 					// firs, whose crown had counted as nothing, spread
 					// their lowest tier over a forest path at head
 					// height).
-					sp, scale := youngTree(splitmix(h+13), leaf)
+					mix, _ := sty.speciesFor(scenery.LandForest, s.stand(e, n))
+					sp, scale := youngTree(splitmix(h+13), leaf, mix, sty.pioneer)
 					if clearOf(e, n, math.Max(clearRoadM, allSpecies[sp].crownReach()*plantSize(splitmix(h+1), scale))) && !inArea(e, n) {
 						add(treeKind(sp, formOpen, dist > treeNearM), e, n, splitmix(h+1), scale, 1)
 					}
@@ -263,7 +265,7 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 				switch kind {
 				case catBush:
 					// A species of this land, its own shape and size (bushes.go).
-					kb, sb, ok := pickBush(l, splitmix(h+5))
+					kb, sb, ok := pickBush(sty, l, splitmix(h+5))
 					if !ok {
 						continue
 					}
@@ -290,7 +292,7 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 					if unit(hb) < borderMix {
 						for _, d := range [4][2]float64{{borderMixM, 0}, {-borderMixM, 0}, {0, borderMixM}, {0, -borderMixM}} {
 							if nl, _ := landAt(e+d[0], n+d[1]); nl != l {
-								if _, ok := speciesByLand[nl]; ok {
+								if _, ok := sty.species[nl]; ok {
 									mixLand = nl
 									break
 								}
@@ -304,17 +306,28 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 						sp, scale = 0, 0.4 // fruit trees: small and round, as a young oak
 					case town && kind == catConifer && inGarden(e, n):
 						// A garden's conifer, back from the street.
-						sp = pickSpecies(speciesByLand[scenery.LandBuilt].conifer, unit(hb>>16))
+						sp = pickSpecies(sty.species[scenery.LandBuilt].conifer, unit(hb>>16))
 					case town && kind == catConifer:
 						continue // no conifers in the town's greenery
 					case town:
-						table := townMix
+						table := sty.town
 						if landNear(landAt, e, n, townWaterM, scenery.LandWater, 8) || landNear(landAt, e, n, townWaterM/2, scenery.LandWater, 8) {
-							table = townWaterMix
+							table = sty.townWater
 						}
 						sp = pickSpecies(table, unit(hb>>16))
 					default:
-						mix := speciesByLand[mixLand]
+						// By its height in a style with altitude bands: the
+						// trees of that band, as tall as it lets them grow.
+						z := 0.0
+						if len(sty.bands) > 0 {
+							z = s.stand(e, n)
+							b := sty.band(z)
+							scale *= b.size
+							if b.openSize > 0 && (l == scenery.LandMeadow || l == scenery.LandNone) {
+								scale *= b.openSize
+							}
+						}
+						mix, _ := sty.speciesFor(mixLand, z)
 						table := mix.broad
 						if kind == catConifer && mix.conifer != nil || table == nil {
 							table = mix.conifer
@@ -379,13 +392,17 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 				// One species along a stretch of road, as avenues are planted;
 				// poplars too along minor country roads, more by water.
 				hs := splitmix(splitmix(key) ^ uint64(int64(k*avenueStepM/avenueStretchM)))
-				mix := avenueMix
+				townNear := landNear(landAt, e, n, townNearM, scenery.LandBuilt, 4)
+				if sty.townAvenuesOnly && !townNear {
+					continue
+				}
+				mix := sty.avenue
 				if a.way >= 0 && a.way < len(ways) && countryRoad[ways[a.way].Class] {
-					mix = countryAvenueMix
+					mix = sty.countryAvenue
 					for _, s := range []float64{-1, 1} {
 						for _, d := range []float64{edge + 6, edge + 12} {
 							if w, _ := landAt(pe+s*dn/l*d, pn-s*de/l*d); w == scenery.LandWater {
-								mix = canalAvenueMix
+								mix = sty.canalAvenue
 							}
 						}
 					}
@@ -394,10 +411,10 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 				// (owner, 2026-10-11: oaks, ashes and beeches lined the
 				// main street on the polder ride, where birches grow by the
 				// canal).
-				if landNear(landAt, e, n, townNearM, scenery.LandBuilt, 4) {
-					mix = townMix
+				if townNear {
+					mix = sty.town
 					if landNear(landAt, e, n, townWaterM, scenery.LandWater, 8) || landNear(landAt, e, n, townWaterM/2, scenery.LandWater, 8) {
-						mix = townWaterMix
+						mix = sty.townWater
 					}
 				}
 				sp := pickSpecies(mix, unit(hs))
@@ -411,9 +428,11 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 		add(kind, e, n, h, scale, 1)
 		out[len(out)-1].yaw = float32(yaw)
 	}
-	willows(land, keys, t.o.ChunkM, onRoad, inArea, routeDist, landAt, func(kind int, e, n float64, h uint64, scale float64) {
-		add(kind, e, n, h, scale, 1)
-	}, addTurned)
+	if sty.willows {
+		willows(land, keys, t.o.ChunkM, onRoad, inArea, routeDist, landAt, func(kind int, e, n float64, h uint64, scale float64) {
+			add(kind, e, n, h, scale, 1)
+		}, addTurned)
+	}
 	out = append(out, waterPlants(t, land, keys, onRoad, routeDist)...)
 
 	out = append(out, hedges(t, s, sp, wp)...)
@@ -680,9 +699,10 @@ func packPlants(ps []plant, chunkM float64) ([]byte, []instanceGroup) {
 
 // addTemplates adds the plant models, one hidden node each (extras kind
 // "template"), coloured in their vertices: low-poly, as many are drawn.
-func (w *World) addTemplates() error {
+func (w *World) addTemplates(region string) error {
 	mat := w.doc.AddMaterial(gltf.Material{Name: "vegetation", Color: [4]float32{1, 1, 1, 1}, Roughness: 0.95})
-	for k, kind := range plantKinds {
+	for _, k := range templateKinds(region) {
+		kind := plantKinds[k]
 		p := gltf.Primitive{Material: mat}
 		switch {
 		case k < speciesKinds:
@@ -710,6 +730,24 @@ func (w *World) addTemplates() error {
 		w.doc.AddNode("template "+kind.name, mesh, map[string]any{"kind": "template", "plant": kind.name})
 	}
 	return nil
+}
+
+// templateKinds are the plant kinds whose templates a world of region
+// carries: all but other regions' species, which are never planted there.
+func templateKinds(region string) []int {
+	if region == "" {
+		region = RegionNL
+	}
+	var out []int
+	for k := range plantKinds {
+		if k < speciesKinds {
+			if r := allSpecies[k/(treeVariants+1)].region; r != "" && r != region {
+				continue
+			}
+		}
+		out = append(out, k)
+	}
+	return out
 }
 
 // cone adds a cone (or a cylinder's frustum) of sides faces from y0 up h,

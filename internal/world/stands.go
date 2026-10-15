@@ -2,8 +2,6 @@ package world
 
 import (
 	"math"
-
-	"github.com/digimago/osscycler/internal/scenery"
 )
 
 // Stands: a forest is not one even planting (owner, 2026-10-09: at 3.0 km
@@ -70,12 +68,11 @@ func regenChance(stand float64) float64 {
 // (a pioneer, the first in a gap), and its size (× the species' grown
 // height), from a sapling to a pole. It grows in the open form: branches
 // low, as young trees have.
-func youngTree(h uint64, leaf string) (sp int, scale float64) {
-	mix := speciesByLand[scenery.LandForest]
+func youngTree(h uint64, leaf string, mix speciesMix, pioneer string) (sp int, scale float64) {
 	table := mix.broad
 	switch {
 	case unit(h) < 0.25:
-		table = map[string]float64{"birch": 1}
+		table = map[string]float64{pioneer: 1}
 	case leaf == "needleleaved", leaf != "broadleaved" && unit(h>>16) < 0.5:
 		table = mix.conifer
 	}

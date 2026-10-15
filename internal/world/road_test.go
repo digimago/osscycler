@@ -80,7 +80,7 @@ func TestRoadFromTheMap(t *testing.T) {
 		t.Errorf("width at the change %.1f, want between", m)
 	}
 
-	m := addRoadMaterials(w.doc)
+	m := addRoadMaterials(w.doc, &styleNL)
 	ps := roadMesh(tr.fine[:200], tr.fine, 0, courseLine(c, nil), false, m, nil) // the first 400 m
 	got := map[int]bool{}
 	for _, p := range ps {
@@ -207,7 +207,7 @@ func TestSidewalkEndsAreClosed(t *testing.T) {
 	sc := &scenery.Scenery{Roads: []scenery.RoadStretch{
 		{FromM: 0, ToM: c.Distance, Class: "residential", WidthM: 6, Sidewalk: [2]bool{true, true}}}}
 	tr := testTerrain(c, Options{Scenery: sc})
-	m := addRoadMaterials(gltf.New("test"))
+	m := addRoadMaterials(gltf.New("test"), &styleNL)
 	// The first 400 m: the strip starts at the first cross-section and
 	// stops at the last, each end a face across both sidewalks.
 	ps := roadMesh(tr.fine[:200], tr.fine, 0, courseLine(c, nil), false, m, nil)

@@ -73,16 +73,17 @@ type Builder struct {
 	Complete bool
 }
 
-// grounds are the national ground models, tried in this order by "auto".
+// grounds are the national ground models, tried in this order by "auto",
+// with the style of the country each covers (world.Options.Region).
 var grounds = []struct {
-	name, source, attribution string
-	load                      func(context.Context, dem.Source, []dem.LatLon, float64) (*dem.Mosaic, error)
+	name, source, attribution, region string
+	load                              func(context.Context, dem.Source, []dem.LatLon, float64) (*dem.Mosaic, error)
 }{
-	{"ahn", "AHN DTM", dem.AHNAttribution, func(ctx context.Context, s dem.Source, pts []dem.LatLon, r float64) (*dem.Mosaic, error) {
+	{"ahn", "AHN DTM", dem.AHNAttribution, world.RegionNL, func(ctx context.Context, s dem.Source, pts []dem.LatLon, r float64) (*dem.Mosaic, error) {
 		a := dem.AHN(s)
 		return a.Load(ctx, pts, r)
 	}},
-	{"rgealti", "IGN RGE ALTI", dem.RGEAltiAttribution, func(ctx context.Context, s dem.Source, pts []dem.LatLon, r float64) (*dem.Mosaic, error) {
+	{"rgealti", "IGN RGE ALTI", dem.RGEAltiAttribution, world.RegionFR, func(ctx context.Context, s dem.Source, pts []dem.LatLon, r float64) (*dem.Mosaic, error) {
 		a := dem.RGEAlti(s)
 		return a.Load(ctx, pts, r)
 	}},
@@ -188,6 +189,7 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 				o.Elevation = m.Elevation
 				o.TerrainSource = fmt.Sprintf("%s, %g m", g.source, cell)
 				o.Attribution = append(o.Attribution, g.attribution)
+				o.Region = g.region
 			}
 		}
 		switch {

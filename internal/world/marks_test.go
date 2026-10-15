@@ -329,7 +329,7 @@ func TestSidewalksAndLanesEndInATaper(t *testing.T) {
 				tr.fine[i].lane[1] = true
 			}
 		}
-		m := addRoadMaterials(gltf.New("test"))
+		m := addRoadMaterials(gltf.New("test"), &styleNL)
 		ps := roadMesh(tr.fine[:200], tr.fine, 0, courseLine(c, nil), false, m, nil)
 		covered := func(e, n float64) bool {
 			for _, p := range ps {

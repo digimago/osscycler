@@ -30,7 +30,7 @@ type roadMaterials struct {
 	paving     int // a roundabout\'s paved centre circle
 }
 
-func addRoadMaterials(d *gltf.Doc) roadMaterials {
+func addRoadMaterials(d *gltf.Doc, st *style) roadMaterials {
 	mat := func(name string, hex uint32, rough float32) int {
 		c := srgbLinear(hex)
 		return d.AddMaterial(gltf.Material{Name: name, Color: [4]float32{c[0], c[1], c[2], 1}, Roughness: rough})
@@ -44,11 +44,11 @@ func addRoadMaterials(d *gltf.Doc) roadMaterials {
 		m.surface[i] = road
 	}
 	m.surface[scenery.SurfaceTrack] = mat("running track", 0xa5503e, 0.9) // the test oval's
-	m.lane = mat("cycle lane", 0xa04a3c, 0.85)                            // red, as Dutch fietsstroken
+	m.lane = mat("cycle lane", st.cycleLane, 0.85)
 	m.walk = mat("sidewalk", 0x96928a, 0.9)
 	m.kerb = mat("kerb", 0xc8c6c0, 0.8)
 	m.island = d.AddMaterial(gltf.Material{Name: "island", Color: [4]float32{1, 1, 1, 1}, Roughness: 1})
-	m.paving = mat("roundabout centre", 0x8c5a48, 0.9) // red klinkers
+	m.paving = mat("roundabout centre", st.roundaboutCentre, 0.9)
 	return m
 }
 

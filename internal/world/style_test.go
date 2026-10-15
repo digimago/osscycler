@@ -261,3 +261,36 @@ func TestTreesOverTheRoadArePruned(t *testing.T) {
 		t.Error("a spruce on a 6 m bank above the road needs pruning")
 	}
 }
+
+// The meso relief (owner, 2026-10-15: a detail terrain over the coarse
+// one, mountains first): hummocks on slopes in a style with reliefM,
+// none on the flat, none by the road, none in a Dutch world.
+func TestReliefOnSlopesOnly(t *testing.T) {
+	c := northCourse(t)
+	kx := 111195 * math.Cos(52*math.Pi/180)
+	sloped := func(lat, lon float64) (float64, bool) { return 10 + 0.3*(lon-5)*kx, true } // 30 % east-west
+	flat := func(lat, lon float64) (float64, bool) { return 10, true }
+	most := func(region string, elev func(lat, lon float64) (float64, bool), gap float64) float64 {
+		tr := testTerrain(c, Options{Region: region, Elevation: elev})
+		g := &gland{t: tr}
+		m := 0.0
+		for n := 100.0; n < 900; n += 7 {
+			for e := 20.0; e < 200; e += 7 {
+				m = math.Max(m, math.Abs(g.relief(e, n, gap, tr.coarse)))
+			}
+		}
+		return m
+	}
+	if m := most(RegionFR, sloped, 30); m < 0.5 || m > 2*styleFR.reliefM {
+		t.Errorf("a 30 %% slope in the Vosges: relief up to %.2f m, want 0.5-%.1f", m, 2*styleFR.reliefM)
+	}
+	if m := most(RegionFR, flat, 30); m > 0 {
+		t.Errorf("flat ground: relief %.2f m", m)
+	}
+	if m := most(RegionFR, sloped, gBlendM-0.1); m > 0 {
+		t.Errorf("within the road's blend: relief %.2f m", m)
+	}
+	if m := most(RegionNL, sloped, 30); m > 0 {
+		t.Errorf("a Dutch world: relief %.2f m", m)
+	}
+}

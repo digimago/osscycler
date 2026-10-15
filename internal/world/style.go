@@ -33,6 +33,7 @@ type style struct {
 	// cover: the terrain's colour for these lands instead of the shared
 	// palette's.
 	cover            map[scenery.Land]uint32
+	reliefM          float64 // the meso relief's strength on slopes, m (0: none; gland.relief)
 	dryAboveM        float64 // grass dries towards straw above this height (0: never; Manifest.Ground.DryAboveM)
 	roadside         bool    // barriers, retaining walls, rock netting, bend posts, kilometre markers (roadside.go)
 	markings         bool    // white centre and edge lines
@@ -188,6 +189,7 @@ var styleFR = style{
 	// between the houses, not paving: the shared grey read as concrete
 	// walls on La Bresse's hillsides.
 	cover:            map[scenery.Land]uint32{scenery.LandBuilt: 0x6f8a52},
+	reliefM:          1.6,
 	dryAboveM:        1150,
 	roadside:         true,
 	markings:         true,

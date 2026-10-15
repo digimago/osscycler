@@ -391,6 +391,44 @@ func (g *gland) heightAt(e, n float64) float64 {
 	return g.height(e, n, true)
 }
 
+// relief is the meso relief the ground model is too coarse for (owner,
+// 2026-10-15: a detail terrain over the coarse one, in mountains and
+// hills first): hummocks and lumps of 0.3-1.5 m, a seeded field at 40 m
+// and 14 m, as strong as the style says (reliefM) where the ground slopes
+// (none on the flat: a valley floor or a meadow stays calm, full from a
+// 20 % slope), none within the road's blend and a few metres beyond, nor
+// by water; so roads, junctions and shores stay as they are.
+func (g *gland) relief(e, n, gap float64, near []sample) float64 {
+	t := g.t
+	amp := styleFor(t.o.Region).reliefM
+	if amp <= 0 || t.o.Elevation == nil || gap < gBlendM {
+		return 0
+	}
+	fade := smooth01((gap - gBlendM) / 6)
+	for _, d := range [4][2]float64{{8, 0}, {-8, 0}, {0, 8}, {0, -8}} {
+		if l, _ := t.cover.at(e+d[0], n+d[1]); l == scenery.LandWater {
+			return 0
+		}
+	}
+	if l, _ := t.cover.at(e, n); l == scenery.LandWater {
+		return 0
+	}
+	const r = 12.0
+	gx := (t.base(e+r, n, near) - t.base(e-r, n, near)) / (2 * r)
+	gy := (t.base(e, n+r, near) - t.base(e, n-r, near)) / (2 * r)
+	steep := smooth01((math.Hypot(gx, gy) - 0.04) / 0.16)
+	// Hummocks 14 m across on swells 40 m across (a 5 m cell near the
+	// route carries the first; finer would need finer land).
+	field := 0.35*(valueNoise(e/40, n/40, 0x6e11ef)-0.5) + 0.65*(valueNoise(e/14, n/14, 0x6e11f0)-0.5)
+	return 2 * amp * field * steep * fade
+}
+
+// smooth01 eases x, clamped to 0..1, in and out.
+func smooth01(x float64) float64 {
+	x = math.Max(0, math.Min(1, x))
+	return x * x * (3 - 2*x)
+}
+
 // dryAt is the land's height at e, n as if no water were there: what a
 // water's shore stands at.
 func (g *gland) dryAt(e, n float64) float64 {
@@ -403,6 +441,7 @@ func (g *gland) height(e, n float64, wet bool) float64 {
 	near := g.coarseNear(key)
 	base := t.base(e, n, near)
 	h, gap, edge := g.blend(e, n, base)
+	h += g.relief(e, n, gap, near)
 	// Between a road and a ditch: a verge, then the bank down to the water
 	// (ditchBank), not the land at the water's level right up to the road.
 	if gap < gDitchVergeM+gDitchBankM+1 {

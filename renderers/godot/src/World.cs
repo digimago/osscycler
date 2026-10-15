@@ -169,6 +169,20 @@ public sealed class World
     static ShaderMaterial Dress(Node scene)
     {
         var terrain = new ShaderMaterial { Shader = GD.Load<Shader>("res://shaders/terrain.gdshader") };
+        // Surfaces with their detail drawn (shaders/surfaces.gdshader), by
+        // the material's name: its kind there.
+        var surfaceShader = GD.Load<Shader>("res://shaders/surfaces.gdshader");
+        var surfaces = new System.Collections.Generic.Dictionary<string, ShaderMaterial>();
+        ShaderMaterial Surface(string name, int kind)
+        {
+            if (!surfaces.TryGetValue(name, out var m))
+            {
+                m = new ShaderMaterial { Shader = surfaceShader };
+                m.SetShaderParameter("kind", kind);
+                surfaces[name] = m;
+            }
+            return m;
+        }
         foreach (var n in scene.FindChildren("*", "MeshInstance3D", true, false))
         {
             var mi = (MeshInstance3D)n;
@@ -187,6 +201,19 @@ public sealed class World
                     mat.VertexColorUseAsAlbedo = true;
                     mat.VertexColorIsSrgb = false; // glTF colours are linear
                 }
+                if (SurfaceKind(mat.ResourceName) is int kind)
+                {
+                    // The builder's colour (vertex colours, else the
+                    // material's) under the drawn detail.
+                    var sm = Surface(mat.ResourceName, kind);
+                    if (arrays[(int)Mesh.ArrayType.Color].VariantType == Variant.Type.Nil)
+                    {
+                        sm = (ShaderMaterial)sm.Duplicate();
+                        sm.SetShaderParameter("albedo_tint", mat.AlbedoColor);
+                    }
+                    mi.SetSurfaceOverrideMaterial(s, sm);
+                    continue;
+                }
                 if (mat.ResourceName == "water")
                 {
                     mat.Roughness = 0.08f;
@@ -196,6 +223,18 @@ public sealed class World
         }
         return terrain;
     }
+
+    // SurfaceKind is the surfaces shader's kind for a world material, null
+    // for one drawn as glTF says.
+    internal static int? SurfaceKind(string material) => material switch
+    {
+        "road" => 0,
+        "stone wall" => 1,
+        "rock" => 2,
+        "setts" => 3,
+        "grate" => 4,
+        _ => null,
+    };
 
     // Plant adds the vegetation: a MultiMesh per group of instances, of the
     // group's template (a hidden node of the model), drawn up to the

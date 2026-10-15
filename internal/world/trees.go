@@ -55,6 +55,23 @@ type species struct {
 	// (0: 0.3, drawn up by its neighbours); a shade-tolerant one keeps
 	// its low branches.
 	forestBare float64
+	// pruneBareM: where its crown reaches over a road it stands about
+	// level with, its branches are cut off to this height (at scale 1:
+	// a road's clearance and a safe bend's sight line); 0: never pruned.
+	pruneBareM float64
+}
+
+// formBare is how high the trunk of form v (formForest, formOpen) goes
+// bare at scale 1, as addTreeTemplate builds it.
+func (sp species) formBare(v int) float64 {
+	if v != formForest || sp.pollard {
+		return sp.bare
+	}
+	lose := sp.forestBare
+	if lose == 0 {
+		lose = 0.3
+	}
+	return math.Max(sp.bare, math.Min(sp.bare+(sp.h-sp.bare)*lose, sp.h*0.65))
 }
 
 // crownReach is how far the species' open form reaches out from its
@@ -108,17 +125,19 @@ var allSpecies = []species{
 	// tiers; silver fir (sapin pectiné), as tall, darker and blue-green,
 	// its tiers flatter and broader, its top rounding off with age; both
 	// shade-tolerant, branched low at a road's edge (owner's shot on the
-	// Route des Américains): the lowest tier just over a rider's head, as
-	// a low-poly tier at eye height reads as a wall;
+	// Route des Américains), on a bank above the road branched from the
+	// foot, at the road's level cut back over it (owner's shot of the
+	// D13B: pruneBareM); the lowest tier just over a rider's head, as a
+	// low-poly tier at eye height reads as a wall;
 	// small-leaved lime (tilleul), the village tree, 20 m with a dense
 	// round crown on a stout trunk.
-	{name: "spruce", h: 32, bare: 2.5, trunkR: 0.35, bark: 0x4e3c30, leaf: 0x263f2a, fir: true, tierCount: 7, tierShape: 0.12, region: RegionFR, forestBare: 0.02},
-	{name: "silver fir", h: 32, bare: 2.5, trunkR: 0.4, bark: 0x5e5c56, leaf: 0x22382e, fir: true, tierCount: 6, tierShape: 0.14, region: RegionFR, forestBare: 0.02},
+	{name: "spruce", h: 32, bare: 1.2, trunkR: 0.35, bark: 0x4e3c30, leaf: 0x263f2a, fir: true, tierCount: 7, tierShape: 0.12, region: RegionFR, forestBare: 0.02, pruneBareM: 5.5},
+	{name: "silver fir", h: 32, bare: 1.2, trunkR: 0.4, bark: 0x5e5c56, leaf: 0x22382e, fir: true, tierCount: 6, tierShape: 0.14, region: RegionFR, forestBare: 0.02, pruneBareM: 5.5},
 	// Mountain beech (hêtraie d'altitude): beech wind-shorn and stunted
 	// near the crests, 6-10 m, branched from the foot into a dense low
 	// crown, a wall of leaves along the road (owner's shot of the D430).
 	{name: "mountain beech", h: 8, bare: 0.6, trunkR: 0.22, branches: 8, spread: 0.95, rise: 25, crownR: 3.4, clumpR: 2.1, clumps: 2, bark: 0x7e796e, leaf: 0x4a7230, region: RegionFR, forestBare: 0.05},
-	{name: "lime", h: 20, bare: 3, trunkR: 0.42, branches: 7, spread: 0.8, rise: 45, crownR: 5, clumpR: 2.7, clumps: 1, bark: 0x6a6458, leaf: 0x557f30, region: RegionFR},
+	{name: "lime", h: 20, bare: 3, trunkR: 0.42, branches: 7, spread: 0.8, rise: 45, crownR: 5, clumpR: 2.7, clumps: 1, bark: 0x6a6458, leaf: 0x557f30, region: RegionFR, pruneBareM: 4.5},
 }
 
 // Kinds of plant (templates): each species' detailed variants and simple
@@ -132,7 +151,34 @@ var (
 	kMarram       = kHeather + 3
 	kMarramFlower = kHeather + 4
 	kHedge        = kHeather + 5 // then one per hedgeKinds
+	kPruned       = kHedge + len(hedgeKinds)
+	// prunedKind: species i's pruned form's kind (after the hedges, so
+	// the other kinds keep their numbers), -1 for one never pruned.
+	prunedKind = func() []int {
+		out, k := make([]int, len(allSpecies)), kPruned
+		for i, s := range allSpecies {
+			out[i] = -1
+			if s.pruneBareM > 0 {
+				out[i], k = k, k+1
+			}
+		}
+		return out
+	}()
 )
+
+// kindSpecies is kind k's species (any form, pruned too), -1 for a plant
+// that isn't a tree.
+func kindSpecies(k int) int {
+	if k < speciesKinds {
+		return k / (treeVariants + 1)
+	}
+	for i, pk := range prunedKind {
+		if pk == k {
+			return i
+		}
+	}
+	return -1
+}
 
 // treeKind is the kind for species sp: its variant v (0..treeVariants-1),
 // or its simple one (far).
@@ -158,6 +204,11 @@ var plantKinds = func() []plantKind {
 	out = append(out, plantKind{"heather", 150}, plantKind{"reed", 150}, plantKind{"lily", 100}, plantKind{"marram", 150}, plantKind{"marram flowering", 150})
 	for _, h := range hedgeKinds {
 		out = append(out, plantKind{h.name, h.drawM})
+	}
+	for _, s := range allSpecies {
+		if s.pruneBareM > 0 {
+			out = append(out, plantKind{s.name + " pruned", 700})
+		}
 	}
 	return out
 }()
@@ -267,11 +318,7 @@ func addTreeTemplate(p *gltf.Primitive, sp species, v int, far bool) {
 		// Drawn up by its neighbours: bare higher, crown narrower.
 		// At most two thirds bare: a stand's crowns are a third of
 		// their height or more (Scots pine, oak, beech in Dutch stands).
-		lose := sp.forestBare
-		if lose == 0 {
-			lose = 0.3
-		}
-		sp.bare = math.Max(sp.bare, math.Min(sp.bare+(sp.h-sp.bare)*lose, sp.h*0.65))
+		sp.bare = sp.formBare(formForest)
 		sp.crownR *= 0.7
 		sp.clumpR *= 0.85
 		sp.tierShape *= 0.7

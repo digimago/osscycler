@@ -23,6 +23,7 @@ const (
 	plantNearM     = 100.0 // full density this close to the route, thinner beyond
 	farDensity     = 0.35
 	clearRoadM     = 1.5 // plants keep this far from a road's edge
+	pruneClearM    = 4.5 // a pruned tree's branches clear the road by this much (a road's clearance)
 	clearHouseM    = 1.5 // and from a building's walls
 	avenueStepM    = 9.0 // trees along open roads, this far apart
 	avenueStretchM = 150 // and of one species for this far
@@ -191,13 +192,31 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 	// their height).
 	add := func(kind int, e, n float64, h uint64, scale, poor float64) {
 		size := plantSize(h, scale)
-		if kind < speciesKinds {
+		if kindSpecies(kind) >= 0 {
 			size *= math.Min(poor, seaAt(e, n))
 		} else {
 			size *= poor
 		}
 		out = append(out, plant{kind: kind, x: float32(e), y: float32(s.stand(e, n)), z: float32(-n),
 			s: float32(size), yaw: float32(2 * math.Pi * unit(h>>24))})
+	}
+	// pruned is the kind a tree of species sp seeded h (form, kind as
+	// planted) takes at e, n: where its crown reaches over a road it
+	// stands about level with, its pruned form, so no branch hangs lower
+	// than pruneClearM over the road; on a bank above it, as it grows
+	// (owner, 2026-10-15, the D13B: trees on the bank keep their low
+	// branches, those at the road's level have them cut off).
+	pruned := func(sp, form, kind int, e, n float64, h uint64, scale float64) int {
+		k := prunedKind[sp]
+		if k < 0 || kind != treeKind(sp, form, false) {
+			return kind // never pruned, or drawn far off
+		}
+		size := plantSize(h, scale)
+		i := roadNear(e, n, allSpecies[sp].crownReach()*size, -1)
+		if i < 0 || !belowClearance(allSpecies[sp], form, size, s.stand(e, n), t.fine[i].ele) {
+			return kind
+		}
+		return k
 	}
 	size := t.o.ChunkM
 	cells := int(size / plantCellM)
@@ -347,7 +366,7 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 						// only now and then a solitary one grows full.
 						poor = 0.35 + 0.25*unit(hb>>32)
 					}
-					kind = treeKind(sp, form, dist > treeNearM)
+					kind = pruned(sp, form, treeKind(sp, form, dist > treeNearM), e, n, splitmix(h+1), scale)
 				}
 				add(kind, e, n, splitmix(h+1), scale, poor)
 			}
@@ -418,7 +437,7 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 					}
 				}
 				sp := pickSpecies(mix, unit(hs))
-				add(treeKind(sp, formOpen, routeDist(e, n) > treeNearM), e, n, splitmix(h+2), 1, 1)
+				add(pruned(sp, formOpen, treeKind(sp, formOpen, routeDist(e, n) > treeNearM), e, n, splitmix(h+2), 1), e, n, splitmix(h+2), 1, 1)
 			}
 		}
 	}
@@ -461,8 +480,8 @@ func clearTrunks(ps []plant) []plant {
 	}
 	grid := map[[2]int][]trunk{}
 	for i, p := range ps {
-		if p.kind < speciesKinds {
-			r := allSpecies[p.kind/(treeVariants+1)].trunkR * float64(p.s)
+		if sp := kindSpecies(p.kind); sp >= 0 {
+			r := allSpecies[sp].trunkR * float64(p.s)
 			k := key(p.x, p.z)
 			grid[k] = append(grid[k], trunk{i, float64(p.x), float64(p.z), r, p.s})
 		}
@@ -479,7 +498,7 @@ func clearTrunks(ps []plant) []plant {
 	}
 	out := ps[:0]
 	for i, p := range ps {
-		isTree, isBush := p.kind < speciesKinds, p.kind >= kBush && p.kind < kHeather
+		isTree, isBush := kindSpecies(p.kind) >= 0, p.kind >= kBush && p.kind < kHeather
 		if !isTree && !isBush {
 			out = append(out, p)
 			continue
@@ -615,8 +634,8 @@ func clearOverhead(ps []plant, fine []sample) []plant {
 	g := newRouteGrid(fine, 20)
 	kept := ps[:0]
 	for _, p := range ps {
-		if p.kind < speciesKinds {
-			sp := allSpecies[p.kind/(treeVariants+1)]
+		if i := kindSpecies(p.kind); i >= 0 {
+			sp := allSpecies[i]
 			s := float64(p.s)
 			reach, base, top := sp.crownReach()*s, float64(p.y)+2, float64(p.y)+sp.h*s+1
 			e, n := float64(p.x), -float64(p.z)
@@ -720,6 +739,11 @@ func (w *World) addTemplates(region string) error {
 			marramTemplate(&p, false)
 		case k == kMarramFlower:
 			marramTemplate(&p, true)
+		case k >= kPruned:
+			// The forest form, its branches cut back to pruneBareM.
+			sp := allSpecies[kindSpecies(k)]
+			sp.bare, sp.forestBare = sp.pruneBareM, 0.001
+			addTreeTemplate(&p, sp, formForest, false)
 		case k >= kHedge:
 			hedgeTemplate(&p, hedgeKinds[k-kHedge])
 		}
@@ -732,6 +756,13 @@ func (w *World) addTemplates(region string) error {
 	return nil
 }
 
+// belowClearance tells whether a tree of species sp, form and size,
+// standing at height base, would hang its lowest branches less than
+// pruneClearM over a road at height road.
+func belowClearance(sp species, form int, size, base, road float64) bool {
+	return base+sp.formBare(form)*size < road+pruneClearM
+}
+
 // templateKinds are the plant kinds whose templates a world of region
 // carries: all but other regions' species, which are never planted there.
 func templateKinds(region string) []int {
@@ -740,8 +771,8 @@ func templateKinds(region string) []int {
 	}
 	var out []int
 	for k := range plantKinds {
-		if k < speciesKinds {
-			if r := allSpecies[k/(treeVariants+1)].region; r != "" && r != region {
+		if sp := kindSpecies(k); sp >= 0 {
+			if r := allSpecies[sp].region; r != "" && r != region {
 				continue
 			}
 		}

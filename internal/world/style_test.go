@@ -211,3 +211,53 @@ func TestFrenchPastureFencesLean(t *testing.T) {
 		t.Errorf("French: %d posts leaning up to %.2f m, want 11 leaning 5-25 cm", frPosts, frLean)
 	}
 }
+
+// Conifers at the road's level have their branches cut back where they
+// reach over it; on a bank above the road they keep them low; clear of
+// the road they grow as they are (owner, 2026-10-15, the D13B).
+func TestTreesOverTheRoadArePruned(t *testing.T) {
+	c := northCourse(t)
+	kx := 111195 * math.Cos(52*math.Pi/180)
+	ring := func(x0, y0, x1, y1 float64) []scenery.LatLon {
+		p := func(x, y float64) scenery.LatLon { return scenery.LatLon{Lat: 52 + y/111195, Lon: 5 + x/kx} }
+		return []scenery.LatLon{p(x0, y0), p(x1, y0), p(x1, y1), p(x0, y1), p(x0, y0)}
+	}
+	lm := scenery.NewLandMap(c, &scenery.Data{Elements: []scenery.Element{
+		{Type: "way", ID: 1, Tags: map[string]string{"landuse": "forest", "leaf_type": "needleleaved"}, Geometry: ring(-300, -100, 300, 1100)},
+	}})
+	tr := testTerrain(c, Options{Land: lm, Region: RegionFR})
+	s := &surface{t: tr, lists: map[[2]int]chunkLists{}}
+	var near, natural, far int
+	{
+		for _, p := range plants(tr, s, lm, tr.chunks(), nil, nil, nil, newRouteGrid(tr.coarse, 400)) {
+			sp := kindSpecies(p.kind)
+			if sp < 0 || prunedKind[sp] < 0 || p.z > -100 || p.z < -900 {
+				continue
+			}
+			off := math.Abs(float64(p.x)) - tr.fine[0].edge
+			switch {
+			case p.kind == prunedKind[sp] && off > allSpecies[sp].crownReach()*float64(p.s)+0.01:
+				far++
+			case p.kind == prunedKind[sp]:
+				near++
+			case off < 3:
+				natural++
+			}
+		}
+	}
+	if near < 20 || far > 0 {
+		t.Errorf("at the road's level: %d pruned over the road, %d pruned clear of it; want many and none", near, far)
+	}
+	if natural > near/4 {
+		t.Errorf("at the road's level: %d conifers within 3 m of the road unpruned, %d pruned", natural, near)
+	}
+	// On a bank: the test terrain's ground is the road's profile, so the
+	// heights are asked directly.
+	spruce := allSpecies[speciesIndex("spruce")]
+	if !belowClearance(spruce, formForest, 1, 10, 10) {
+		t.Error("a spruce at the road's level clears it unpruned")
+	}
+	if belowClearance(spruce, formForest, 1, 16, 10) {
+		t.Error("a spruce on a 6 m bank above the road needs pruning")
+	}
+}

@@ -45,8 +45,17 @@ what the owner decided about each one.
   same every build and a change shows only what it changed.
 - **Low-poly, vertex-coloured.** Colours as linear floats via
   `srgbLinear(0xRRGGBB)` (`cover.go`) on a white material per kind
-  (`gltf.Material`, roughness by kind); no textures yet (the road has UVs
-  for later). Reuse the shape helpers before writing new ones: `cone`,
+  (`gltf.Material`, roughness by kind).
+- **Surface detail is drawn, not modelled** (owner, 2026-10-15: colour
+  textures and bump mapping over geometry for detail passed in seconds):
+  mortar, setts, rock, netting, asphalt grain, cracks, patches, grates
+  are `renderers/godot/shaders/surfaces.gdshader`, procedural (no image
+  files, no licences), a colour and a height per kind, the normal bumped
+  from the height's screen-space slopes (the meshes carry no tangents),
+  fading out before it would shimmer. The builder gives such a surface
+  its own material by name (`road`, `stone wall`, `rock`, `setts`,
+  `grate`; `World.SurfaceKind` maps it) and plain geometry (one row of a
+  wall, not its courses); UVs where the pattern must follow the road. Reuse the shape helpers before writing new ones: `cone`,
   `blob` (`vegetation.go`), `limb`, `blobAt` (`trees.go`), `box`
   (`bridges.go`), `beam`, `quad` (`fences.go`), `tri` (`road.go`),
   `smoothNormals` (`drape.go`).

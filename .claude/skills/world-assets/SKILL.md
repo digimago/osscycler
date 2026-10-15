@@ -79,6 +79,17 @@ what the owner decided about each one.
   before and after. Normals go as bytes (`KHR_mesh_quantization`);
   positions stay float.
 
+## Regional styles
+
+Places outside the Netherlands get their own style (`world/style.go`):
+what grows where, gardens, houses, road colours, fences, the trees by
+height. A style only chooses among shared shapes and placing; a new
+shape a region needs (a species, a fence) is made as any asset, its
+choice put in the style. A species only one region plants carries that
+region (`species.region`), so other worlds don't carry its template and
+stay byte-identical; check that with the Dutch worlds (Posbank Loop,
+figure 8, oval, both builders) after any change to a style.
+
 ## Outside assets and licences
 
 Prefer code. If an outside asset is needed (a font, a model that code
@@ -126,6 +137,15 @@ before using it.
 5. 60 fps (vsync) on the Posbank Loop, through the forest at 5.3-6 km and
    in Rheden; the HUD shows fps.
 6. Report size, triangles, build time and fps against before.
+
+## Looking from a worktree
+
+The `osscycler-view` MCP tools find their source tree from the session's
+working directory: from a worktree they still launch the main checkout's
+renderer. Builder changes show (the world is rebuilt from the worktree),
+renderer changes (C#, shaders) don't: take those shots with the
+worktree's own Godot (`godot --headless --path renderers/godot --import`
+once, then `--shot`).
 
 ## Godot pitfalls (4.7)
 

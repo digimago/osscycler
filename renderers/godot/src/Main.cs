@@ -350,7 +350,7 @@ public partial class Main : Node3D
         // relief, the grass shouldn't be.
         if (w.Ground != null)
         {
-            _grass = new Grass(w.Ground, _relief, w.TerrainMaterial, _bloom);
+            _grass = new Grass(w.Ground, _relief, w.TerrainMaterial, _bloom, (float)w.Manifest.Ground.DryAboveM);
             AddChild(_grass.Node);
         }
         _hidden.Clear(); // the old world's nodes went with it

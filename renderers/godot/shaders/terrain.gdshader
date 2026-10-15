@@ -14,6 +14,7 @@ uniform sampler2D clear_map : filter_linear, repeat_disable;
 uniform vec2 win_origin;
 uniform float win_size = 0.0; // 0: no window yet
 uniform float bloom = 0.0;    // the heather in flower (Grass.cs)
+uniform float dry_above = 1e9; // grassy ground dries above this height, as the grass on it (ground.gdshaderinc)
 
 varying vec3 wpos;
 
@@ -54,6 +55,7 @@ void fragment() {
 	// Grassy ground: how much grows here (as ground.gdshaderinc's look),
 	// fading out towards the window's edge.
 	float grassy = 0.0;
+	bool dries = false; // grass, meadow, lawns, orchards: the kinds that dry
 	vec4 field = vec4(0.0); // a sown field: how much (the window's fade), its crop, across its rows
 	vec3 under = vec3(0.13, 0.29, 0.035); // the cards' average, linear
 	if (win_size > 0.0) {
@@ -82,11 +84,15 @@ void fragment() {
 				under = mix(vec3(0.07, 0.075, 0.035), vec3(0.24, 0.09, 0.2), 0.7 * bloom);
 			}
 			grassy = (g >= 16 && g < 48 ? 0.9 * (1.0 - head) : share) * room * inside;
+			dries = g == 1 || g == 2 || g == 4 || g == 6;
 		}
 	}
 	// Streaks along no particular way: blades in clumps, seen from above.
 	float streak = 0.5 * vnoise(p * vec2(6.0, 2.5)) + 0.5 * vnoise(p * vec2(2.2, 7.0));
 	vec3 lawn = under * (0.75 + 0.5 * mix(0.5, streak, near) + 0.3 * (broad - 0.5));
+	if (dries) {
+		lawn = mix(lawn, lawn * vec3(2.2, 1.2, 2.0), 0.75 * smoothstep(dry_above - 40.0, dry_above + 40.0, wpos.y));
+	}
 	c = mix(c, lawn, 0.75 * grassy);
 	// A sown field near the rider: its furrows or rows on the soil, the
 	// ridges lit as ridges (the normal tilted across them), fading to the

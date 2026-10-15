@@ -64,6 +64,9 @@ public sealed class Manifest
         [JsonPropertyName("layout")] public string Layout { get; set; } = "";
         [JsonPropertyName("classes")] public string[] Classes { get; set; } = [];
         [JsonPropertyName("chunks")] public GroundChunk[] Chunks { get; set; } = [];
+        // Grass on ground above this height dries towards straw (summer
+        // pastures above the treeline); 0: none.
+        [JsonPropertyName("dry_above_m")] public double DryAboveM { get; set; }
     }
 
     public sealed class GroundChunk

@@ -47,6 +47,9 @@ uniform float wind = 1.0;
 // How much of the heather is in flower (Grass.cs, by the ride's date):
 // each plant flowers or not, so in the weeks either side some do.
 uniform float bloom = 0.0;
+// Above this height (the ground's, Spot.y) grass dries towards straw, as
+// summer pastures above the treeline (the manifest's ground.dry_above_m).
+uniform float dry_above = 1e9;
 
 // A plant's own fade, in the share of the layer's (0 to 1) it spreads over.
 const float SOFT = 0.25;
@@ -256,5 +259,11 @@ vec3 up_normal(mat4 view) {
 // tone is a plant's tint at s: its kind's colour, the ground patch's tone
 // (as the grassy ground under it), a little of its own.
 vec3 tone(Spot s, vec3 col) {
-	return col * lawn_tone(s.p) * (0.92 + 0.16 * unit(s.h3, 16u));
+	vec3 c = col * lawn_tone(s.p) * (0.92 + 0.16 * unit(s.h3, 16u));
+	// Dry above dry_above, easing in over 80 m of height; a share of the
+	// plants stays green (the lower layer under the tawny tops).
+	// The tint multiplies the plants' green: straw is that green ×
+	// (2.2, 1.2, 2.0), as the grey dune's turf is its own multiplier.
+	float dry = smoothstep(dry_above - 40.0, dry_above + 40.0, s.y) * (0.35 + 0.65 * unit(s.h3, 0u));
+	return mix(c, c * vec3(2.2, 1.2, 2.0), dry * 0.9);
 }

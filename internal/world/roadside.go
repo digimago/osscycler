@@ -58,7 +58,7 @@ type sideRun struct{ from, to int } // fine samples, inclusive
 
 // addRoadside adds what stands along the roads (style roadside), a mesh
 // per terrain chunk.
-func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footprint, parks []scenery.Parking) error {
+func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footprint, parks []scenery.Parking, ground int) error {
 	st := styleFor(t.o.Region)
 	if !st.roadside || len(t.fine) < 2 {
 		return nil
@@ -93,6 +93,15 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 	settsMat := w.doc.AddMaterial(gltf.Material{Name: "setts", Color: [4]float32{1, 1, 1, 1}, Roughness: 0.9})
 	grateMat := w.doc.AddMaterial(gltf.Material{Name: "grate", Color: [4]float32{1, 1, 1, 1}, Roughness: 0.6})
 	walls, rocks := map[[2]int]*gltf.Primitive{}, map[[2]int]*gltf.Primitive{}
+	// The land filled in behind walls, in the land's own material (so the
+	// ground map, grass and plants take it as the land there).
+	fills := map[[2]int]*gltf.Primitive{}
+	srf := &surface{t: t, lists: map[[2]int]chunkLists{}}
+	land := func(e, n float64) float64 { return srf.at(e, n) }
+	landColour := func(e, n float64) [3]float32 {
+		l, _ := t.cover.at(e, n)
+		return st.landColour(l)
+	}
 	gutters, grates := map[[2]int]*gltf.Primitive{}, map[[2]int]*gltf.Primitive{}
 	prim := func(m map[[2]int]*gltf.Primitive, e, n float64, material int) *gltf.Primitive {
 		k := [2]int{int(math.Floor(e / t.o.ChunkM)), int(math.Floor(n / t.o.ChunkM))}
@@ -249,7 +258,8 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 						rock++
 					}
 				}
-				// Smoothed heights, so the wall's top runs evenly.
+				// Smoothed heights, so the wall's top runs evenly; easing down
+				// into the bank over its first and last 6 m.
 				h := make([]float64, r.to-r.from+1)
 				for k := r.from; k <= r.to; k++ {
 					sum, c := 0.0, 0
@@ -261,13 +271,21 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 					if c > 0 {
 						h[k-r.from] = sum / float64(c)
 					}
+					if end := min(k-r.from, r.to-k); end < 3 {
+						h[k-r.from] *= (float64(end) + 1) / 4
+					}
 				}
 				isRock := 2*rock > r.to-r.from+1
 				p := prim(walls, t.fine[ln.from+r.from].e, t.fine[ln.from+r.from].n, stoneMat)
 				if isRock {
 					p = prim(rocks, t.fine[ln.from+r.from].e, t.fine[ln.from+r.from].n, rockMat)
 				}
-				retaining(p, t, ln.from, r, h, sign, isRock, func(k int, off float64) (float64, float64) {
+				f := prim(fills, t.fine[ln.from+r.from].e, t.fine[ln.from+r.from].n, ground)
+				line := t.fine[ln.from].line
+				clear := func(e, n float64) bool { // no other road within 1.5 m (a hairpin's next leg)
+					return sp.roadNear(e, n, 1.5, line) < 0 && (t.surfaces == nil || t.surfaces.dist(e, -n, 1.5) >= 1.5)
+				}
+				retaining(p, f, land, clear, landColour, t, ln.from, r, h, sign, isRock, func(k int, off float64) (float64, float64) {
 					a := t.fine[ln.from+k]
 					return at(k, sign*(a.hw+a.wide[si]+off))
 				})
@@ -400,6 +418,9 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 		}
 		return nil
 	}
+	if err := add(fills, "terrain"); err != nil {
+		return err
+	}
 	if err := add(marks, "markings"); err != nil {
 		return err
 	}
@@ -480,7 +501,7 @@ func guardRail(p *gltf.Primitive, t *terrain, from int, r sideRun, dist []float6
 
 // retaining is a wall of dressed stone leaning back into the slope
 // (or rock under netting) along run, h its height at each sample.
-func retaining(p *gltf.Primitive, t *terrain, from int, r sideRun, h []float64, sign float64, rock bool, pos func(k int, off float64) (float64, float64)) {
+func retaining(p, fill *gltf.Primitive, land func(e, n float64) float64, clear func(e, n float64) bool, landColour func(e, n float64) [3]float32, t *terrain, from int, r sideRun, h []float64, sign float64, rock bool, pos func(k int, off float64) (float64, float64)) {
 	stone, coping := srgbLinear(0x6c665c), srgbLinear(0x5c5850)
 	rockC := srgbLinear(0x5e5a54)
 	batter := 0.18 // the face leans back this much per metre up
@@ -540,6 +561,66 @@ func retaining(p *gltf.Primitive, t *terrain, from int, r sideRun, h []float64, 
 			e0, n0 := pos(k, wallOffM+hk0*batter+0.4)
 			e1, n1 := pos(k+1, wallOffM+hk1*batter+0.4)
 			quad(p, t0, t1, [3]float64{e1, t1[1], -n1}, [3]float64{e0, t0[1], -n0}, [3]float64{0, 1, 0}, coping)
+		}
+	}
+	backfill(fill, land, clear, landColour, t, from, r, h, batter, rock, pos)
+}
+
+// backfill fills the land in behind a wall (owner, 2026-10-15: the walls
+// stood as free faces): from its top back into the slope until it meets
+// the land as drawn (or 12 m on, or short of another road, then down to
+// the land), so the slope ends at the wall's top as a cutting's does.
+func backfill(p *gltf.Primitive, land func(e, n float64) float64, clear func(e, n float64) bool, landColour func(e, n float64) [3]float32, t *terrain, from int, r sideRun, h []float64, batter float64, rock bool, pos func(k int, off float64) (float64, float64)) {
+	const far, step = 12.0, 0.5
+	back := 0.0 // the top's back edge past the face (the coping)
+	if !rock {
+		back = 0.4
+	}
+	type row [3][3]float64 // the top's back edge, halfway, where it meets the land
+	rows := make([]row, r.to-r.from+1)
+	for k := r.from; k <= r.to; k++ {
+		hk := h[k-r.from]
+		o0 := wallOffM + hk*batter + back
+		top := t.fine[from+k].ele + hk
+		meet, z := far, 0.0
+		for d := step; d <= far; d += step {
+			e, n := pos(k, o0+d)
+			if !clear(e, n) {
+				meet = math.Max(step, d-step) // short of another road: down to the land there
+				break
+			}
+			if z = land(e, n); z >= top-0.05 {
+				meet = d
+				break
+			}
+		}
+		e0, n0 := pos(k, o0-0.02)
+		e1, n1 := pos(k, o0+meet/2)
+		e2, n2 := pos(k, o0+meet)
+		z2 := land(e2, n2) + 0.03
+		zm := top + (z2-top)*0.5
+		rows[k-r.from] = row{{e0, top, -n0}, {e1, zm, -n1}, {e2, z2, -n2}}
+	}
+	for k := 0; k+1 < len(rows); k++ {
+		for j := range 2 {
+			a, b, c, d := rows[k][j], rows[k+1][j], rows[k+1][j+1], rows[k][j+1]
+			n := cross([3]float64{b[0] - a[0], b[1] - a[1], b[2] - a[2]}, [3]float64{d[0] - a[0], d[1] - a[1], d[2] - a[2]})
+			if n[1] < 0 {
+				n = [3]float64{-n[0], -n[1], -n[2]}
+				a, b, c, d = b, a, d, c
+			}
+			if l := math.Sqrt(dot3(n, n)); l > 0 {
+				n = scale3(n, 1/l)
+			}
+			base := uint32(len(p.Positions) / 3)
+			for _, q := range [4][3]float64{a, b, c, d} {
+				col := landColour(q[0], -q[2])
+				p.Positions = append(p.Positions, float32(q[0]), float32(q[1]), float32(q[2]))
+				p.Normals = append(p.Normals, float32(n[0]), float32(n[1]), float32(n[2]))
+				p.Colors = append(p.Colors, col[0], col[1], col[2])
+			}
+			tri(p, base, base+1, base+2, n)
+			tri(p, base, base+2, base+3, n)
 		}
 	}
 }

@@ -470,7 +470,7 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 	if err := w.addFences(&t, fences); err != nil {
 		return nil, err
 	}
-	if err := w.addRoadside(&t, ways, o.Buildings, parks); err != nil {
+	if err := w.addRoadside(&t, ways, o.Buildings, parks, ground); err != nil {
 		return nil, err
 	}
 	nearRoute := newRouteGrid(coarse, 400)

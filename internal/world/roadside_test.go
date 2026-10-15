@@ -32,7 +32,7 @@ func TestRoadsideFollowsTheSlope(t *testing.T) {
 	build := func(region string) (east, west, other int) {
 		tr := testTerrain(c, Options{Region: region, Elevation: elev})
 		w := &World{doc: gltf.New("test")}
-		if err := w.addRoadside(tr, nil, nil, nil); err != nil {
+		if err := w.addRoadside(tr, nil, nil, nil, 0); err != nil {
 			t.Fatal(err)
 		}
 		for _, p := range w.prims {

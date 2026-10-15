@@ -92,7 +92,11 @@ published); Copernicus GLO-30 free with a fixed notice on (modified)
 redistribution ("produced using Copernicus WorldDEM-30 © DLR e.V.
 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under
 COPERNICUS by the European Union and ESA; all rights reserved") plus a
-no-liability sentence. Check any imagery source before using it.
+no-liability sentence. IGN RGE ALTI (checked 2026-10-15 in IGN's own
+metadata, `data.geopf.fr/csw` record `IGNF_RGE-ALTI`): Licence Ouverte /
+Open Licence (Etalab 2.0, compatible with CC-BY), credit the source
+(`dem.RGEAltiAttribution` in the manifest). Check any imagery source
+before using it.
 
 ## Checks before calling it done
 

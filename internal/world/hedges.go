@@ -69,8 +69,11 @@ const (
 	// Front gardens: plots this long along the road, each its own hedge
 	// or none, where a building stands within gardenDepthM behind the
 	// hedge line.
-	gardenPlotM  = 11.0
-	gardenDepthM = 25.0
+	gardenPlotM = 11.0
+	// gardenWallDepthM: a garden wall only where the house stands within
+	// this behind it.
+	gardenWallDepthM = 10.0
+	gardenDepthM     = 25.0
 )
 
 // gardenMix: the share of front-garden plots with each kind of hedge;
@@ -314,15 +317,18 @@ func hedges(t *terrain, s *surface, sp *spots, wp *wayPlaces) []plant {
 						// A house behind the plot's middle, on this side of
 						// any other road.
 						me, mn := at(((float64(plot)+0.5)*gardenPlotM-sa)/(sb-sa), rx, rn, off)
-						house := -1
+						house, depth := -1, 0.0
 						for r := 1.5; r <= gardenDepthM && house < 0; r += 1.5 {
 							pe, pn := me+rx*r, mn+rn*r
 							if sp.roadNear(pe, pn, 0, -1) >= 0 {
 								break
 							}
-							house = sp.buildingAt(pe, pn)
+							house, depth = sp.buildingAt(pe, pn), r
 						}
-						if house < 0 {
+						// A wall fronts the house just behind it, not a
+						// meadow with a house far back (owner's mark at
+						// 5.34 km, 2026-10-16).
+						if house < 0 || kind == hWall && depth > gardenWallDepthM {
 							kind = -1
 						}
 						houseOf[pk] = house

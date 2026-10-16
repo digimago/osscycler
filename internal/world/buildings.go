@@ -71,29 +71,39 @@ func buildingMesh(p *gltf.Primitive, s *surface, st *style, f scenery.Footprint,
 	rng := splitmix(uint64(f.ID))
 	wall, roof := colours(st, f, rng)
 
-	// UVs: on a wall, metres along it and above the lowest ground under
-	// the house (the renderer draws its windows by them: storeys from the
-	// ground); elsewhere (roofs, gables' tops) v -1: no windows.
-	along := 0.0
-	uvWall := false
-	uOff := 0.0 // timberU on a timber-clad face
+	// The windows' layout, per face (owner, 2026-10-16: windows cut at
+	// corners, under the ground, through the roof line), laid out here and
+	// drawn by the renderer (surfaces.gdshader, kind 5) from the UVs: u in
+	// bays (window i centred at i + 0.5; only 0 ≤ u < count has windows;
+	// cladding adds its offset), v the height above the face's storey
+	// reference (rows of windows at winFloorM + storeyM·k); UV2 x the
+	// count plus the highest a window's top may reach over 100, y the
+	// ground over the reference at that point (a window's sill stays
+	// winGroundM over it). A face without windows: count 0.
+	pitch := winPitchMin + (winPitchMax-winPitchMin)*unit(splitmix(rng+17))
+	var lay winLayout
 	add := func(c [3]float32, n [3]float64, v ...[3]float64) {
 		first := uint32(len(p.Positions) / 3)
-		for k, q := range v {
+		for _, q := range v {
 			p.Positions = append(p.Positions, float32(q[0]), float32(q[1]), float32(-q[2]))
 			p.Normals = append(p.Normals, float32(n[0]), float32(n[1]), float32(-n[2]))
 			p.Colors = append(p.Colors, c[0], c[1], c[2])
-			if uvWall {
+			if lay.count > 0 || lay.clad > 0 {
 				// Along the face: the projection on its base edge v0 → v1.
 				ex, ez := v[1][0]-v[0][0], v[1][2]-v[0][2]
-				u := along
-				if l := math.Hypot(ex, ez); l > 0 {
-					u += ((q[0]-v[0][0])*ex + (q[2]-v[0][2])*ez) / l
+				x, l := 0.0, math.Hypot(ex, ez)
+				if l > 0 {
+					x = ((q[0]-v[0][0])*ex + (q[2]-v[0][2])*ez) / l
 				}
-				_ = k
-				p.UVs = append(p.UVs, float32(u+uOff), float32(q[1]-lo))
+				g := lay.groundA
+				if l > 0 {
+					g += (lay.groundB - lay.groundA) * x / l
+				}
+				p.UVs = append(p.UVs, float32((x-lay.x0)/pitch+lay.clad), float32(q[1]-lay.ref))
+				p.UV2s = append(p.UV2s, float32(float64(lay.count)+lay.maxTop/100), float32(g-lay.ref))
 			} else {
 				p.UVs = append(p.UVs, 0, -1)
+				p.UV2s = append(p.UV2s, 0, 0)
 			}
 		}
 		g := [3]float64{n[0], n[1], -n[2]}
@@ -113,9 +123,11 @@ func buildingMesh(p *gltf.Primitive, s *surface, st *style, f scenery.Footprint,
 			continue
 		}
 		out := [3]float64{dy / l, 0, -dx / l}
-		uvWall, along = l >= 2.5, 0 // a wall too short for a window has none
+		cnt := int(math.Floor((l - 2*winMarginM) / pitch))
+		lay = winLayout{count: max(0, cnt), x0: (l - float64(max(0, cnt))*pitch) / 2, ref: lo,
+			maxTop: eave - lo - winUnderEaveM, groundA: s.at(a[0], a[1]), groundB: s.at(b[0], b[1])}
 		add(wall, out, pt(a, base), pt(b, base), pt(b, eave), pt(a, eave))
-		uvWall = false
+		lay = winLayout{}
 	}
 
 	up := [3]float64{0, 1, 0}
@@ -166,9 +178,25 @@ func buildingMesh(p *gltf.Primitive, s *surface, st *style, f scenery.Footprint,
 		}
 		gable(add, pt, rect, ax, ay, eave, f.RoofM, roof, func(end float64) [3]float32 {
 			off, c := cladOf(end)
-			uvWall, along, uOff = true, 0, off
+			// One row in the gable, its sill winGableSillM over the eave,
+			// as many centred bays as fit under the slope with their
+			// shutters (half a bay out from the window's middle).
+			hw := rect.short / 2
+			top := winGableSillM + winHeightM // over the eave
+			k := 0
+			for try := 1; try <= 6; try++ {
+				outer := float64(try) * pitch / 2 // the outermost bay's edge from the middle
+				if f.RoofM*(1-outer/hw)-0.2 < top {
+					break
+				}
+				k = try
+			}
+			lay = winLayout{count: k, x0: hw - float64(k)*pitch/2, clad: off,
+				// The row's sill at the storeys' first sill: winFloorM + the sill height.
+				ref: eave + winGableSillM - (winFloorM + winSillM), maxTop: winFloorM + winSillM + winHeightM + 0.01,
+				groundA: -100, groundB: -100}
 			return c
-		}, func() { uvWall, uOff = false, 0 })
+		}, func() { lay = winLayout{} })
 	case convex(pts) && n <= maxHipPoints:
 		var cx, cy float64
 		for _, q := range pts {
@@ -217,6 +245,28 @@ func gable(add func([3]float32, [3]float64, ...[3]float64), pt func([2]float64, 
 		done()
 	}
 }
+
+// A face's windows (buildingMesh's add): count bays from x0 (metres
+// along the face), the storeys' reference height, how high a window's
+// top may reach over it, the ground at either end of the face, its
+// cladding's u offset.
+type winLayout struct {
+	count                  int
+	x0, ref, maxTop        float64
+	groundA, groundB, clad float64
+}
+
+// Window layout (the renderer's surfaces.gdshader keeps the same
+// measures for a window in its bay and its storey).
+const (
+	winPitchMin, winPitchMax = 2.4, 2.9 // a bay's width, per house
+	winMarginM               = 0.4      // the bays keep this far off a wall's ends
+	winFloorM                = 0.25     // the first storey's floor over the lowest ground
+	winSillM                 = 0.9      // a sill over its floor
+	winHeightM               = 1.3      // a window's height
+	winUnderEaveM            = 0.15     // a window's top keeps this far under the eave
+	winGableSillM            = 0.6      // the gable row's sill over the eave
+)
 
 // Added to a wall's u where it is clad (the renderer draws the cladding;
 // surfaces.gdshader's kind 5): timber boards, zinc squares, slate.

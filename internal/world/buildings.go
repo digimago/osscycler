@@ -260,7 +260,7 @@ type winLayout struct {
 // measures for a window in its bay and its storey).
 const (
 	winPitchMin, winPitchMax = 2.4, 2.9 // a bay's width, per house
-	winMarginM               = 0.4      // the bays keep this far off a wall's ends
+	winMarginM               = 0.75     // the bays keep this far off a wall's ends: shutters a metre or more from a corner (owner, 2026-10-16)
 	winFloorM                = 0.25     // the first storey's floor over the lowest ground
 	winSillM                 = 0.9      // a sill over its floor
 	winHeightM               = 1.3      // a window's height

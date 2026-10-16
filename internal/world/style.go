@@ -36,6 +36,7 @@ type style struct {
 	reliefM          float64 // the meso relief's strength on slopes, m (0: none; gland.relief)
 	dryAboveM        float64 // grass dries towards straw above this height (0: never; Manifest.Ground.DryAboveM)
 	roadside         bool    // barriers, retaining walls, rock netting, bend posts, kilometre markers (roadside.go)
+	quays            bool    // stone quays along rivers in town (quays.go)
 	markings         bool    // white centre and edge lines
 	snowPoleAboveM   float64 // snow poles along roads above this height (0: none)
 	cycleLane        uint32  // a cycle lane's surface
@@ -192,6 +193,7 @@ var styleFR = style{
 	reliefM:          1.6,
 	dryAboveM:        1150,
 	roadside:         true,
+	quays:            true,
 	markings:         true,
 	snowPoleAboveM:   800,      // the jalons along the D430 and the passes
 	cycleLane:        0x4c4d50, // bandes cyclables: asphalt, marked by a line

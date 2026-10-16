@@ -369,9 +369,11 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 	sheets := map[[2]int][]gltf.Primitive{}
 	var allSheets []gltf.Primitive
 	dryIx := newSurfaceIndex(under, func(int) bool { return true }, gOutlineMaxTriM) // before the water joins
+	var exacts []exactWater
 	for _, x := range t.waterOutlines(keys, true) {
 		// A verge and a bank between a road and the water (ditchBanks).
 		x.ring = ditchBanks(x.ring, func(e, n, max float64) float64 { return cut.dist(e, -n, max) })
+		exacts = append(exacts, x)
 		p := gWaterSheet(&t, x, pre.dryAt, waterMat)
 		sheets[x.key] = append(sheets[x.key], p)
 		allSheets = append(allSheets, p)
@@ -407,6 +409,9 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 	close(next)
 	wg.Wait()
 	land.underRoads(meshes)
+	if err := w.addQuays(&t, exacts, land.heightAt, ground); err != nil {
+		return nil, err
+	}
 	waterChunks := 0
 	for k, p := range meshes {
 		if len(p.Positions) == 0 {

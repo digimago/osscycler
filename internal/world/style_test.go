@@ -341,3 +341,17 @@ func TestPropertyWallsAreLevelWithPillars(t *testing.T) {
 		t.Errorf("a 2 m frontage got a wall: %v", ps)
 	}
 }
+
+func TestResampleRing(t *testing.T) {
+	sq := [][2]float64{{0, 0}, {10, 0}, {10, 10}, {0, 10}}
+	pts := resampleRing(sq, 2)
+	if len(pts) != 20 {
+		t.Fatalf("a 40 m ring every 2 m: %d points, want 20", len(pts))
+	}
+	for i, p := range pts {
+		q := pts[(i+1)%len(pts)]
+		if d := math.Hypot(q[0]-p[0], q[1]-p[1]); d > 2.01 {
+			t.Errorf("points %d and %d %.2f m apart", i, i+1, d)
+		}
+	}
+}

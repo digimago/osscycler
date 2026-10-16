@@ -315,6 +315,9 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 	for k, p := range pavedIslands(roads, ground, roadMats.surface[scenery.SurfaceAsphalt], o.ChunkM) {
 		roads[k] = append(roads[k], p)
 	}
+	for _, ps := range roads {
+		stitchSlivers(ps) // each chunk's own; any order
+	}
 	// The carriageway as drawn: the rider's path again, its turns swept as
 	// wide as it allows, and the riding line kept on it.
 	var all []gltf.Primitive

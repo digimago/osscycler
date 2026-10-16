@@ -13,8 +13,9 @@
 //   2 rock: fractured rock under diamond-mesh netting;
 //   3 setts: a paved gutter's domed granite setts;
 //   4 grate: a drain's cast-iron bars over a dark pit;
-//   5 building: walls with windows by storey (UV: metres along the wall,
-//     above the ground under the house; v < 0 is a roof, plain), with
+//   5 building: walls with windows as the builder laid them out (UV in
+//     bays and storeys, UV2 their count, top and ground; see buildings.go's
+//     winLayout), with
 //     shutters in a French world (owner, 2026-10-16: La Bresse's houses
 //     face the valley with rows of shuttered windows).
 // Detail fades out with distance before it would shimmer.
@@ -193,23 +194,22 @@ void fragment() {
 				rough = clad == 2.0 ? 0.45 : 0.6; // zinc a little sheen
 			}
 		}
-		if (w.y >= 0.0 && abs(wnrm.y) < 0.3) {
-			// Storeys 2.8 m, windows 1.0 × 1.3 m from 0.9 m above each
-			// floor, every 2.7 m along the wall; each building's own rhythm
-			// by its colour.
+		// Windows as the builder laid them out (buildings.go's winLayout):
+		// u in bays, window i centred at i + 0.5 for 0 ≤ i < count; rows at
+		// 0.25 + 2.8k over the face's reference, sill 0.9 over the floor,
+		// 1.3 high, only up to UV2's top and with the sill over its ground.
+		float count = floor(UV2.x);
+		float maxTop = fract(UV2.x) * 100.0;
+		float bay = floor(w.x);
+		float k = floor((w.y - 0.25) / 2.8);
+		float sill = 0.25 + 2.8 * k + 0.9;
+		bool row = w.y >= 0.0 && sill + 1.3 <= maxTop && sill >= UV2.y + 0.4;
+		if (count > 0.0 && bay >= 0.0 && bay < count && row && abs(wnrm.y) < 0.3) {
 			float seed = h21(COLOR.rg * 97.0 + COLOR.b * 13.0);
-			float pitch = 2.5 + 0.6 * seed;
-			float floorY = w.y - 0.25;
-			float st = floor(floorY / 2.8);
-			vec2 cell = vec2(fract(w.x / pitch + 0.37 * seed), fract(floorY / 2.8));
-			vec2 wsz = vec2(1.0 / pitch, 1.3 / 2.8);
-			vec2 lo = vec2(0.5 - wsz.x / 2.0, 0.9 / 2.8);
-			vec2 q = (cell - lo) / wsz; // 0..1 inside the window
-			float inWin = step(0.0, q.x) * step(q.x, 1.0) * step(0.0, q.y) * step(q.y, 1.0);
+			float cx = fract(w.x);
+			vec2 q = vec2((cx - 0.31) / 0.38, (w.y - sill) / 1.3); // 0..1 inside the window
 			float fine = near(w, 0.05);
-			// Not every bay has a window; the ground floor of some none.
-			float bay = floor(w.x / pitch + 0.37 * seed);
-			inWin *= step(0.25, h21(vec2(bay, st) + seed)) * fine;
+			float inWin = step(0.0, q.x) * step(q.x, 1.0) * step(0.0, q.y) * step(q.y, 1.0) * fine;
 			if (inWin > 0.0) {
 				// Glass, dark and a little reflective, in a white frame.
 				float frame = 1.0 - inside(q.x - 0.5, 0.86) * inside(q.y - 0.5, 0.88);
@@ -218,15 +218,12 @@ void fragment() {
 				rough = mix(0.15, 0.6, max(frame, bar));
 				h = -0.06 * (1.0 - frame);
 			} else if (shutters) {
-				// Shutters either side of each window, the building's colour.
+				// Shutters either side, the house's colour, slatted.
 				vec3 sc = h21(vec2(seed, 5.0)) < 0.5 ? vec3(0.22, 0.13, 0.07) : (h21(vec2(seed, 9.0)) < 0.5 ? vec3(0.28, 0.33, 0.27) : vec3(0.55, 0.5, 0.42));
-				float sw = 0.48 / pitch;
-				float left = step(lo.x - sw, cell.x) * step(cell.x, lo.x);
-				float right = step(lo.x + wsz.x, cell.x) * step(cell.x, lo.x + wsz.x + sw);
-				float rows = step(lo.y, cell.y) * step(cell.y, lo.y + wsz.y);
-				float sh = max(left, right) * rows * step(0.25, h21(vec2(bay, st) + seed)) * fine;
-				// Slats.
-				float slat = 0.85 + 0.15 * step(0.5, fract(floorY * 12.0));
+				float side = step(0.12, cx) * step(cx, 0.31) + step(0.69, cx) * step(cx, 0.88);
+				float rows = step(0.0, q.y) * step(q.y, 1.0);
+				float sh = side * rows * fine;
+				float slat = 0.85 + 0.15 * step(0.5, fract(w.y * 12.0));
 				c = mix(c, sc * slat, sh);
 				h = 0.02 * sh;
 			}

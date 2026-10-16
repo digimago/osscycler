@@ -855,6 +855,7 @@ type spots struct {
 	inArea func(e, n float64) bool
 	// inBuilding tells whether e, n is inside a building's footprint.
 	inBuilding func(e, n float64) bool
+	buildingAt func(e, n float64) int // the footprint at e, n (its index), -1 for none
 	// clearance is how far e, n is from the nearest road's edge (with its
 	// sidewalks), building wall or car park edge: 0 on or in one, at most
 	// max.
@@ -896,24 +897,33 @@ func newSpots(t *terrain, land *scenery.LandMap, fps []scenery.Footprint, parks 
 	type area struct {
 		poly     [][2]float64
 		building bool
+		id       int // the footprint's index, -1 for a car park
 	}
 	blocked := map[[2]int][]area{}
-	addArea := func(poly [][2]float64, pad float64, building bool) {
+	addArea := func(poly [][2]float64, pad float64, building bool, id int) {
 		lo, hi := [2]float64{math.Inf(1), math.Inf(1)}, [2]float64{math.Inf(-1), math.Inf(-1)}
 		for _, q := range poly {
 			lo[0], lo[1], hi[0], hi[1] = math.Min(lo[0], q[0]), math.Min(lo[1], q[1]), math.Max(hi[0], q[0]), math.Max(hi[1], q[1])
 		}
 		for gx := int(math.Floor((lo[0] - pad) / 20)); gx <= int(math.Floor((hi[0]+pad)/20)); gx++ {
 			for gy := int(math.Floor((lo[1] - pad) / 20)); gy <= int(math.Floor((hi[1]+pad)/20)); gy++ {
-				blocked[[2]int{gx, gy}] = append(blocked[[2]int{gx, gy}], area{poly, building})
+				blocked[[2]int{gx, gy}] = append(blocked[[2]int{gx, gy}], area{poly, building, id})
 			}
 		}
 	}
-	for _, f := range fps {
-		addArea(f.Outline, clearHouseM, true)
+	for i, f := range fps {
+		addArea(f.Outline, clearHouseM, true, i)
 	}
 	for _, p := range parks {
-		addArea(p.Outline, 0, false)
+		addArea(p.Outline, 0, false, -1)
+	}
+	sp.buildingAt = func(e, n float64) int {
+		for _, a := range blocked[[2]int{int(math.Floor(e / 20)), int(math.Floor(n / 20))}] {
+			if a.building && inPoly(a.poly, e, n) {
+				return a.id
+			}
+		}
+		return -1
 	}
 	sp.inBuilding = func(e, n float64) bool {
 		for _, a := range blocked[[2]int{int(math.Floor(e / 20)), int(math.Floor(n / 20))}] {

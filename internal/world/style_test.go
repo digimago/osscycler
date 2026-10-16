@@ -294,3 +294,50 @@ func TestReliefOnSlopesOnly(t *testing.T) {
 		t.Errorf("a Dutch world: relief %.2f m", m)
 	}
 }
+
+// A property's wall (owner, 2026-10-16): pillars at both ends, the top
+// level in steps with a pillar at each, the base never more than
+// wallRaiseM over the ground nor wallSinkM under it; a gate between two
+// pillars in some.
+func TestPropertyWallsAreLevelWithPillars(t *testing.T) {
+	// 20 m of frontage climbing 8 % (1.6 m).
+	var run []wallSpot
+	for i := range 21 {
+		run = append(run, wallSpot{e: float64(i), n: 0, de: 1, dn: 0, ground: 0.08 * float64(i)})
+	}
+	gates := 0
+	for seed := uint64(0); seed < 40; seed++ {
+		ps := propertyWall(run, splitmix(seed))
+		var pillars, walls []wallPiece
+		for _, p := range ps {
+			switch p.kind {
+			case hPillar:
+				pillars = append(pillars, p)
+			case hWall:
+				walls = append(walls, p)
+			case hGate:
+				gates++
+			}
+		}
+		if len(pillars) < 3 || pillars[0].e != 0 || pillars[len(pillars)-1].e != 20 {
+			t.Fatalf("seed %d: pillars %v, want one at each end and steps between", seed, pillars)
+		}
+		levels := map[float64]bool{}
+		for _, w := range walls {
+			g := 0.08 * w.e
+			if w.y-g > wallRaiseM+0.05 || g-w.y > wallSinkM+0.05 {
+				t.Fatalf("seed %d: a segment at %.1f m stands at %.2f over ground %.2f", seed, w.e, w.y, g)
+			}
+			levels[w.y] = true
+		}
+		if len(levels) < 2 || len(levels) > 6 {
+			t.Errorf("seed %d: %d levels on a 1.6 m climb", seed, len(levels))
+		}
+	}
+	if gates < 10 || gates > 35 {
+		t.Errorf("%d of 40 properties with a gate, want about half", gates)
+	}
+	if ps := propertyWall(run[:3], 1); ps != nil {
+		t.Errorf("a 2 m frontage got a wall: %v", ps)
+	}
+}

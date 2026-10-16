@@ -2,7 +2,6 @@ package world
 
 import (
 	"math"
-	"sort"
 
 	"github.com/digimago/osscycler/internal/gltf"
 )
@@ -193,27 +192,29 @@ func triHeight(q [3][3]float64, x, z float64) (float64, bool) {
 
 // closeOpenWalks closes every sidewalk edge that nothing closes (owner,
 // 2026-10-16, mark at 0.51 km: looking through a sidewalk where a
-// junction's met a road's): an edge of a slab no other slab continues and
-// no face hangs from goes down by walkFootM + its kerb into the ground.
-// It returns how many edges it closed.
+// junction's met a road's): an edge with sidewalk slab on one side only
+// and no face hanging from it gets a face down by walkFootM + its kerb
+// into the ground. Judged by geometry, probing either side of the edge's
+// middle, not by matching vertices (clipped slabs' shared edges don't
+// match to the bit, and faces hung there flickered against their
+// neighbours, owner 2026-10-16). It returns how many edges it closed.
 func closeOpenWalks(chunks map[[2]int][]gltf.Primitive, walkMat, kerbMat int) int {
-	type pt [3]int32
-	q := func(x, y, z float32) pt { return pt{int32(x * 50), int32(y * 50), int32(z * 50)} } // 2 cm
-	type ekey [2]pt
-	norm := func(a, b pt) ekey {
-		if b[0] < a[0] || b[0] == a[0] && (b[2] < a[2] || b[2] == a[2] && b[1] < a[1]) {
-			a, b = b, a
-		}
-		return ekey{a, b}
+	const cell, probe, near = 2.0, 0.03, 0.03
+	type tri [3][3]float64
+	type seg struct{ a, b [3]float64 }
+	slabs := map[[2]int][]tri{}
+	tops := map[[2]int][]seg{}
+	key := func(x, z float64) [2]int { return [2]int{int(math.Floor(x / cell)), int(math.Floor(z / cell))} }
+	at := func(p *gltf.Primitive, i uint32) [3]float64 {
+		return [3]float64{float64(p.Positions[3*i]), float64(p.Positions[3*i+1]), float64(p.Positions[3*i+2])}
 	}
-	slab := map[ekey]int{}
-	hung := map[ekey]bool{} // a face's top edge
-	type ref struct {
+	type edge struct {
 		k    [2]int
 		pi   int
-		a, b uint32
+		a, b [3]float64
 	}
-	first := map[ekey]ref{}
+	var cands []edge
+	var faceTris []tri
 	keys := chunkOrder(chunks)
 	for _, k := range keys {
 		for pi := range chunks[k] {
@@ -221,70 +222,116 @@ func closeOpenWalks(chunks map[[2]int][]gltf.Primitive, walkMat, kerbMat int) in
 			if p.Material != walkMat && p.Material != kerbMat {
 				continue
 			}
-			at := func(i uint32) (float32, float32, float32) {
-				return p.Positions[3*i], p.Positions[3*i+1], p.Positions[3*i+2]
-			}
 			for t := 0; t+2 < len(p.Indices); t += 3 {
-				ids := [3]uint32{p.Indices[t], p.Indices[t+1], p.Indices[t+2]}
-				var v [3][3]float32
-				for j, id := range ids {
-					v[j][0], v[j][1], v[j][2] = at(id)
-				}
-				ny := (v[1][2]-v[0][2])*(v[2][0]-v[0][0]) - (v[1][0]-v[0][0])*(v[2][2]-v[0][2])
-				if math.Abs(float64(ny)) < 1e-6 {
-					// A face: its two highest corners are the edge it hangs from.
-					hi := [2]int{0, 1}
-					for j := 2; j < 3; j++ {
-						if v[j][1] > v[hi[0]][1] {
-							hi[0] = j
-						} else if v[j][1] > v[hi[1]][1] {
-							hi[1] = j
-						}
-					}
-					a, b := v[hi[0]], v[hi[1]]
-					hung[norm(q(a[0], a[1], a[2]), q(b[0], b[1], b[2]))] = true
+				q := tri{at(p, p.Indices[t]), at(p, p.Indices[t+1]), at(p, p.Indices[t+2])}
+				ny := (q[1][2]-q[0][2])*(q[2][0]-q[0][0]) - (q[1][0]-q[0][0])*(q[2][2]-q[0][2])
+				if math.Abs(ny) < 1e-6 {
+					faceTris = append(faceTris, q)
 					continue
 				}
 				if p.Material != walkMat {
 					continue
 				}
-				for j := range 3 {
-					a, b := v[j], v[(j+1)%3]
-					e := norm(q(a[0], a[1], a[2]), q(b[0], b[1], b[2]))
-					slab[e]++
-					if _, ok := first[e]; !ok {
-						first[e] = ref{k, pi, ids[j], ids[(j+1)%3]}
+				lo, hi := [2]float64{math.Inf(1), math.Inf(1)}, [2]float64{math.Inf(-1), math.Inf(-1)}
+				for _, v := range q {
+					lo = [2]float64{math.Min(lo[0], v[0]), math.Min(lo[1], v[2])}
+					hi = [2]float64{math.Max(hi[0], v[0]), math.Max(hi[1], v[2])}
+				}
+				for gx := int(math.Floor(lo[0] / cell)); gx <= int(math.Floor(hi[0]/cell)); gx++ {
+					for gz := int(math.Floor(lo[1] / cell)); gz <= int(math.Floor(hi[1]/cell)); gz++ {
+						slabs[[2]int{gx, gz}] = append(slabs[[2]int{gx, gz}], q)
+					}
+				}
+				for e := range 3 {
+					cands = append(cands, edge{k, pi, q[e], q[(e+1)%3]})
+				}
+			}
+		}
+	}
+	// A face's top edge: both its ends stand over another of the faces'
+	// vertices at the same place (a face is a quad from foot to top, also
+	// where it climbs with the road).
+	type xz [2]int64
+	lowest := map[xz]float64{}
+	pk := func(v [3]float64) xz { return xz{int64(math.Round(v[0] * 200)), int64(math.Round(v[2] * 200))} }
+	for _, q := range faceTris {
+		for _, v := range q {
+			if y, ok := lowest[pk(v)]; !ok || v[1] < y {
+				lowest[pk(v)] = v[1]
+			}
+		}
+	}
+	upper := func(v [3]float64) bool { return v[1] > lowest[pk(v)]+0.02 }
+	for _, q := range faceTris {
+		for e := range 3 {
+			a, b := q[e], q[(e+1)%3]
+			if upper(a) && upper(b) {
+				mk := key((a[0]+b[0])/2, (a[2]+b[2])/2)
+				tops[mk] = append(tops[mk], seg{a, b})
+			}
+		}
+	}
+	onSlab := func(x, y, z float64) bool {
+		for _, q := range slabs[key(x, z)] {
+			if !inTri2([6]float64{q[0][0], q[0][2], q[1][0], q[1][2], q[2][0], q[2][2]}, x, z) {
+				continue
+			}
+			if h, ok := triHeight(q, x, z); ok && math.Abs(h-y) < 0.1 {
+				return true
+			}
+		}
+		return false
+	}
+	hung := func(a, b [3]float64) bool {
+		mx, my, mz := (a[0]+b[0])/2, (a[1]+b[1])/2, (a[2]+b[2])/2
+		for gx := -1; gx <= 1; gx++ {
+			for gz := -1; gz <= 1; gz++ {
+				k := key(mx, mz)
+				for _, sg := range tops[[2]int{k[0] + gx, k[1] + gz}] {
+					dx, dz := sg.b[0]-sg.a[0], sg.b[2]-sg.a[2]
+					l2 := dx*dx + dz*dz
+					f := 0.0
+					if l2 > 0 {
+						f = math.Max(0, math.Min(1, ((mx-sg.a[0])*dx+(mz-sg.a[2])*dz)/l2))
+					}
+					if math.Hypot(mx-sg.a[0]-f*dx, mz-sg.a[2]-f*dz) < near && math.Abs(my-sg.a[1]-f*(sg.b[1]-sg.a[1])) < near {
+						return true
 					}
 				}
 			}
 		}
-	}
-	es := make([]ekey, 0, len(slab))
-	for e, n := range slab {
-		if n == 1 && !hung[e] {
-			es = append(es, e)
-		}
-	}
-	sort.Slice(es, func(i, j int) bool {
-		a, b := es[i], es[j]
-		for x := range 2 {
-			for c := range 3 {
-				if a[x][c] != b[x][c] {
-					return a[x][c] < b[x][c]
-				}
-			}
-		}
 		return false
-	})
-	for _, e := range es {
-		r := first[e]
-		p := &chunks[r.k][r.pi]
-		var a, b [3]float32
-		copy(a[:], p.Positions[3*r.a:3*r.a+3])
-		copy(b[:], p.Positions[3*r.b:3*r.b+3])
-		hangFace(p, a, b, float32(kerbM+walkFootM))
 	}
-	return len(es)
+	closed := 0
+	seen := map[[4]int64]bool{}
+	for _, e := range cands {
+		dx, dz := e.b[0]-e.a[0], e.b[2]-e.a[2]
+		l := math.Hypot(dx, dz)
+		if l < 0.02 {
+			continue
+		}
+		// One closing per edge, whichever triangle lists it.
+		q := func(v float64) int64 { return int64(math.Round(v * 100)) }
+		k1 := [2]int64{q(e.a[0]), q(e.a[2])}
+		k2 := [2]int64{q(e.b[0]), q(e.b[2])}
+		if k2[0] < k1[0] || k2[0] == k1[0] && k2[1] < k1[1] {
+			k1, k2 = k2, k1
+		}
+		sk := [4]int64{k1[0], k1[1], k2[0], k2[1]}
+		if seen[sk] {
+			continue
+		}
+		seen[sk] = true
+		mx, my, mz := (e.a[0]+e.b[0])/2, (e.a[1]+e.b[1])/2, (e.a[2]+e.b[2])/2
+		nx, nz := -dz/l*probe, dx/l*probe
+		if onSlab(mx+nx, my, mz+nz) == onSlab(mx-nx, my, mz-nz) || hung(e.a, e.b) {
+			continue
+		}
+		p := &chunks[e.k][e.pi]
+		hangFace(p, [3]float32{float32(e.a[0]), float32(e.a[1]), float32(e.a[2])}, [3]float32{float32(e.b[0]), float32(e.b[1]), float32(e.b[2])}, float32(kerbM+walkFootM))
+		closed++
+	}
+	return closed
 }
 
 // hangFace adds a face from edge a-b down by drop, seen from both sides.

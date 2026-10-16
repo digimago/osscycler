@@ -77,3 +77,39 @@ func TestOpenSidewalkEdgesAreClosed(t *testing.T) {
 		t.Errorf("%d edges closed, want 5 (one has its kerb)", n)
 	}
 }
+
+// Slabs whose shared edge doesn't match to the bit (clipped pieces) are
+// one sidewalk there: no face hangs inside it (owner, 2026-10-16: the
+// sidewalk's edge flickered where such faces stood).
+func TestSidewalkSeamsAreNotClosed(t *testing.T) {
+	slab := func(x0, x1 float32) gltf.Primitive {
+		p := gltf.Primitive{Material: 2}
+		p.Positions = []float32{x0, kerbM, 0, x1, kerbM, 0, x1, kerbM, 2, x0, kerbM, 2}
+		p.Normals = []float32{0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0}
+		p.Indices = []uint32{0, 2, 1, 0, 3, 2}
+		return p
+	}
+	// The second slab starts a millimetre past where the first ends.
+	chunks := map[[2]int][]gltf.Primitive{{0, 0}: {slab(0, 3), slab(3.001, 6)}}
+	if n := closeOpenWalks(chunks, 2, 3); n != 6 {
+		t.Errorf("%d edges closed, want the outline's 6, not the seam", n)
+	}
+}
+
+// On a climbing road a sidewalk's kerb face rises along it: its top edge
+// still closes the slab's edge (owner, 2026-10-16: duplicate faces on
+// sloped sidewalks flickered).
+func TestSlopedSidewalkKeepsItsKerb(t *testing.T) {
+	// A slab 6 m long climbing 4 %, its kerb face along z = 0.
+	y := func(x float32) float32 { return kerbM + 0.04*x }
+	s := gltf.Primitive{Material: 2}
+	s.Positions = []float32{0, y(0), 0, 6, y(6), 0, 6, y(6), 2, 0, y(0), 2}
+	s.Indices = []uint32{0, 2, 1, 0, 3, 2}
+	k := gltf.Primitive{Material: 3}
+	k.Positions = []float32{0, y(0), 0, 6, y(6), 0, 6, y(6) - kerbM, 0, 0, y(0) - kerbM, 0}
+	k.Indices = []uint32{0, 1, 2, 0, 2, 3}
+	chunks := map[[2]int][]gltf.Primitive{{0, 0}: {s, k}}
+	if n := closeOpenWalks(chunks, 2, 3); n != 3 {
+		t.Errorf("%d edges closed, want 3 (the kerb's edge has its face)", n)
+	}
+}

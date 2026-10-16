@@ -48,6 +48,8 @@ public sealed class Manifest
     [JsonPropertyName("road")] public RoadInfo Road { get; set; } = new();
     [JsonPropertyName("terrain")] public TerrainInfo Terrain { get; set; } = new();
     [JsonPropertyName("ground")] public GroundInfo Ground { get; set; } = new();
+    // The style the world was built in ("fr"), "" for the Dutch one.
+    [JsonPropertyName("region")] public string Region { get; set; } = "";
 
     public sealed class TerrainInfo
     {
@@ -156,7 +158,7 @@ public sealed class World
         if (err != Error.Ok)
             throw new IOException($"loading {m.Model}: {err}");
         var scene = (Node3D)doc.GenerateScene(state);
-        var terrain = Dress(scene);
+        var terrain = Dress(scene, m.Region == "fr");
         Plant(scene, m, dir, bloom);
         return new World(m, scene, relief, GroundMap.Load(m, dir, scene), terrain);
     }
@@ -166,7 +168,7 @@ public sealed class World
     // base colour: the terrain's land cover is in them. The terrain gets
     // its own shader (shaders/terrain.gdshader: the land cover with detail
     // on top).
-    static ShaderMaterial Dress(Node scene)
+    static ShaderMaterial Dress(Node scene, bool shutters = false)
     {
         var terrain = new ShaderMaterial { Shader = GD.Load<Shader>("res://shaders/terrain.gdshader") };
         // Surfaces with their detail drawn (shaders/surfaces.gdshader), by
@@ -179,6 +181,7 @@ public sealed class World
             {
                 m = new ShaderMaterial { Shader = surfaceShader };
                 m.SetShaderParameter("kind", kind);
+                m.SetShaderParameter("shutters", shutters);
                 surfaces[name] = m;
             }
             return m;
@@ -233,6 +236,7 @@ public sealed class World
         "rock" => 2,
         "setts" => 3,
         "grate" => 4,
+        "building" => 5,
         _ => null,
     };
 

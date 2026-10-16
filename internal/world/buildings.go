@@ -56,12 +56,26 @@ func buildingMesh(p *gltf.Primitive, s *surface, st *style, f scenery.Footprint)
 	rng := splitmix(uint64(f.ID))
 	wall, roof := colours(st, f, rng)
 
+	// UVs: on a wall, metres along it and above the lowest ground under
+	// the house (the renderer draws its windows by them: storeys from the
+	// ground); elsewhere (roofs, gables' tops) v -1: no windows.
+	along := 0.0
+	uvWall := false
 	add := func(c [3]float32, n [3]float64, v ...[3]float64) {
 		first := uint32(len(p.Positions) / 3)
-		for _, q := range v {
+		for k, q := range v {
 			p.Positions = append(p.Positions, float32(q[0]), float32(q[1]), float32(-q[2]))
 			p.Normals = append(p.Normals, float32(n[0]), float32(n[1]), float32(-n[2]))
 			p.Colors = append(p.Colors, c[0], c[1], c[2])
+			if uvWall {
+				u := along
+				if k == 1 || k == 2 {
+					u = along + math.Hypot(v[1][0]-v[0][0], v[1][2]-v[0][2])
+				}
+				p.UVs = append(p.UVs, float32(u), float32(q[1]-lo))
+			} else {
+				p.UVs = append(p.UVs, 0, -1)
+			}
 		}
 		g := [3]float64{n[0], n[1], -n[2]}
 		for k := 1; k+1 < len(v); k++ {
@@ -80,7 +94,9 @@ func buildingMesh(p *gltf.Primitive, s *surface, st *style, f scenery.Footprint)
 			continue
 		}
 		out := [3]float64{dy / l, 0, -dx / l}
+		uvWall, along = l >= 2.5, 0 // a wall too short for a window has none
 		add(wall, out, pt(a, base), pt(b, base), pt(b, eave), pt(a, eave))
+		uvWall = false
 	}
 
 	up := [3]float64{0, 1, 0}

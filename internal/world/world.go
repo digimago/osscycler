@@ -183,6 +183,9 @@ type Manifest struct {
 		DryAboveM float64 `json:"dry_above_m,omitempty"`
 	} `json:"ground"`
 	Attribution []string `json:"attribution"`
+	// Region is the style the world was built in when not the Dutch one
+	// ("fr"): renderers draw its own details (shutters).
+	Region string `json:"region,omitempty"`
 }
 
 const frameNote = "metres; x east, y up (the course's elevation), z south of the origin; glTF axes"
@@ -600,6 +603,9 @@ func Build(c *course.Course, o Options) (*World, error) {
 
 	m := &w.Manifest
 	m.Format, m.Version, m.Generator, m.Stamp = Format, Version, o.Generator, o.Stamp
+	if o.Region != "" && o.Region != RegionNL {
+		m.Region = o.Region
+	}
 	m.Course.ID, m.Course.Name, m.Course.DistanceM, m.Course.Loop = c.ID, c.Name, round(c.Distance), c.Loop
 	m.Origin.Lat, m.Origin.Lon = c.Origin()
 	m.Frame = frameNote

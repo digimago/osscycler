@@ -524,6 +524,9 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 
 	m := &w.Manifest
 	m.Format, m.Version, m.Generator, m.Stamp = Format, Version, o.Generator, o.Stamp
+	if o.Region != "" && o.Region != RegionNL {
+		m.Region = o.Region
+	}
 	m.Course.ID, m.Course.Name, m.Course.DistanceM, m.Course.Loop = c.ID, c.Name, round(c.Distance), c.Loop
 	m.Origin.Lat, m.Origin.Lon = c.Origin()
 	m.Frame = frameNote

@@ -525,12 +525,7 @@ func (g *gland) coarseNear(key [2]int) []sample {
 // nearest road's edge. Easing to the centre lines alone stood the land
 // 13 cm over a junction's corner, between two roads at their own heights.
 func (g *gland) blend(e, n, base float64) (h, gap, edge float64) {
-	type piece struct {
-		k      [2]int
-		gap    float64
-		ele    float64
-		qe, qn float64 // the nearest point on its centre line
-	}
+	type piece = gPiece
 	var ps [12]piece
 	pieces := ps[:0]
 	kx, ky := int(math.Floor(e/g.gridM)), int(math.Floor(n/g.gridM))
@@ -643,7 +638,49 @@ func (g *gland) blend(e, n, base float64) (h, gap, edge float64) {
 	// far in under it, and a bank easing from the edge itself stood a few
 	// centimetres over the road within that), then eased out to blendM.
 	f := smoothstep(math.Max(0, gap-gTuckM) / (g.blendM - gTuckM))
+	// Between two roads close beside each other, on opposite sides, the
+	// land lies at the lower one's level (owner, 2026-10-16, Rue du
+	// Hohneck at 1.34 km: a lane climbs beside the main road behind a
+	// wall; eased between them, the strip floated in a tilt with the
+	// lane's edge standing over it); the higher road's wall closes the step
+	// (roadside.go's abreast walls).
+	if low, ok := island(pieces, e, n); ok {
+		road, f = low, 0
+		if !math.IsInf(edge, 1) {
+			edge = math.Min(edge, low)
+		}
+	}
 	return (road-gSinkM)*(1-f) + base*f, gap, edge
+}
+
+// gIslandM: land between two roads narrower than this lies at the lower
+// one's level.
+const gIslandM = 6.0
+
+// gPiece is a road's piece near a land point (blend): which, how far its
+// edge, its height, its nearest point on its centre line.
+type gPiece struct {
+	k      [2]int
+	gap    float64
+	ele    float64
+	qe, qn float64
+}
+
+// island is the lower road's height when e, n lies between two different
+// roads' pieces on opposite sides, their edges less than gIslandM apart.
+func island(pieces []gPiece, e, n float64) (float64, bool) {
+	low, ok := math.Inf(1), false
+	for i, a := range pieces {
+		for _, b := range pieces[i+1:] {
+			if a.k[0] == b.k[0] || a.gap+b.gap >= gIslandM {
+				continue
+			}
+			if (a.qe-e)*(b.qe-e)+(a.qn-n)*(b.qn-n) < 0 {
+				low, ok = math.Min(low, math.Min(a.ele, b.ele)), true
+			}
+		}
+	}
+	return low, ok
 }
 
 // The land looks for the drawn road round a point within the last ring,

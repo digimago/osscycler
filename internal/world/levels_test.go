@@ -224,12 +224,12 @@ func TestFrenchLanesHaveNoGuessedSidewalks(t *testing.T) {
 	}
 }
 
-// Where only one road at a junction has a sidewalk, a French junction ends
-// it at the corner (owner's photo of the lane's mouth): no sidewalk of the
-// junction's own; elsewhere it goes halfway round.
+// Where only one road at a junction has a sidewalk, a French junction
+// draws none of its own (the road's goes on along its span to the other
+// road's mouth); elsewhere it goes halfway round.
 func TestJunctionWalkStopsAtTheCorner(t *testing.T) {
 	var p patch // no roads: the heights don't matter here, only whether it is drawn
-	w := walkChain{kerb: [][2]float64{{0, 0}, {2, 0}, {4, 1}, {5, 3}}, fromA: true}
+	w := walkChain{kerb: [][2]float64{{0, 0}, {3, 0}, {6, 0}, {7, 1}, {7, 4}}, fromA: true}
 	for _, corner := range []bool{false, true} {
 		var walk, kerb gltf.Primitive
 		walkMesh(p, w, &walk, &kerb, corner)

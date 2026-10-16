@@ -37,7 +37,7 @@ type style struct {
 	dryAboveM      float64 // grass dries towards straw above this height (0: never; Manifest.Ground.DryAboveM)
 	junctionLevelM float64 // a junction reaches along a road alongside only while within this in height (0: any)
 	walkGuessRank  int     // sidewalks guessed from built-up land only on roads of this class rank or higher (0: all)
-	cornerWalk     bool    // where only one road at a junction has a sidewalk, it ends at the corner (else halfway round)
+	cornerWalk     bool    // sidewalks end square, and where only one road at a junction has one it runs on to the corner (else they ramp down, and go halfway round)
 	roadside       bool    // barriers, retaining walls, rock netting, bend posts, kilometre markers (roadside.go)
 	quays          bool    // stone quays along rivers in town (quays.go)
 	gableToView    bool    // houses on a slope turn a gable to the valley (buildings.go)

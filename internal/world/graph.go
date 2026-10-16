@@ -283,6 +283,9 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 		patches = append(kept, rbs[i].shape(lines))
 	}
 	cutRoads(lines, patches)
+	if styleFor(o.Region).cornerWalk {
+		walksOnSpans(lines, patches)
+	}
 	var overlays []patch
 	for _, p := range patches {
 		if p.overlay {

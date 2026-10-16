@@ -47,11 +47,12 @@ const (
 	riseTown        = 1.0  // in town (or behind a sidewalk): a low wall where the land rises this much within riseNearM
 	townWallM       = 1.0  // and at most this high
 	railOffM        = 0.5  // a barrier's posts this far off the carriageway's edge
-	abreastReachM   = 1.5  // a road surface this near behind a road's edge and sidewalk, higher by a step, gets a wall there
+	abreastReachM   = 3.0  // a road surface this near behind a road's edge and sidewalk, higher by a step, gets a wall there (the land between filled in level)
 	abreastStepM    = 0.35 // when it stands more than this higher somewhere along it
 	abreastLowM     = 0.03 // and on while it stands this much higher (its ends taper)
 	abreastMaxM     = 4.0  // and less than this (higher is a hillside or a bridge, not a lane behind a wall)
 	abreastCrossCos = 0.5  // not across a side road's mouth: one crossing within 60° of square
+	abreastAcrossM  = 0.6  // or one whose surface reaches this far in over the sidewalk
 	barrierPostM    = 4.0
 	wallOffM        = 1.0 // a wall's foot this far off the edge: a strip of grass and the gutter
 	wallAboveM      = 1.0 // a road surface this much above a road's own stands behind its wall, not in its way
@@ -218,13 +219,13 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 		// The land either side: barriers where it falls, walls or netted
 		// rock where it rises.
 		type sideInfo struct {
-			rail, wall, rock []bool
-			h                []float64 // a wall's height
+			rail, wall, rock, town []bool
+			h                      []float64 // a wall's height
 		}
 		var sides [2]sideInfo
 		for si, sign := range []float64{-1, 1} {
 			s := &sides[si]
-			s.rail, s.wall, s.rock, s.h = make([]bool, n), make([]bool, n), make([]bool, n), make([]float64, n)
+			s.rail, s.wall, s.rock, s.town, s.h = make([]bool, n), make([]bool, n), make([]bool, n), make([]bool, n), make([]float64, n)
 			for k := range n {
 				a := t.fine[ln.from+k]
 				if !near[k] || a.open[si] {
@@ -275,7 +276,7 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 					// In town a low wall at the bank's foot, behind the
 					// sidewalk, the lawn rising on above it (owner's shot of
 					// the Rue du Hohneck at 0.89 km, 2026-10-16).
-					s.wall[k] = true
+					s.wall[k], s.town[k] = true, true
 					s.h[k] = math.Min(townWallM, 0.3+0.4*(z3-zc))
 				case !town && ok3 && z3-zc > riseWall:
 					s.wall[k] = true
@@ -293,14 +294,23 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 				})
 			}
 			for _, r := range runs(s.wall) {
-				rock := 0
+				rock, town := 0, 0
 				for k := r.from; k <= r.to; k++ {
 					if s.rock[k] {
 						rock++
 					}
+					if s.town[k] {
+						town++
+					}
 				}
+				// A garden's low wall in town ends square, as the block walls
+				// along the Rue du Hohneck do (owner's photos, 2026-10-16:
+				// eased down into the bank, its coping dived into the lawn
+				// like a road poking through).
+				square := 2*town > r.to-r.from+1
 				// Smoothed heights, so the wall's top runs evenly; easing down
-				// into the bank over its first and last 6 m.
+				// into the bank over its first and last 6 m (a retaining wall
+				// in the hills; a town's ends square).
 				h := make([]float64, r.to-r.from+1)
 				for k := r.from; k <= r.to; k++ {
 					sum, c := 0.0, 0
@@ -312,7 +322,7 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 					if c > 0 {
 						h[k-r.from] = sum / float64(c)
 					}
-					if end := min(k-r.from, r.to-k); end < 3 {
+					if end := min(k-r.from, r.to-k); end < 3 && !square {
 						h[k-r.from] *= (float64(end) + 1) / 4
 					}
 				}
@@ -326,7 +336,7 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 				clear := func(e, n float64) bool { // no other road within 1.5 m (a hairpin's next leg)
 					return sp.roadNear(e, n, 1.5, line) < 0 && (t.surfaces == nil || t.surfaces.dist(e, -n, 1.5) >= 1.5)
 				}
-				retaining(p, f, land, clear, landColour, t, ln.from, r, h, sign, isRock, func(k int, off float64) (float64, float64) {
+				retaining(p, f, land, clear, landColour, t, ln.from, r, h, sign, isRock, square, func(k int, off float64) (float64, float64) {
 					a := t.fine[ln.from+k]
 					return at(k, sign*(sideEdge(a, si)+off))
 				})
@@ -348,16 +358,46 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 			bottom := make([]float64, n)
 			top := make([]float64, n)
 			step := make([]float64, n)
+			behind := make([]float64, n) // the fill behind it, to here
+			level := make([]float64, n)  // at this height
 			on := make([]bool, n)
 			for k := range n {
 				a := t.fine[ln.from+k]
 				if t.surfaces == nil || !(near[k] || a.onPatch && !a.again && !a.aloft && isNear(a.e, a.n)) || a.open[si] {
 					continue
 				}
-				band := sideEdge(a, si)
+				// Its edge and sidewalk, their widest nearby: a junction's
+				// span draws no sidewalk of the road's own, the junction
+				// carries it (the wall had stood at the carriageway's edge
+				// there, out of the lane's reach, grass between).
+				band, walked := 0.0, false
+				for j := 0; j < n; j++ {
+					b := t.fine[ln.from+j]
+					if math.Abs(dist[j]-dist[k]) > gBandNearM {
+						continue
+					}
+					band = math.Max(band, sideEdge(b, si))
+					walked = walked || b.walk[si]
+				}
 				base := a.ele
-				if a.walk[si] {
+				if walked {
 					base += kerbM
+				}
+				// Not where a higher road comes across the sidewalk's line: a
+				// side road's mouth (a road along it only touches the band's
+				// outer edge; a wall had stood across a side road leaving at
+				// a shallow angle, 2.04 km of the Route des Américains).
+				ei, ni := at(k, sign*(band-abreastAcrossM))
+				if h, ok := t.surfaces.highest(ei, -ni, 0); ok && h > base+abreastLowM {
+					continue
+				}
+				// Nor on a road at this road's own level: a junction's or a
+				// carriageway going on (wall pieces had stood in a junction
+				// at 4.225 km); a higher road at the face is the one behind,
+				// a few decimetres over the sidewalk's edge, and fine.
+				ef, nf := at(k, sign*(band+0.02))
+				if h, ok := t.surfaces.highest(ef, -nf, 0); ok && h < base+abreastLowM {
+					continue
 				}
 				for g := band + 0.05; g <= band+abreastReachM; g += 0.05 {
 					e, nn := at(k, sign*g)
@@ -377,14 +417,24 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 							}
 						}
 					}
-					// Its top over the surface behind it a little further in
-					// (it may still rise there), a parapet no higher than the
-					// step, so its ends run out to nothing.
-					e2, n2 := at(k, sign*(g+0.25))
-					if h2, ok := t.surfaces.highest(e2, -n2, 0); ok && h2 > h && h2-base < abreastMaxM {
-						h = h2
+					// Its top over the highest road behind it within its reach
+					// (a junction's surface may lie between it and the lane,
+					// lower: the lane's edge had shown over the wall, 1.358 km
+					// of the Route des Américains), a parapet no higher than
+					// the step, so its ends run out to nothing.
+					hFill := h
+					for g2 := g + 0.25; g2 <= band+abreastReachM; g2 += 0.25 {
+						e2, n2 := at(k, sign*g2)
+						if h2, ok := t.surfaces.highest(e2, -n2, 0); ok && h2 > h && h2-base < abreastMaxM {
+							h = h2
+						}
 					}
-					face[k], inner[k], bottom[k], step[k] = band+0.02, g+0.2, base-walkFootM, dz
+					dz = h - base
+					// The coping a quarter metre deep, the land filled in
+					// level behind it up to the road behind (a strip of
+					// lawn, as at the uphill road's end of the wall).
+					face[k], bottom[k], step[k] = band+0.02, base-walkFootM, dz
+					inner[k], behind[k], level[k] = math.Min(g+0.2, band+0.27), g+0.1, hFill-0.02
 					top[k], on[k] = h+math.Min(0.15, dz), true
 					break
 				}
@@ -421,7 +471,29 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 					r.to++
 				}
 				p := prim(items, t.fine[ln.from+r.from].e, t.fine[ln.from+r.from].n, mat)
-				abreastWall(p, r, inner, face, bottom, top, func(k int, d float64) (float64, float64) { return at(k, sign*d) })
+				pos := func(k int, d float64) (float64, float64) { return at(k, sign*d) }
+				abreastWall(p, r, inner, face, bottom, top, pos)
+				fill := prim(fills, t.fine[ln.from+r.from].e, t.fine[ln.from+r.from].n, ground)
+				for k := r.from; k < r.to; k++ {
+					if behind[k] <= inner[k]+0.05 || behind[k+1] <= inner[k+1]+0.05 {
+						continue
+					}
+					var q [4][3]float64
+					for c, kk := range [4]int{k, k + 1, k + 1, k} {
+						d := inner[kk]
+						if c >= 2 {
+							d = behind[kk]
+						}
+						e, nn := pos(kk, d)
+						q[c] = [3]float64{e, level[kk], -nn}
+					}
+					if overRoad(t, q) {
+						continue
+					}
+					col := landColour(q[0][0], -q[0][2])
+					addUp(fill, q[0], q[1], q[2], col)
+					addUp(fill, q[0], q[2], q[3], col)
+				}
 			}
 		}
 
@@ -634,7 +706,7 @@ func guardRail(p *gltf.Primitive, t *terrain, from int, r sideRun, dist []float6
 
 // retaining is a wall of dressed stone leaning back into the slope
 // (or rock under netting) along run, h its height at each sample.
-func retaining(p, fill *gltf.Primitive, land func(e, n float64) float64, clear func(e, n float64) bool, landColour func(e, n float64) [3]float32, t *terrain, from int, r sideRun, h []float64, sign float64, rock bool, pos func(k int, off float64) (float64, float64)) {
+func retaining(p, fill *gltf.Primitive, land func(e, n float64) float64, clear func(e, n float64) bool, landColour func(e, n float64) [3]float32, t *terrain, from int, r sideRun, h []float64, sign float64, rock, square bool, pos func(k int, off float64) (float64, float64)) {
 	stone, coping := srgbLinear(0x6c665c), srgbLinear(0x5c5850)
 	rockC := srgbLinear(0x5e5a54)
 	batter := 0.18 // the face leans back this much per metre up
@@ -696,14 +768,29 @@ func retaining(p, fill *gltf.Primitive, land func(e, n float64) float64, clear f
 			quad(p, t0, t1, [3]float64{e1, t1[1], -n1}, [3]float64{e0, t0[1], -n0}, [3]float64{0, 1, 0}, coping)
 		}
 	}
-	backfill(fill, land, clear, landColour, t, from, r, h, batter, rock, pos)
+	if square {
+		// Its ends: a face across the wall from its foot to the coping's
+		// back, at each end.
+		for _, k := range []int{r.from, r.to} {
+			hk := h[k-r.from]
+			ef, nf := pos(k, wallOffM)
+			eb, nb := pos(k, wallOffM+hk*batter+0.4)
+			y0 := t.fine[from+k].ele - 0.3
+			a, b := [3]float64{ef, y0, -nf}, [3]float64{eb, y0, -nb}
+			c, d := [3]float64{eb, t.fine[from+k].ele + hk, -nb}, top(k, 1)
+			nrm := wallNormal(a, b, d, 1)
+			quad(p, a, b, c, d, nrm, stone)
+			quad(p, b, a, d, c, [3]float64{-nrm[0], -nrm[1], -nrm[2]}, stone)
+		}
+	}
+	backfill(fill, land, clear, landColour, t, from, r, h, batter, rock, square, pos)
 }
 
 // backfill fills the land in behind a wall (owner, 2026-10-15: the walls
 // stood as free faces): from its top back into the slope until it meets
 // the land as drawn (or 12 m on, or short of another road, then down to
 // the land), so the slope ends at the wall's top as a cutting's does.
-func backfill(p *gltf.Primitive, land func(e, n float64) float64, clear func(e, n float64) bool, landColour func(e, n float64) [3]float32, t *terrain, from int, r sideRun, h []float64, batter float64, rock bool, pos func(k int, off float64) (float64, float64)) {
+func backfill(p *gltf.Primitive, land func(e, n float64) float64, clear func(e, n float64) bool, landColour func(e, n float64) [3]float32, t *terrain, from int, r sideRun, h []float64, batter float64, rock, square bool, pos func(k int, off float64) (float64, float64)) {
 	const far, step = 12.0, 0.5
 	back := 0.0 // the top's back edge past the face (the coping)
 	if !rock {
@@ -734,9 +821,39 @@ func backfill(p *gltf.Primitive, land func(e, n float64) float64, clear func(e, 
 		zm := top + (z2-top)*0.5
 		rows[k-r.from] = row{{e0, top, -n0}, {e1, zm, -n1}, {e2, z2, -n2}}
 	}
+	if square {
+		// At a square end the fill's edge comes down to the land beside
+		// it, an earth face under each piece of its end row.
+		for _, k := range []int{0, len(rows) - 1} {
+			for j := range 2 {
+				a, b := rows[k][j], rows[k][j+1]
+				a2 := [3]float64{a[0], land(a[0], -a[2]) - 0.05, a[2]}
+				b2 := [3]float64{b[0], land(b[0], -b[2]) - 0.05, b[2]}
+				if a2[1] >= a[1] && b2[1] >= b[1] {
+					continue
+				}
+				nrm := wallNormal(a2, b2, a, 1)
+				col := landColour(a[0], -a[2])
+				for _, q := range [2][4][3]float64{{a2, b2, b, a}, {b2, a2, a, b}} {
+					base := uint32(len(p.Positions) / 3)
+					for _, v := range q {
+						p.Positions = append(p.Positions, float32(v[0]), float32(v[1]), float32(v[2]))
+						p.Normals = append(p.Normals, float32(nrm[0]), float32(nrm[1]), float32(nrm[2]))
+						p.Colors = append(p.Colors, col[0], col[1], col[2])
+					}
+					tri(p, base, base+1, base+2, nrm)
+					tri(p, base, base+2, base+3, nrm)
+					nrm = [3]float64{-nrm[0], -nrm[1], -nrm[2]}
+				}
+			}
+		}
+	}
 	for k := 0; k+1 < len(rows); k++ {
 		for j := range 2 {
 			a, b, c, d := rows[k][j], rows[k+1][j], rows[k+1][j+1], rows[k][j+1]
+			if overRoad(t, [4][3]float64{a, b, c, d}) {
+				continue
+			}
 			n := cross([3]float64{b[0] - a[0], b[1] - a[1], b[2] - a[2]}, [3]float64{d[0] - a[0], d[1] - a[1], d[2] - a[2]})
 			if n[1] < 0 {
 				n = [3]float64{-n[0], -n[1], -n[2]}
@@ -884,4 +1001,25 @@ func abreastWall(p *gltf.Primitive, r sideRun, inner, face, bottom, top []float6
 		quad(p, a0, b0, b1, a1, n, c)
 		quad(p, b0, a0, a1, b1, [3]float64{-n[0], -n[1], -n[2]}, c)
 	}
+}
+
+// overRoad tells whether the land filled in as quad q (x y z corners)
+// would lie over a road surface below it: one crossing between the
+// samples the fill was measured at (1.605 km of the Route des Américains:
+// a fill 0.4 m over a side road).
+func overRoad(t *terrain, q [4][3]float64) bool {
+	if t.surfaces == nil {
+		return false
+	}
+	for _, f := range [...][2]float64{{0.5, 0.5}, {0.25, 0.25}, {0.75, 0.25}, {0.25, 0.75}, {0.75, 0.75}, {0.5, 0.1}, {0.5, 0.9}, {0.1, 0.5}, {0.9, 0.5}} {
+		u, v := f[0], f[1]
+		var p [3]float64
+		for c := range 3 {
+			p[c] = (1-u)*(1-v)*q[0][c] + u*(1-v)*q[1][c] + u*v*q[2][c] + (1-u)*v*q[3][c]
+		}
+		if h, ok := t.surfaces.highest(p[0], p[2], 0); ok && h < p[1]-0.02 {
+			return true
+		}
+	}
+	return false
 }

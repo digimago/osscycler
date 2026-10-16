@@ -271,10 +271,19 @@ func roadMesh(seg, all []sample, from int, line *smoothLine, loop bool, m roadMa
 	drawn := make([][2]bool, len(frames)) // a sidewalk quad from frame k to k+1, per side
 	for k := 0; k+1 < len(frames); k++ {
 		f0, f1 := frames[k], frames[k+1]
-		if f0.onPatch || f1.onPatch || f0.underPatch && f1.underPatch {
+		inPatch := f0.onPatch || f1.onPatch || f0.underPatch && f1.underPatch
+		if inPatch && !m.cornerWalk {
 			continue // the junction draws this surface: the road ends at its edge
 		}
 		for i := range f0.parts {
+			// A French road's sidewalk goes on along a junction's span
+			// (cut away later where the junction's surface covers it): it
+			// runs straight on to the side road's mouth (owner's photos of
+			// the Rue du Hohneck; stopped at the span's start, grass lay
+			// between it and the junction's slanting edge).
+			if inPatch && (i < 3 || i > 8) {
+				continue // the junction draws the carriageway
+			}
 			p0, p1 := f0.parts[i], f1.parts[i]
 			// A sidewalk that starts or stops between two cross-sections
 			// ramps down to the road's edge over them, as a dropped kerb:
@@ -290,6 +299,11 @@ func roadMesh(seg, all []sample, from int, line *smoothLine, loop bool, m roadMa
 					off, of = &p1, f1
 				}
 				switch {
+				case i >= 3 && i <= 8 && m.cornerWalk:
+					// A French sidewalk ends square, its end face closed
+					// (owner's photos of the Rue du Hohneck: it ran on to a
+					// lane's mouth and stopped there; tapered, it read as a
+					// wedge with land showing beside it).
 				case i >= 3 && i <= 8: // sidewalk, kerb, outer face
 					*off = rampEnd(*off, of.parts[9+(i-3)%2].a)
 				case i == 1: // left cycle lane

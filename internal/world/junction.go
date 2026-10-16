@@ -147,12 +147,9 @@ func patchMeshes(p patch, m roadMaterials, v *verger) []gltf.Primitive {
 // walkMesh is a sidewalk a junction carries: on a kerb along its outline,
 // walkM wide, its ends where the roads' sidewalks end. Where only one road
 // has a sidewalk on that side, it goes halfway round and stops, or with
-// corner none is drawn: the road's own sidewalk ends at its cut, square
-// with the other road's mouth.
+// corner none: the road's own sidewalk goes on along the junction's span
+// to the other road's mouth (roadMesh).
 func walkMesh(p patch, w walkChain, walk, kerb *gltf.Primitive, corner bool) {
-	if corner && w.fromA != w.fromB {
-		return
-	}
 	k := w.kerb
 	if len(k) < 2 {
 		return
@@ -161,6 +158,8 @@ func walkMesh(p patch, w walkChain, walk, kerb *gltf.Primitive, corner bool) {
 	total := at[len(k)-1]
 	from, to := 0.0, total
 	switch {
+	case corner && w.fromA != w.fromB:
+		return // the road's own sidewalk goes on along the span (roadMesh)
 	case w.fromA && !w.fromB:
 		to = total / 2
 	case !w.fromA && w.fromB:
@@ -295,6 +294,82 @@ func markPatches(fine []sample, ps []patch) {
 			s := &fine[i]
 			if s.e >= e0 && s.e <= e1 && s.n >= n0 && s.n <= n1 && inPoly(p.poly, s.e, s.n) {
 				s.underPatch = true
+			}
+		}
+	}
+}
+
+// walksOnSpans keeps a road's sidewalk on along a junction's span (a
+// French road's goes on to the side road's mouth, roadMesh) only where
+// its middle lies outside every junction's outline: where the junction
+// covers it, it stops there, square (owner's photos of the Rue du
+// Hohneck: drawn on and cut away under the junction, it left slivers
+// along the junction's edge; stopped at the span's start, grass lay
+// where it should run on).
+func walksOnSpans(ls []*roadLine, ps []patch) {
+	type box struct{ e0, n0, e1, n1 float64 }
+	boxes := make([]box, len(ps))
+	for i, p := range ps {
+		b := box{math.Inf(1), math.Inf(1), math.Inf(-1), math.Inf(-1)}
+		for _, q := range p.poly {
+			b = box{math.Min(b.e0, q[0]), math.Min(b.n0, q[1]), math.Max(b.e1, q[0]), math.Max(b.n1, q[1])}
+		}
+		boxes[i] = b
+	}
+	// Other roads' carriageways, by 10 m cell: a side road's past its cut
+	// covers the band too (the sidewalk had lain across its mouth).
+	type ref struct{ l, i int }
+	const cellM = 10.0
+	grid := map[[2]int][]ref{}
+	key := func(e, n float64) [2]int { return [2]int{int(math.Floor(e / cellM)), int(math.Floor(n / cellM))} }
+	for li, l := range ls {
+		for i := range l.samples {
+			k := key(l.samples[i].e, l.samples[i].n)
+			grid[k] = append(grid[k], ref{li, i})
+		}
+	}
+	covered := func(self int, e, n float64) bool {
+		for i, p := range ps {
+			if b := boxes[i]; e >= b.e0 && e <= b.e1 && n >= b.n0 && n <= b.n1 && inPoly(p.poly, e, n) {
+				return true
+			}
+		}
+		k := key(e, n)
+		for gx := k[0] - 1; gx <= k[0]+1; gx++ {
+			for gy := k[1] - 1; gy <= k[1]+1; gy++ {
+				for _, r := range grid[[2]int{gx, gy}] {
+					ss := ls[r.l].samples
+					if r.l == self || r.i+1 >= len(ss) {
+						continue
+					}
+					a, b := ss[r.i], ss[r.i+1]
+					if segDist([2]float64{a.e, a.n}, [2]float64{b.e, b.n}, e, n) < math.Min(a.hw, b.hw) {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}
+	for li, l := range ls {
+		ss := l.samples
+		for i := range ss {
+			s := &ss[i]
+			if !s.onPatch || !s.walk[0] && !s.walk[1] {
+				continue
+			}
+			a, b := ss[max(0, i-1)], ss[min(len(ss)-1, i+1)]
+			de, dn := b.e-a.e, b.n-a.n
+			d := math.Hypot(de, dn)
+			if d == 0 {
+				continue
+			}
+			rx, rn := dn/d, -de/d // right of the way
+			for side, sign := range []float64{-1, 1} {
+				off := s.hw + s.walkWidth(side)/2
+				if s.walk[side] && covered(li, s.e+sign*rx*off, s.n+sign*rn*off) {
+					s.walk[side] = false
+				}
 			}
 		}
 	}

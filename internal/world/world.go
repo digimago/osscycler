@@ -333,6 +333,9 @@ func Build(c *course.Course, o Options) (*World, error) {
 	}
 	var routeLines []*roadLine
 	cutRoads(lines, patches)
+	if styleFor(o.Region).cornerWalk {
+		walksOnSpans(lines, patches)
+	}
 	// Junctions built from their node carry the sidewalks; overlays stop
 	// them short.
 	var overlays []patch

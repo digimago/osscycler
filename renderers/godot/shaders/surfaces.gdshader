@@ -164,7 +164,8 @@ void fragment() {
 		rough = 0.9;
 		vec2 w = UV;
 		// Cladding (the builder adds 10000 to u for timber, 20000 for zinc,
-		// 30000 for slate): timber as vertical boards 15 cm wide with dark
+		// 30000 for slate): timber as boards 15 cm wide (horizontal on most
+		// houses) with dark
 		// gaps, each its own tone, grain along them; zinc and slate as
 		// diamonds (owner, 2026-10-16), 30 cm across, each its own tone,
 		// their joints dark and set back.
@@ -173,11 +174,15 @@ void fragment() {
 			w.x -= clad * 10000.0;
 			float fb = near(w, 0.03);
 			if (clad == 1.0) {
+				// Horizontal boards on 72 % of houses, vertical on the rest
+				// (owner, 2026-10-16), by the house's own colour.
+				bool across = h21(COLOR.rg * 53.0 + COLOR.b * 7.0) < 0.72;
+				vec2 bp = across ? vec2(w.y, w.x) : w; // .x across the boards
 				float bw = 0.15;
-				float board = floor(w.x / bw);
-				float gap = 1.0 - inside(fract(w.x / bw) - 0.5, 0.9);
+				float board = floor(bp.x / bw);
+				float gap = 1.0 - inside(fract(bp.x / bw) - 0.5, 0.9);
 				float tone = 0.8 + 0.35 * h21(vec2(board, 3.7));
-				float grain = 0.9 + 0.2 * vnoise(vec2(w.x * 40.0, w.y * 1.5 + board * 7.0));
+				float grain = 0.9 + 0.2 * vnoise(vec2(bp.x * 40.0, bp.y * 1.5 + board * 7.0));
 				c = base * mix(1.0, tone * grain, fb);
 				c = mix(c, base * 0.35, gap * fb);
 				h = (0.012 * (1.0 - gap) - 0.004 * grain) * fb;
@@ -198,14 +203,35 @@ void fragment() {
 		// u in bays, window i centred at i + 0.5 for 0 ≤ i < count; rows at
 		// 0.25 + 2.8k over the face's reference, sill 0.9 over the floor,
 		// 1.3 high, only up to UV2's top and with the sill over its ground.
-		float count = floor(UV2.x);
+		// UV2.x packs (door + 1)·100 + count + top / 100.
+		float count = mod(floor(UV2.x), 100.0);
+		float doorBay = floor(UV2.x / 100.0) - 1.0;
 		float maxTop = fract(UV2.x) * 100.0;
 		float bay = floor(w.x);
 		float k = floor((w.y - 0.25) / 2.8);
 		float sill = 0.25 + 2.8 * k + 0.9;
 		bool row = w.y >= 0.0 && sill + 1.3 <= maxTop && sill >= UV2.y + 0.4;
-		if (count > 0.0 && bay >= 0.0 && bay < count && row && abs(wnrm.y) < 0.3) {
-			float seed = h21(COLOR.rg * 97.0 + COLOR.b * 13.0);
+		float seed = h21(COLOR.rg * 97.0 + COLOR.b * 13.0);
+		// The door: the ground row of its bay, from the floor up 2.15 m,
+		// where that row stands at the ground; no window there.
+		bool doorHere = doorBay >= 0.0 && bay == doorBay && k == 0.0 && UV2.y < 0.6 && abs(wnrm.y) < 0.3;
+		if (doorHere) {
+			float cx = fract(w.x);
+			vec2 q = vec2((cx - 0.32) / 0.36, (w.y - 0.25) / 2.15);
+			float fine = near(w, 0.05);
+			float inDoor = step(0.0, q.x) * step(q.x, 1.0) * step(0.0, q.y) * step(q.y, 1.0) * fine;
+			if (inDoor > 0.0) {
+				vec3 dc = h21(vec2(seed, 21.0)) < 0.5 ? vec3(0.2, 0.12, 0.07) : vec3(0.22, 0.27, 0.24);
+				float frame = 1.0 - inside(q.x - 0.5, 0.88) * inside(q.y - 0.5, 0.95);
+				// Two panels, the upper with glass.
+				float glass = inside(q.x - 0.5, 0.6) * inside(q.y - 0.78, 0.25);
+				c = mix(dc, vec3(0.85), frame);
+				c = mix(c, vec3(0.05, 0.06, 0.07), glass);
+				h = -0.08 * (1.0 - frame);
+				rough = mix(0.7, 0.2, glass);
+			}
+		}
+		if (!doorHere && count > 0.0 && bay >= 0.0 && bay < count && row && abs(wnrm.y) < 0.3) {
 			float cx = fract(w.x);
 			vec2 q = vec2((cx - 0.31) / 0.38, (w.y - sill) / 1.3); // 0..1 inside the window
 			float fine = near(w, 0.05);

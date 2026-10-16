@@ -2,6 +2,7 @@ package world
 
 import (
 	"math"
+	"sort"
 
 	"github.com/digimago/osscycler/internal/gltf"
 )
@@ -100,10 +101,26 @@ func clearWalksOffRoads(chunks map[[2]int][]gltf.Primitive, walkMat, kerbMat int
 				changed += n0 / 3
 				// The slab's new edges (open, and not one of its own before):
 				// closed down to the road.
-				for e, n := range edgesOf(&np) {
-					if n != 1 || before[e] > 0 {
-						continue
+				// In a fixed order (a map's isn't): the same world every build.
+				es := edgesOf(&np)
+				open := make([]ekey, 0, len(es))
+				for e, n := range es {
+					if n == 1 && before[e] == 0 {
+						open = append(open, e)
 					}
+				}
+				sort.Slice(open, func(i, j int) bool {
+					a, b := open[i], open[j]
+					for v := range 2 {
+						for k := range 3 {
+							if a[v][k] != b[v][k] {
+								return a[v][k] < b[v][k]
+							}
+						}
+					}
+					return false
+				})
+				for _, e := range open {
 					mx, my, mz := float64(e[0][0]+e[1][0])/2, float64(e[0][1]+e[1][1])/2, float64(e[0][2]+e[1][2])/2
 					dx, dz := float64(e[1][0]-e[0][0]), float64(e[1][2]-e[0][2])
 					l := math.Hypot(dx, dz)

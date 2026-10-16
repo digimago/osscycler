@@ -14,7 +14,7 @@ import (
 // wide; the skirts under them show through it, dark. stitchSlivers fills
 // such a wedge with a triangle where nothing covers it.
 const (
-	stitchMaxDeg = 25.0 // the wedge's angle at its shared vertex
+	stitchMaxDeg = 35.0 // the wedge's angle at its shared vertex (its width, stitchMaxM, keeps real gaps out)
 	stitchMaxM   = 0.4  // its open end at most this wide
 	stitchSnapM  = 0.02 // vertices this close are one
 )
@@ -38,7 +38,15 @@ func stitchSlivers(ps []gltf.Primitive) int {
 		for _, i := range byMat[m] {
 			group = append(group, &ps[i])
 		}
-		added += stitchGroup(group)
+		// A sliver along a road edge of several short pieces closes a
+		// triangle at a time, each leaving the next: again until none.
+		for range 12 {
+			n := stitchGroup(group)
+			added += n
+			if n == 0 {
+				break
+			}
+		}
 	}
 	return added
 }

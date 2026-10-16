@@ -315,9 +315,6 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 	for k, p := range pavedIslands(roads, ground, roadMats.surface[scenery.SurfaceAsphalt], o.ChunkM) {
 		roads[k] = append(roads[k], p)
 	}
-	for _, ps := range roads {
-		stitchSlivers(ps) // each chunk's own; any order
-	}
 	// The carriageway as drawn: the rider's path again, its turns swept as
 	// wide as it allows, and the riding line kept on it.
 	var all []gltf.Primitive
@@ -437,8 +434,14 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 			return nil, err
 		}
 	}
+	// Sidewalks off the carriageways (decks left out: a road passing over
+	// a sidewalk cuts nothing).
+	clearWalksOffRoads(roads, roadMats.walk, roadMats.kerb, func(mat int) bool { return carriageway[w.doc.MaterialName(mat)] })
 	for k, ps := range decks {
 		roads[k] = append(roads[k], ps...)
+	}
+	for _, ps := range roads {
+		stitchSlivers(ps) // each chunk's own, decks too; any order
 	}
 	if err := w.addRoads(roads); err != nil {
 		return nil, err

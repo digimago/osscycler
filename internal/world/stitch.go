@@ -18,6 +18,10 @@ const (
 	stitchMaxM   = 0.4   // its open end at most this wide
 	stitchSnapM  = 0.02  // vertices this close are one
 	stitchMinM2  = 0.002 // a wedge smaller than this seen from above is none
+	// A wedge longer than stitchMaxLenM is a sliver only if its height
+	// changes by stitchLongDyM at most from its apex to its open end.
+	stitchMaxLenM = 6.0
+	stitchLongDyM = 0.3
 )
 
 // stitchSlivers closes the slivers between the open edges of primitives
@@ -224,6 +228,14 @@ func stitchGroup(group []*gltf.Primitive) int {
 				}
 				tk := [3]int{a, b, c}
 				if done[tk] {
+					continue
+				}
+				// A long wedge only where it lies level along its length: a
+				// sliver between two pieces of one road (the Posbank Loop has
+				// some over 6 m on the flat), not the gap between a road and
+				// another beside it a step lower (16.1 km of the Route des
+				// Américains: 10 m, a metre down, land in it).
+				if math.Max(lb, lc) > stitchMaxLenM && math.Abs((pb[1]+pc[1])/2-pa[1]) > stitchLongDyM {
 					continue
 				}
 				// A wedge with some area seen from above (two edges along

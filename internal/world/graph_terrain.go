@@ -1330,6 +1330,39 @@ func (g *gland) underRoads(meshes []gltf.Primitive) {
 				}
 			}
 			probe(ce, cn, (h[0]+h[1]+h[2])/3, 0, 1, 2)
+			// At its own corners and at every road corner inside it: a long
+			// thin road triangle (a junction's) can reach into a land
+			// triangle between the samples along its edges (16.1 km of the
+			// Route des Américains: 9 cm of land over a junction's
+			// corner). These lower the land by as much as it stands over the
+			// road there, not to the road's height: the land is linear, so
+			// that puts it under, and keeps its shape (taken down whole, a
+			// verge beside a road stood 14 cm under the road's edge).
+			drop := func(pe, pn, land float64, w [3]float64) {
+				if r, ok := g.roads.low(pe, pn); ok && land > r-gSinkM {
+					d := land - (r - gSinkM)
+					for v := range 3 {
+						if w[v] <= 0 {
+							continue
+						}
+						k := vkey{float32(e[v]), float32(n[v])}
+						if cur, ok := low[k]; !ok || float32(h[v]-d) < cur {
+							low[k] = float32(h[v] - d)
+						}
+					}
+				}
+			}
+			for a := range 3 {
+				var w [3]float64
+				w[a] = 1
+				drop(e[a], n[a], h[a], w)
+			}
+			g.roadCornersIn(e, n, func(pe, pn float64) {
+				w0, w1, w2, ok := barycentric(e, n, pe, pn)
+				if ok {
+					drop(pe, pn, w0*h[0]+w1*h[1]+w2*h[2], [3]float64{w0, w1, w2})
+				}
+			})
 		}
 	}
 	if len(low) == 0 {
@@ -1342,4 +1375,43 @@ func (g *gland) underRoads(meshes []gltf.Primitive) {
 			}
 		}
 	}
+}
+
+// roadCornersIn calls f with every corner of a road surface triangle that
+// lies in the cells under the triangle e, n (east, north).
+func (g *gland) roadCornersIn(e, n [3]float64, f func(e, n float64)) {
+	x0, x1 := math.Min(e[0], math.Min(e[1], e[2])), math.Max(e[0], math.Max(e[1], e[2]))
+	z0, z1 := math.Min(-n[0], math.Min(-n[1], -n[2])), math.Max(-n[0], math.Max(-n[1], -n[2]))
+	seen := map[int32]bool{}
+	for gx := int(math.Floor(x0 / landCellM)); gx <= int(math.Floor(x1/landCellM)); gx++ {
+		for gz := int(math.Floor(z0 / landCellM)); gz <= int(math.Floor(z1/landCellM)); gz++ {
+			for _, id := range g.roads.cells[[2]int{gx, gz}] {
+				if seen[id] {
+					continue
+				}
+				seen[id] = true
+				t := g.roads.tri[9*int(id) : 9*int(id)+9]
+				for c := range 3 {
+					x, z := t[3*c], t[3*c+2]
+					if x >= x0 && x <= x1 && z >= z0 && z <= z1 {
+						f(x, -z)
+					}
+				}
+			}
+		}
+	}
+}
+
+// barycentric is point pe, pn's weights in the triangle e, n, and whether
+// it lies inside (edges included).
+func barycentric(e, n [3]float64, pe, pn float64) (w0, w1, w2 float64, ok bool) {
+	den := (n[1]-n[2])*(e[0]-e[2]) + (e[2]-e[1])*(n[0]-n[2])
+	if math.Abs(den) < 1e-12 {
+		return 0, 0, 0, false
+	}
+	w0 = ((n[1]-n[2])*(pe-e[2]) + (e[2]-e[1])*(pn-n[2])) / den
+	w1 = ((n[2]-n[0])*(pe-e[2]) + (e[0]-e[2])*(pn-n[2])) / den
+	w2 = 1 - w0 - w1
+	const eps = -1e-9
+	return w0, w1, w2, w0 >= eps && w1 >= eps && w2 >= eps
 }

@@ -48,6 +48,27 @@ func TestStitchSlivers(t *testing.T) {
 	if n := stitchSlivers(ps); n != 0 {
 		t.Errorf("a gap 1.5 m wide: %d stitched", n)
 	}
+	// Narrow and 10 m long: level, a sliver (stitched); falling a metre
+	// from one road to another a step lower (16.1 km of the Route des
+	// Américains, land in it), left alone.
+	long := func(drop float32) []gltf.Primitive {
+		ps := []gltf.Primitive{
+			tri(1, [2]float32{0, 0}, [2]float32{10, 0}, [2]float32{10, -3}),
+			tri(1, [2]float32{0, 0}, [2]float32{10, 3}, [2]float32{10, 0.4}),
+		}
+		for i := range ps {
+			for v := 1; v < 3; v++ {
+				ps[i].Positions[3*v+1] = drop // the far ends, the open end among them
+			}
+		}
+		return ps
+	}
+	if n := stitchSlivers(long(0)); n != 1 {
+		t.Errorf("a level sliver 10 m long: %d stitched, want 1", n)
+	}
+	if n := stitchSlivers(long(1)); n != 0 {
+		t.Errorf("a wedge 10 m long falling a metre between two roads: %d stitched", n)
+	}
 }
 
 // A sidewalk's end cut against a junction's asphalt leaves the same wedge

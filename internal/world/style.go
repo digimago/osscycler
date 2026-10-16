@@ -32,13 +32,14 @@ type style struct {
 	barnRoofs       []uint32                //
 	// cover: the terrain's colour for these lands instead of the shared
 	// palette's.
-	cover       map[scenery.Land]uint32
-	reliefM     float64 // the meso relief's strength on slopes, m (0: none; gland.relief)
-	dryAboveM   float64 // grass dries towards straw above this height (0: never; Manifest.Ground.DryAboveM)
-	roadside    bool    // barriers, retaining walls, rock netting, bend posts, kilometre markers (roadside.go)
-	quays       bool    // stone quays along rivers in town (quays.go)
-	gableToView bool    // houses on a slope turn a gable to the valley (buildings.go)
-	gableWood   uint32  // gables clad in timber of this colour (0: the wall's; the renderer draws the boards)
+	cover          map[scenery.Land]uint32
+	reliefM        float64 // the meso relief's strength on slopes, m (0: none; gland.relief)
+	dryAboveM      float64 // grass dries towards straw above this height (0: never; Manifest.Ground.DryAboveM)
+	junctionLevelM float64 // a junction reaches along a road alongside only while within this in height (0: any)
+	roadside       bool    // barriers, retaining walls, rock netting, bend posts, kilometre markers (roadside.go)
+	quays          bool    // stone quays along rivers in town (quays.go)
+	gableToView    bool    // houses on a slope turn a gable to the valley (buildings.go)
+	gableWood      uint32  // gables clad in timber of this colour (0: the wall's; the renderer draws the boards)
 	// rbIslandMinR: roundabouts with a ring this big (centre line radius)
 	// have an island, traffic going round it (0: islandMinR); rbApronM
 	// its apron of setts round the island.
@@ -195,13 +196,14 @@ var styleFR = style{
 	// Built-up land on a mountain village's slopes is gardens and meadow
 	// between the houses, not paving: the shared grey read as concrete
 	// walls on La Bresse's hillsides.
-	cover:       map[scenery.Land]uint32{scenery.LandBuilt: 0x6f8a52},
-	reliefM:     1.6,
-	dryAboveM:   1150,
-	roadside:    true,
-	quays:       true,
-	gableToView: true,
-	gableWood:   0x4e3626, // dark stained boards, as on the Rue du Hohneck
+	cover:          map[scenery.Land]uint32{scenery.LandBuilt: 0x6f8a52},
+	reliefM:        1.6,
+	dryAboveM:      1150,
+	roadside:       true,
+	junctionLevelM: abreastStepM,
+	quays:          true,
+	gableToView:    true,
+	gableWood:      0x4e3626, // dark stained boards, as on the Rue du Hohneck
 	// La Bresse's roundabouts (owner, 2026-10-16, marks at 0.51-0.54 km):
 	// a raised, planted island inside a narrow apron of reddish setts,
 	// not a flat disc ridden straight across.

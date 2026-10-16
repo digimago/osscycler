@@ -669,6 +669,38 @@ func seamSkirt(p *gltf.Primitive, a, b uint32, hasN, hasC, hasUV bool) {
 	}
 }
 
+// highest is the height of the highest road surface within r of glTF
+// x, z (each triangle's plane taken at the point), and whether any is.
+func (c *cutter) highest(x, z, r float64) (float64, bool) {
+	best, found := math.Inf(-1), false
+	p := [2]float64{x, z}
+	for gx := int(math.Floor((x - r) / cutterCellM)); gx <= int(math.Floor((x+r)/cutterCellM)); gx++ {
+		for gz := int(math.Floor((z - r) / cutterCellM)); gz <= int(math.Floor((z+r)/cutterCellM)); gz++ {
+			for _, id := range c.cells[[2]int{gx, gz}] {
+				t := c.tris[id]
+				in := cross2(t[0], t[1], p) >= 0 && cross2(t[1], t[2], p) >= 0 && cross2(t[2], t[0], p) >= 0
+				for k := 0; !in && k < 3; k++ {
+					in = segDist(t[k], t[(k+1)%3], x, z) <= r
+				}
+				if !in {
+					continue
+				}
+				// The plane through the corners, at the point.
+				a, b, cc := t[0], t[1], t[2]
+				det := (b[0]-a[0])*(cc[1]-a[1]) - (cc[0]-a[0])*(b[1]-a[1])
+				y := math.Max(c.ys[id][0], math.Max(c.ys[id][1], c.ys[id][2]))
+				if math.Abs(det) > 1e-9 {
+					u := ((x-a[0])*(cc[1]-a[1]) - (cc[0]-a[0])*(z-a[1])) / det
+					v := ((b[0]-a[0])*(z-a[1]) - (x-a[0])*(b[1]-a[1])) / det
+					y = math.Min(y, c.ys[id][0]+u*(c.ys[id][1]-c.ys[id][0])+v*(c.ys[id][2]-c.ys[id][0]))
+				}
+				best, found = math.Max(best, y), true
+			}
+		}
+	}
+	return best, found
+}
+
 // dist is how far glTF x, z is from the road surfaces (0 on one), up to
 // max (max when none is nearer).
 func (c *cutter) dist(x, z, max float64) float64 {

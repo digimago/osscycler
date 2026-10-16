@@ -30,8 +30,12 @@ const (
 
 // markDecks marks the road samples on a deck: over another road more than
 // bridgeM lower (within its edge and deckClearM, more the deeper it lies), or aloft. Short gaps
-// are bridged, and runs too short for a deck dropped.
-func markDecks(lines []*roadLine, loopM float64) {
+// are bridged, and runs too short for a deck dropped. With beside, a road
+// running alongside the lower one isn't over it (a road climbing beside
+// another on a mountainside stands behind a wall, owner, 2026-10-16,
+// 1.48 km of the Route des Américains: drawn as a bridge, with an
+// abutment and grass spikes beside the Rue du Hohneck).
+func markDecks(lines []*roadLine, loopM float64, beside bool) {
 	type ref struct{ l, i int }
 	const cellM = 10.0
 	grid := map[[2]int][]ref{}
@@ -52,6 +56,9 @@ func markDecks(lines []*roadLine, loopM float64) {
 					for _, r := range grid[[2]int{gx, gy}] {
 						o := lines[r.l].samples[r.i]
 						if o.ele > s.ele-bridgeM || math.Hypot(o.e-s.e, o.n-s.n) > o.edge+deckClearM+deckSlope*(s.ele-o.ele-bridgeM) {
+							continue
+						}
+						if beside && r.l != li && alongsideAt(l.samples, i, lines[r.l].samples, r.i) {
 							continue
 						}
 						if r.l == li {
@@ -95,6 +102,22 @@ func markDecks(lines []*roadLine, loopM float64) {
 			l.samples[i].aloft = deck[i]
 		}
 	}
+}
+
+// alongsideAt tells whether sample i of a and sample j of b run within
+// parallelCosine of each other's way.
+func alongsideAt(a []sample, i int, b []sample, j int) bool {
+	way := func(ss []sample, k int) (float64, float64) {
+		p, q := ss[max(0, k-1)], ss[min(len(ss)-1, k+1)]
+		l := math.Hypot(q.e-p.e, q.n-p.n)
+		if l == 0 {
+			return 0, 0
+		}
+		return (q.e - p.e) / l, (q.n - p.n) / l
+	}
+	ae, an := way(a, i)
+	be, bn := way(b, j)
+	return math.Abs(ae*be+an*bn) >= parallelCosine
 }
 
 // onDeck tells whether the segment from sample i to i+1 is a deck's.

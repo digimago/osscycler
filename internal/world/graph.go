@@ -124,7 +124,7 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 			// (owner's mark, 2026-10-11: a dike road went up and over the
 			// railway embankment where it goes under the track through a
 			// tunnel, polder ride 5.17 km).
-			heightsStraight(l, &t, ways, func(w scenery.Way) bool { return w.Bridge || w.Tunnel })
+			heightsStraight(l, &t, ways, func(w scenery.Way) bool { return w.Bridge || w.Tunnel }, true)
 		}
 		net := newGnet(lines, ways, rbs)
 		net.anchorHeights()
@@ -263,9 +263,9 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 	lines = dropCoveredStubs(lines, rbs, 0, true, func(a, s sample) bool {
 		return a.way >= 0 && a.way < len(ways) && ways[a.way].Bridge && a.ele-s.ele > bridgeM
 	})
-	joinAlongside(lines, o.CellM)
+	joinAlongside(lines, o.CellM, styleFor(o.Region).junctionLevelM)
 	clearWalksOfBuildings(lines, o.Buildings)
-	patches := networkPatches(lines, ways)
+	patches := networkPatches(lines, ways, styleFor(o.Region).junctionLevelM)
 	for i := range rbs {
 		var nodes [][2]float64
 		for _, p := range patches {
@@ -308,7 +308,7 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 			}
 		}
 	}
-	markDecks(lines, c.Distance)
+	markDecks(lines, c.Distance, styleFor(o.Region).junctionLevelM > 0)
 	for k, l := range lines {
 		for i := range l.samples {
 			l.samples[i].line = k

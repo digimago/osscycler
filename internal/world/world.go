@@ -308,11 +308,11 @@ func Build(c *course.Course, o Options) (*World, error) {
 	// the map roads they would lie on and out of roundabouts, and roads
 	// alongside joined.
 	net.lines = dropCovered(net.lines, rbs)
-	joinAlongside(net.lines, o.CellM)
+	joinAlongside(net.lines, o.CellM, styleFor(o.Region).junctionLevelM)
 	clearWalksOfBuildings(net.lines, o.Buildings)
 	pd, px, py, pz, pw := net.finish(rbs)
 	lines := net.lines
-	patches := networkPatches(lines, ways)
+	patches := networkPatches(lines, ways, styleFor(o.Region).junctionLevelM)
 	// Roundabouts: junctions of their own, built from their middle; a
 	// junction the map has on the ring is part of it.
 	for i := range rbs {
@@ -354,7 +354,7 @@ func Build(c *course.Course, o Options) (*World, error) {
 		t.cut = true
 		t.markAloft(lines)
 	}
-	markDecks(lines, c.Distance)
+	markDecks(lines, c.Distance, styleFor(o.Region).junctionLevelM > 0)
 	for k, l := range lines {
 		for i := range l.samples {
 			l.samples[i].line = k

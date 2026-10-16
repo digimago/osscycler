@@ -77,6 +77,10 @@ type gland struct {
 	blocks sync.Map // [2]int block → bool: one leaf (far and flat)
 	far    *routeGrid
 	nearC  sync.Map // [2]int chunk → []sample: the route's coarse samples that shape it
+	// walls is the route within roadsideNearM, where a style with
+	// roadside walls stands a wall between two roads a step apart in
+	// height (nil: no such walls, roadside.go).
+	walls *routeGrid
 }
 
 // gtree is a root cell's leaves: for each of its smallest cells, the
@@ -107,6 +111,9 @@ func newGland(t *terrain, roads *landSurface, lines []*roadLine) *gland {
 	g.fineM = g.rootM / (1 << gDepth)
 	g.near = newRouteGrid(t.coarse, gNearM+g.rootM)
 	g.far = newRouteGrid(t.coarse, gFarM+gBlockRoots*g.rootM)
+	if styleFor(t.o.Region).roadside {
+		g.walls = newRouteGrid(t.coarse, roadsideNearM)
+	}
 	g.blendM = gBlendM
 	if t.o.Elevation == nil {
 		g.blendM = t.o.BlendM
@@ -550,18 +557,22 @@ func (g *gland) blend(e, n, base float64) (h, gap, edge float64) {
 				}
 				pk := [2]int{a.line, int(a.d / (pieceSegs * fineStep))}
 				ele := a.ele + f*(b.ele-a.ele)
+				ue, un := 0.0, 0.0
+				if l := math.Hypot(de, dn); l > 0 {
+					ue, un = de/l, dn/l
+				}
 				found := false
 				for i := range pieces {
 					if pieces[i].k == pk {
 						if gap < pieces[i].gap {
-							pieces[i] = piece{pk, gap, ele, qe, qn}
+							pieces[i] = piece{pk, gap, ele, qe, qn, ue, un}
 						}
 						found = true
 						break
 					}
 				}
 				if !found && len(pieces) < cap(pieces) {
-					pieces = append(pieces, piece{pk, gap, ele, qe, qn})
+					pieces = append(pieces, piece{pk, gap, ele, qe, qn, ue, un})
 				}
 			}
 		}
@@ -643,8 +654,16 @@ func (g *gland) blend(e, n, base float64) (h, gap, edge float64) {
 	// Hohneck at 1.34 km: a lane climbs beside the main road behind a
 	// wall; eased between them, the strip floated in a tilt with the
 	// lane's edge standing over it); the higher road's wall closes the step
-	// (roadside.go's abreast walls).
-	if low, ok := island(pieces, e, n); ok {
+	// (roadside.go's abreast walls). Two roads a step apart in height
+	// with no wall between them (too far apart, or no walls in this
+	// style) have the land eased between them instead: laid level with
+	// the lower one, it had stood as a bare cliff up to the higher one
+	// (1.52 km, where the lane parts from the main road).
+	wallGap := 0.0
+	if g.walls != nil {
+		g.walls.within(e, n, roadsideNearM, func(int) { wallGap = abreastWallM - 0.25 })
+	}
+	if low, ok := island(pieces, e, n, wallGap); ok {
 		road, f = low, 0
 		if !math.IsInf(edge, 1) {
 			edge = math.Min(edge, low)
@@ -664,15 +683,30 @@ type gPiece struct {
 	gap    float64
 	ele    float64
 	qe, qn float64
+	de, dn float64 // the road's way there (unit; 0 for none)
 }
 
 // island is the lower road's height when e, n lies between two different
-// roads' pieces on opposite sides, their edges less than gIslandM apart.
-func island(pieces []gPiece, e, n float64) (float64, bool) {
+// roads' pieces on opposite sides, their edges less than gIslandM apart;
+// for two a step apart in height (over abreastStepM), wherever a wall
+// will close the step: their edges less than wallGap apart.
+func island(pieces []gPiece, e, n, wallGap float64) (float64, bool) {
 	low, ok := math.Inf(1), false
 	for i, a := range pieces {
 		for _, b := range pieces[i+1:] {
-			if a.k[0] == b.k[0] || a.gap+b.gap >= gIslandM {
+			if a.k[0] == b.k[0] {
+				continue
+			}
+			limit := gIslandM
+			if step := math.Abs(a.ele - b.ele); step > abreastStepM {
+				// As roadside.go stands its wall: roads alongside each other
+				// (within abreastCos), the step under abreastMaxM.
+				limit = wallGap
+				if step >= abreastMaxM || math.Abs(a.de*b.de+a.dn*b.dn) < abreastCos {
+					limit = 0
+				}
+			}
+			if a.gap+b.gap >= limit {
 				continue
 			}
 			if (a.qe-e)*(b.qe-e)+(a.qn-n)*(b.qn-n) < 0 {

@@ -405,6 +405,13 @@ func (g *gland) relief(e, n, gap float64, near []sample) float64 {
 		return 0
 	}
 	fade := smooth01((gap - gBlendM) / 6)
+	// Smooth in town: gardens and lawns (owner's shot of the Rue du
+	// Hohneck at 0.89 km: a mown bank where the hummocks had striped it).
+	for _, d := range [5][2]float64{{0, 0}, {15, 0}, {-15, 0}, {0, 15}, {0, -15}} {
+		if l, _ := t.cover.at(e+d[0], n+d[1]); l == scenery.LandBuilt {
+			return 0
+		}
+	}
 	for _, d := range [4][2]float64{{8, 0}, {-8, 0}, {0, 8}, {0, -8}} {
 		if l, _ := t.cover.at(e+d[0], n+d[1]); l == scenery.LandWater {
 			return 0

@@ -44,6 +44,8 @@ const (
 	runMinSamples       = 5   // runs shorter than this many samples (10 m) left out
 	runGapSamples       = 3   // gaps this short between runs closed
 
+	riseTown     = 1.0 // in town (or behind a sidewalk): a low wall where the land rises this much within riseNearM
+	townWallM    = 1.0 // and at most this high
 	railOffM     = 0.5 // a barrier's posts this far off the carriageway's edge
 	barrierPostM = 4.0
 	wallOffM     = 1.0 // a wall's foot this far off the edge: a strip of grass and the gutter
@@ -219,10 +221,10 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 			s.rail, s.wall, s.rock, s.h = make([]bool, n), make([]bool, n), make([]bool, n), make([]float64, n)
 			for k := range n {
 				a := t.fine[ln.from+k]
-				if !near[k] || a.walk[si] || a.open[si] {
+				if !near[k] || a.open[si] {
 					continue
 				}
-				edge := a.hw + a.wide[si]
+				edge := sideEdge(a, si)
 				zc, ok := model(a.e, a.n)
 				if !ok {
 					continue
@@ -233,10 +235,28 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 				z1, ok1 := model(e1, n1)
 				z2, ok2 := model(e2, n2)
 				z3, ok3 := model(e3, n3)
-				if ok1 && ok2 && zc-z2 > fallDrop && zc-z1 > fallDrop*0.4 {
+				town := a.walk[si] || builtUp(a.e, a.n)
+				// A wall's line and the strip behind it clear of every other
+				// road surface (a side road's mouth, its junction).
+				wallClear := true
+				for _, off := range [3]float64{wallOffM, wallOffM + 1, wallOffM + 2.5} {
+					we, wn := at(k, sign*(edge+off))
+					if sp.roadNear(we, wn, 0.5, a.line) >= 0 || t.surfaces != nil && t.surfaces.dist(we, -wn, 0.5) < 0.5 {
+						wallClear = false
+					}
+				}
+				if ok1 && ok2 && zc-z2 > fallDrop && zc-z1 > fallDrop*0.4 && !a.walk[si] {
 					s.rail[k] = true
 				}
-				if ok3 && z3-zc > riseWall && !builtUp(a.e, a.n) {
+				switch {
+				case !wallClear:
+				case town && ok3 && z3-zc > riseTown:
+					// In town a low wall at the bank's foot, behind the
+					// sidewalk, the lawn rising on above it (owner's shot of
+					// the Rue du Hohneck at 0.89 km, 2026-10-16).
+					s.wall[k] = true
+					s.h[k] = math.Min(townWallM, 0.3+0.4*(z3-zc))
+				case !town && ok3 && z3-zc > riseWall:
 					s.wall[k] = true
 					s.rock[k] = z3-zc > riseRock
 					s.h[k] = math.Min(3.6, z3-zc+0.4)
@@ -287,7 +307,7 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 				}
 				retaining(p, f, land, clear, landColour, t, ln.from, r, h, sign, isRock, func(k int, off float64) (float64, float64) {
 					a := t.fine[ln.from+k]
-					return at(k, sign*(a.hw+a.wide[si]+off))
+					return at(k, sign*(sideEdge(a, si)+off))
 				})
 			}
 		}

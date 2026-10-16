@@ -44,21 +44,17 @@ const (
 	runMinSamples       = 5   // runs shorter than this many samples (10 m) left out
 	runGapSamples       = 3   // gaps this short between runs closed
 
-	riseTown         = 1.0  // in town (or behind a sidewalk): a low wall where the land rises this much within riseNearM
-	townWallM        = 1.0  // and at most this high
-	railOffM         = 0.5  // a barrier's posts this far off the carriageway's edge
-	abreastWallM     = 8.0  // a higher road alongside within this of a road's edge gets its wall (a strip of land between, level with the lower road)
-	abreastStepM     = 0.35 // when it stands more than this higher somewhere
-	abreastLowM      = 0.03 // and on while it stands this much higher (its ends taper)
-	abreastMaxM      = 4.0  // and less than this (higher is a hillside, not a lane beside the road)
-	abreastCos       = 0.85 // and the two run alongside: their ways within this cosine
-	abreastTurnCos   = 0.34 // or, for its low ends, within 70° (a lane turning in to meet the road)
-	abreastBandM     = 0.2  // its low ends never more than this inside the lower road's edge and sidewalk
-	abreastBandStepM = 0.6  // a real step up to this inside (the lane's edge a little over the sidewalk)
-	abreastThickM    = 0.25 // its thickness where no lower surface meets it
-	barrierPostM     = 4.0
-	wallOffM         = 1.0 // a wall's foot this far off the edge: a strip of grass and the gutter
-	wallAboveM       = 1.0 // a road surface this much above a road's own stands behind its wall, not in its way
+	riseTown        = 1.0  // in town (or behind a sidewalk): a low wall where the land rises this much within riseNearM
+	townWallM       = 1.0  // and at most this high
+	railOffM        = 0.5  // a barrier's posts this far off the carriageway's edge
+	abreastReachM   = 1.5  // a road surface this near behind a road's edge and sidewalk, higher by a step, gets a wall there
+	abreastStepM    = 0.35 // when it stands more than this higher somewhere along it
+	abreastLowM     = 0.03 // and on while it stands this much higher (its ends taper)
+	abreastMaxM     = 4.0  // and less than this (higher is a hillside or a bridge, not a lane behind a wall)
+	abreastCrossCos = 0.5  // not across a side road's mouth: one crossing within 60° of square
+	barrierPostM    = 4.0
+	wallOffM        = 1.0 // a wall's foot this far off the edge: a strip of grass and the gutter
+	wallAboveM      = 1.0 // a road surface this much above a road's own stands behind its wall, not in its way
 
 	snowPoleStepM = 45.0 // snow poles along the road on each side, staggered
 	snowPoleOffM  = 0.7
@@ -337,102 +333,59 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 			}
 		}
 
-		// This road alongside another, higher by a step: a concrete wall
-		// along its own edge down to the lower road's level (owner's shot
-		// of the Rue du Hohneck at 1.34 km: a lane climbs beside the main
-		// road behind a wall, the sidewalk at its foot; placed from the
-		// lower road, the wall had zig-zagged into the lane's asphalt).
-		// Not within a junction's span: where the lane joins, no wall.
+		// A road surface just behind this road's edge and sidewalk, higher
+		// by a step: a concrete wall along the sidewalk's outer edge, its top
+		// following that surface (owner's photos of the Rue du Hohneck at
+		// 1.34 km, 2026-10-16: a straight wall of panels along the
+		// sidewalk, the lane, its junction and the uphill road behind it,
+		// wedging down where the uphill road comes down to its mouth).
+		// Measured on the drawn surfaces, so the wall is straight whatever
+		// the upper road's line does (placed from that line, it had
+		// zig-zagged into the lane's asphalt and across the sidewalk).
 		for si, sign := range []float64{-1, 1} {
-			off := make([]float64, n)   // the face
-			inner := make([]float64, n) // the wall's back, under this road's edge
-			step := make([]float64, n)  // how much higher this road stands
+			face := make([]float64, n)
+			inner := make([]float64, n)
 			bottom := make([]float64, n)
+			top := make([]float64, n)
+			step := make([]float64, n)
 			on := make([]bool, n)
 			for k := range n {
 				a := t.fine[ln.from+k]
-				if !(near[k] || a.onPatch && !a.again && !a.aloft && isNear(a.e, a.n)) || a.open[si] {
+				if t.surfaces == nil || !(near[k] || a.onPatch && !a.again && !a.aloft && isNear(a.e, a.n)) || a.open[si] {
 					continue
 				}
-				edge := sideEdge(a, si)
-				for d := edge + 0.25; d <= edge+abreastWallM; d += 0.25 {
-					e, nn := at(k, sign*d)
-					j := sp.roadNear(e, nn, 0, a.line)
-					if j < 0 {
+				band := sideEdge(a, si)
+				base := a.ele
+				if a.walk[si] {
+					base += kerbM
+				}
+				for g := band + 0.05; g <= band+abreastReachM; g += 0.05 {
+					e, nn := at(k, sign*g)
+					h, ok := t.surfaces.highest(e, -nn, 0)
+					if !ok {
 						continue
 					}
-					o := t.fine[j]
-					jo := j + 1
-					if jo >= len(t.fine) || t.fine[jo].line != o.line {
-						jo = j - 1
+					dz := h - base
+					if dz <= abreastLowM || dz >= abreastMaxM {
+						break // the first surface behind: level with this road, or far above
 					}
-					if jo < 0 || t.fine[jo].line != o.line {
-						break
-					}
-					oe, on2 := t.fine[jo].e-o.e, t.fine[jo].n-o.n
-					l := math.Hypot(oe, on2)
-					if l == 0 {
-						break
-					}
-					cos := math.Abs(oe*dir[k][0]+on2*dir[k][1]) / l
-					dz := a.ele - o.ele
-					// Alongside; where the lane turns in to meet the road, its
-					// low end (a wedge under abreastStepM) follows it round
-					// (cut off there, the lane's raised edge stood open over
-					// the land between the sidewalk's end and the wall).
-					if cos < abreastCos && (cos < abreastTurnCos || dz >= abreastStepM) {
-						break // a road crossing or joining, not alongside
-					}
-					// Never in the lower road or its sidewalk: the wall stands
-					// at the band's outer edge at the nearest (it had stood on
-					// the carriageway's edge where the lane crosses the
-					// sidewalk's line to its mouth).
-					ee, en := at(k, sign*edge)
-					// A real step may stand a little into the band (map lines
-					// put the lane a few decimetres over the sidewalk's outer
-					// strip; the wall had broken there and left the lane's edge
-					// open); the low wedge where the lane sweeps across the
-					// sidewalk into its mouth only clear of it.
-					tol := abreastBandM
-					if dz >= abreastStepM {
-						tol = abreastBandStepM
-					}
-					if dz > abreastLowM && dz < abreastMaxM && !inBand(t.fine, j, jo, ee, en, tol) {
-						// Down to a few centimetres, so the wall's ends taper to
-						// nothing where the lane comes down to the road (the
-						// owner's photo: wedge, rectangle, wedge; cut off at
-						// abreastStepM, a gap showed under the lane's edge).
-						step[k] = dz
-						// A surface is this road's when nearer its height than
-						// the lower road's sidewalk (a kerb up from that road): by
-						// half the step, the sidewalk beside a low step had
-						// counted as this road's, and the wall stood at the
-						// carriageway's edge beyond it.
-						upper := func(h float64) bool { return math.Abs(h-a.ele) < math.Abs(h-(o.ele+kerbM)) }
-						// The face where the upper surface as drawn ends (a
-						// junction's outline, a kerb), not where the line's
-						// edge says: it had shown through the wall.
-						w := edge
-						for t.surfaces != nil && w < edge+1.5 {
-							e, nn := at(k, sign*(w+0.1))
-							if h, ok := t.surfaces.highest(e, -nn, 0); !ok || !upper(h) {
-								break
-							}
-							w += 0.1
-						}
-						// Its face out to the lower surface where that begins
-						// within a metre (a slit between the two had shown the
-						// void under them), else a quarter metre thick.
-						face := w + abreastThickM
-						for g := w + 0.05; t.surfaces != nil && g <= w+1; g += 0.05 {
-							e, nn := at(k, sign*g)
-							if h, ok := t.surfaces.highest(e, -nn, 0); ok && !upper(h) {
-								face = math.Max(g+0.02, w+0.1)
-								break
+					if j := sp.roadNear(e, nn, 0.5, a.line); j >= 0 {
+						if jo := j + 1; jo < len(t.fine) && t.fine[jo].line == t.fine[j].line {
+							oe, on2 := t.fine[jo].e-t.fine[j].e, t.fine[jo].n-t.fine[j].n
+							if l := math.Hypot(oe, on2); l > 0 && math.Abs(oe*dir[k][0]+on2*dir[k][1])/l < abreastCrossCos {
+								break // a side road's mouth: no wall across it
 							}
 						}
-						inner[k], off[k], bottom[k], on[k] = w-0.1, face, o.ele, true
 					}
+					// Its top over the surface behind it a little further in
+					// (it may still rise there), a parapet no higher than the
+					// step, so its ends run out to nothing.
+					e2, n2 := at(k, sign*(g+0.25))
+					if h2, ok := t.surfaces.highest(e2, -n2, 0); ok && h2 > h && h2-base < abreastMaxM {
+						h = h2
+					}
+					face[k], inner[k], bottom[k], step[k] = band+0.02, g+0.2, base-walkFootM, dz
+					top[k], on[k] = h+math.Min(0.15, dz), true
 					break
 				}
 			}
@@ -445,8 +398,30 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 				if most <= abreastStepM {
 					continue
 				}
+				// One sample on at either end the wall comes down to the
+				// sidewalk, so it runs out to nothing (a run starts at the
+				// first sample with a step: it had ended 0.3-0.5 m tall).
+				end := func(k int) bool {
+					if k < 0 || k >= n || on[k] || t.fine[ln.from+k].open[si] {
+						return false
+					}
+					a := t.fine[ln.from+k]
+					base := a.ele
+					if a.walk[si] {
+						base += kerbM
+					}
+					face[k] = sideEdge(a, si) + 0.02
+					inner[k], bottom[k], top[k] = face[k], base-walkFootM, base
+					return true
+				}
+				if end(r.from - 1) {
+					r.from--
+				}
+				if end(r.to + 1) {
+					r.to++
+				}
 				p := prim(items, t.fine[ln.from+r.from].e, t.fine[ln.from+r.from].n, mat)
-				abreastWall(p, t, ln.from, r, inner, off, bottom, step, func(k int, d float64) (float64, float64) { return at(k, sign*d) })
+				abreastWall(p, r, inner, face, bottom, top, func(k int, d float64) (float64, float64) { return at(k, sign*d) })
 			}
 		}
 
@@ -876,79 +851,35 @@ func drain(p *gltf.Primitive, e, y, n float64, dir [2]float64) {
 	tri(p, base, base+2, base+3, [3]float64{0, 1, 0})
 }
 
-// inBand tells whether e, n lies more than tol inside the road
-// of sample j's edge and sidewalk on that side, its widest within
-// gBandNearM (the sidewalk stops at a mouth; the band goes on); jo is the
-// next sample along it.
-func inBand(fine []sample, j, jo int, e, n, tol float64) bool {
-	o, o2 := fine[j], fine[jo]
-	de, dn := o2.e-o.e, o2.n-o.n
-	l := math.Hypot(de, dn)
-	if l == 0 {
-		return false
-	}
-	off := ((e-o.e)*dn - (n-o.n)*de) / l // right of o's way
-	side := 1
-	if off < 0 {
-		side = 0
-	}
-	band := 0.0
-	for i := j; i >= 0 && fine[i].line == o.line && math.Abs(fine[i].d-o.d) <= gBandNearM; i-- {
-		band = math.Max(band, sideEdge(fine[i], side))
-	}
-	for i := j; i < len(fine) && fine[i].line == o.line && math.Abs(fine[i].d-o.d) <= gBandNearM; i++ {
-		band = math.Max(band, sideEdge(fine[i], side))
-	}
-	return math.Abs(off) < band-tol
-}
-
-// abreastWall is a concrete wall along run, a block from inner[k] (under
-// this road's edge) to its face at off[k] (from this road's line), from
-// bottom[k] (the lower road's level, a little under) up to just over this
-// road's surface, its coping across the top.
-func abreastWall(p *gltf.Primitive, t *terrain, from int, r sideRun, inner, off, bottom, step []float64, pos func(k int, d float64) (float64, float64)) {
+// abreastWall is a concrete wall along run: its face at face[k] from the
+// road's line (the sidewalk's outer edge), from bottom[k] up to top[k],
+// its coping back to inner[k], under the surface behind it.
+func abreastWall(p *gltf.Primitive, r sideRun, inner, face, bottom, top []float64, pos func(k int, d float64) (float64, float64)) {
 	c, cope := srgbLinear(0xb9b5ad), srgbLinear(0xa8a49c)
 	pt := func(k int, d, y float64) [3]float64 {
 		e, n := pos(k, d)
 		return [3]float64{e, y, -n}
 	}
-	// Over the highest surface beside it (a junction stands higher than
-	// the line's own samples), so none shows through the top.
-	topAt := func(k int) float64 {
-		y := t.fine[from+k].ele
-		if t.surfaces != nil {
-			e, n := pos(k, inner[k]-0.2)
-			if h, ok := t.surfaces.highest(e, -n, 0.3); ok && h < y+1.5 {
-				y = math.Max(y, h)
-			}
-		}
-		// A parapet of 0.15 m, less where the step itself is less: its
-		// low ends run out to nothing (the owner's photo: wedge,
-		// rectangle, wedge), not a block.
-		return y + math.Min(0.15, step[k])
-	}
 	for k := r.from; k < r.to; k++ {
-		if bottom[k] == 0 || bottom[k+1] == 0 {
+		if top[k] == 0 || top[k+1] == 0 {
 			continue
 		}
-		top0, top1 := topAt(k), topAt(k+1)
-		a0, b0 := pt(k, off[k], bottom[k]-0.2), pt(k+1, off[k+1], bottom[k+1]-0.2)
-		a1, b1 := pt(k, off[k], top0), pt(k+1, off[k+1], top1)
+		a0, b0 := pt(k, face[k], bottom[k]), pt(k+1, face[k+1], bottom[k+1])
+		a1, b1 := pt(k, face[k], top[k]), pt(k+1, face[k+1], top[k+1])
 		nrm := wallNormal(a0, b0, a1, 1)
 		quad(p, a0, b0, b1, a1, nrm, c)
 		quad(p, b0, a0, a1, b1, [3]float64{-nrm[0], -nrm[1], -nrm[2]}, c)
-		// The coping, from under the road's edge to the face.
-		a2, b2 := pt(k, inner[k], top0), pt(k+1, inner[k+1], top1)
-		quad(p, a2, b2, b1, a1, [3]float64{0, 1, 0}, cope)
+		a2, b2 := pt(k, inner[k], top[k]), pt(k+1, inner[k+1], top[k+1])
+		quad(p, a1, b1, b2, a2, [3]float64{0, 1, 0}, cope)
+		quad(p, b1, a1, a2, b2, [3]float64{0, -1, 0}, cope)
 	}
 	// The ends, closed from the foot to the coping.
 	for _, k := range []int{r.from, r.to} {
-		if bottom[k] == 0 {
+		if top[k] == 0 {
 			continue
 		}
-		y := topAt(k)
-		a0, b0 := pt(k, inner[k], bottom[k]-0.2), pt(k, off[k], bottom[k]-0.2)
-		a1, b1 := pt(k, inner[k], y), pt(k, off[k], y)
+		a0, b0 := pt(k, face[k], bottom[k]), pt(k, inner[k], bottom[k])
+		a1, b1 := pt(k, face[k], top[k]), pt(k, inner[k], top[k])
 		n := wallNormal(a0, b0, a1, 1)
 		quad(p, a0, b0, b1, a1, n, c)
 		quad(p, b0, a0, a1, b1, [3]float64{-n[0], -n[1], -n[2]}, c)

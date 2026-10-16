@@ -661,7 +661,7 @@ func (g *gland) blend(e, n, base float64) (h, gap, edge float64) {
 	// (1.52 km, where the lane parts from the main road).
 	wallGap := 0.0
 	if g.walls != nil {
-		g.walls.within(e, n, roadsideNearM, func(int) { wallGap = abreastWallM - 0.25 })
+		g.walls.within(e, n, roadsideNearM, func(int) { wallGap = abreastReachM })
 	}
 	if low, ok := island(pieces, e, n, wallGap); ok {
 		road, f = low, 0
@@ -700,9 +700,9 @@ func island(pieces []gPiece, e, n, wallGap float64) (float64, bool) {
 			limit := gIslandM
 			if step := math.Abs(a.ele - b.ele); step > abreastStepM {
 				// As roadside.go stands its wall: roads alongside each other
-				// (within abreastCos), the step under abreastMaxM.
+				// (not crossing each other, the step under abreastMaxM).
 				limit = wallGap
-				if step >= abreastMaxM || math.Abs(a.de*b.de+a.dn*b.dn) < abreastCos {
+				if step >= abreastMaxM || math.Abs(a.de*b.de+a.dn*b.dn) < abreastCrossCos {
 					limit = 0
 				}
 			}

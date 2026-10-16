@@ -1083,9 +1083,9 @@ func TestTailOntoLap(t *testing.T) {
 // where a wall closes the step (1.52 km, where the lane parts from the
 // main road: the land had stood as a bare cliff up to it).
 func TestLandBetweenCloseRoadsIsLevel(t *testing.T) {
-	const wall = abreastWallM - 0.25
-	main := gPiece{k: [2]int{1, 0}, gap: 1.5, ele: 10, qe: 0, qn: -2, de: 1}
-	lane := gPiece{k: [2]int{2, 0}, gap: 2, ele: 11.2, qe: 0, qn: 3, de: 1}
+	const wall = abreastReachM
+	main := gPiece{k: [2]int{1, 0}, gap: 0.3, ele: 10, qe: 0, qn: -2, de: 1}
+	lane := gPiece{k: [2]int{2, 0}, gap: 0.5, ele: 11.2, qe: 0, qn: 3, de: 1}
 	if low, ok := island([]gPiece{main, lane}, 0, 0, wall); !ok || low != 10 {
 		t.Errorf("between the main road and the lane: %v, %v; want the main road's 10 m", low, ok)
 	}
@@ -1098,14 +1098,14 @@ func TestLandBetweenCloseRoadsIsLevel(t *testing.T) {
 		t.Error("two roads at one level, no wall needed: no level strip")
 	}
 	parted := lane
-	parted.gap = abreastWallM
+	parted.gap = abreastReachM
 	if _, ok := island([]gPiece{main, parted}, 0, 0, wall); ok {
 		t.Error("a step past the wall's reach made a level strip")
 	}
 	across := lane
-	across.de, across.dn = 0.6, 0.8
+	across.de, across.dn = 0.3, 0.95
 	if _, ok := island([]gPiece{main, across}, 0, 0, wall); ok {
-		t.Error("a step to a road turning away (no wall there) made a level strip")
+		t.Error("a step to a road crossing (no wall across its mouth) made a level strip")
 	}
 	same := gPiece{k: [2]int{2, 0}, gap: 3, ele: 11.2, qe: 0, qn: -4, de: 1}
 	if _, ok := island([]gPiece{main, same}, 0, 0, wall); ok {

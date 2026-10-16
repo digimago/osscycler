@@ -14,9 +14,10 @@ import (
 // wide; the skirts under them show through it, dark. stitchSlivers fills
 // such a wedge with a triangle where nothing covers it.
 const (
-	stitchMaxDeg = 35.0 // the wedge's angle at its shared vertex (its width, stitchMaxM, keeps real gaps out)
-	stitchMaxM   = 0.4  // its open end at most this wide
-	stitchSnapM  = 0.02 // vertices this close are one
+	stitchMaxDeg = 35.0  // the wedge's angle at its shared vertex (its width, stitchMaxM, keeps real gaps out)
+	stitchMaxM   = 0.4   // its open end at most this wide
+	stitchSnapM  = 0.02  // vertices this close are one
+	stitchMinM2  = 0.002 // a wedge smaller than this seen from above is none
 )
 
 // stitchSlivers closes the slivers between the open edges of primitives
@@ -46,6 +47,39 @@ func stitchSlivers(ps []gltf.Primitive) int {
 			if n == 0 {
 				break
 			}
+		}
+	}
+	return added
+}
+
+// stitchAcross closes the slivers left between surfaces of different
+// materials that a rider sees as one, a sidewalk's end cut against a
+// junction's asphalt (owner, 2026-10-16, Rue du Hohneck at 1.34 km: the
+// main road's sidewalk between a lane's two mouths, the void under the
+// roads showing at its ends): the same wedges as stitchSlivers, over the
+// primitives whose material joins (one), each closing triangle added to
+// the first primitive whose material first is true for (the asphalt).
+func stitchAcross(ps []gltf.Primitive, joins, first func(mat int) bool) int {
+	var group []*gltf.Primitive
+	for i := range ps {
+		if joins(ps[i].Material) && first(ps[i].Material) {
+			group = append(group, &ps[i])
+		}
+	}
+	if len(group) == 0 {
+		return 0
+	}
+	for i := range ps {
+		if joins(ps[i].Material) && !first(ps[i].Material) {
+			group = append(group, &ps[i])
+		}
+	}
+	added := 0
+	for range 12 {
+		n := stitchGroup(group)
+		added += n
+		if n == 0 {
+			break
 		}
 	}
 	return added
@@ -190,6 +224,11 @@ func stitchGroup(group []*gltf.Primitive) int {
 				}
 				tk := [3]int{a, b, c}
 				if done[tk] {
+					continue
+				}
+				// A wedge with some area seen from above (two edges along
+				// one kerb line, a sidewalk's over the road's, have none).
+				if math.Abs(ub[0]*uc[1]-ub[1]*uc[0]) < 2*stitchMinM2 {
 					continue
 				}
 				// Uncovered inside: a sliver, not a surface's own sharp corner.

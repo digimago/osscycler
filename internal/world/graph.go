@@ -453,6 +453,9 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 	}
 	for _, ps := range roads {
 		stitchSlivers(ps) // each chunk's own, decks too; any order
+		stitchAcross(ps, func(mat int) bool {
+			return carriageway[w.doc.MaterialName(mat)] || mat == roadMats.walk
+		}, func(mat int) bool { return carriageway[w.doc.MaterialName(mat)] })
 	}
 	if err := w.addRoads(roads); err != nil {
 		return nil, err

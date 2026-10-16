@@ -296,6 +296,11 @@ func Build(c *course.Course, o Options) (*World, error) {
 		ways = o.Scenery.Ways
 	}
 	rbs := findRoundabouts(ways, true)
+	if minR := styleFor(o.Region).rbIslandMinR; minR > 0 {
+		for i := range rbs {
+			rbs[i].island = rbs[i].island || rbs[i].r >= minR
+		}
+	}
 	// Before the rider's path is fitted to them: the route's own ways off
 	// the map roads they would lie on and out of roundabouts, and roads
 	// alongside joined.

@@ -32,15 +32,19 @@ type style struct {
 	barnRoofs       []uint32                //
 	// cover: the terrain's colour for these lands instead of the shared
 	// palette's.
-	cover            map[scenery.Land]uint32
-	reliefM          float64 // the meso relief's strength on slopes, m (0: none; gland.relief)
-	dryAboveM        float64 // grass dries towards straw above this height (0: never; Manifest.Ground.DryAboveM)
-	roadside         bool    // barriers, retaining walls, rock netting, bend posts, kilometre markers (roadside.go)
-	quays            bool    // stone quays along rivers in town (quays.go)
-	markings         bool    // white centre and edge lines
-	snowPoleAboveM   float64 // snow poles along roads above this height (0: none)
-	cycleLane        uint32  // a cycle lane's surface
-	roundaboutCentre uint32  // a flat roundabout's paved centre
+	cover     map[scenery.Land]uint32
+	reliefM   float64 // the meso relief's strength on slopes, m (0: none; gland.relief)
+	dryAboveM float64 // grass dries towards straw above this height (0: never; Manifest.Ground.DryAboveM)
+	roadside  bool    // barriers, retaining walls, rock netting, bend posts, kilometre markers (roadside.go)
+	quays     bool    // stone quays along rivers in town (quays.go)
+	// rbIslandMinR: roundabouts with a ring this big (centre line radius)
+	// have an island, traffic going round it (0: islandMinR); rbApronM
+	// its apron of setts round the island.
+	rbIslandMinR, rbApronM float64
+	markings               bool    // white centre and edge lines
+	snowPoleAboveM         float64 // snow poles along roads above this height (0: none)
+	cycleLane              uint32  // a cycle lane's surface
+	roundaboutCentre       uint32  // a flat roundabout's paved centre
 	// bands: by height above the datum, the trees that grow there
 	// (replacing species for the lands a band names) and how tall they
 	// get; the last band reaches up without end. None: no bands.
@@ -189,11 +193,16 @@ var styleFR = style{
 	// Built-up land on a mountain village's slopes is gardens and meadow
 	// between the houses, not paving: the shared grey read as concrete
 	// walls on La Bresse's hillsides.
-	cover:            map[scenery.Land]uint32{scenery.LandBuilt: 0x6f8a52},
-	reliefM:          1.6,
-	dryAboveM:        1150,
-	roadside:         true,
-	quays:            true,
+	cover:     map[scenery.Land]uint32{scenery.LandBuilt: 0x6f8a52},
+	reliefM:   1.6,
+	dryAboveM: 1150,
+	roadside:  true,
+	quays:     true,
+	// La Bresse's roundabouts (owner, 2026-10-16, marks at 0.51-0.54 km):
+	// a raised, planted island inside a narrow apron of reddish setts,
+	// not a flat disc ridden straight across.
+	rbIslandMinR:     8,
+	rbApronM:         1.5,
 	markings:         true,
 	snowPoleAboveM:   800,      // the jalons along the D430 and the passes
 	cycleLane:        0x4c4d50, // bandes cyclables: asphalt, marked by a line

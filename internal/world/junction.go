@@ -133,7 +133,9 @@ func patchMeshes(p patch, m roadMaterials, v *verger) []gltf.Primitive {
 			out = append(out, q)
 		}
 	}
-	if p.rb != nil && p.rb.island {
+	if p.rb != nil && p.rb.island && m.apronM > 0 {
+		out = append(out, p.rb.apronMesh(m.paving, m.island, m.kerb, m.apronM)...)
+	} else if p.rb != nil && p.rb.island {
 		out = append(out, p.rb.islandMesh(m.island, m.kerb)...)
 	}
 	if p.rb != nil && p.rb.paved() {

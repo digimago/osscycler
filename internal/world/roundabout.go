@@ -372,12 +372,19 @@ func (rb *roundabout) shape(ls []*roadLine) patch {
 // islandMesh is a roundabout's island, on top of its surface: grass (in
 // the terrain's material, coloured in its vertices) on a kerb.
 func (rb *roundabout) islandMesh(ground, kerb int) []gltf.Primitive {
-	return rb.centreMesh(ground, kerb, islandKerbM, true)
+	return rb.centreMesh(ground, kerb, islandKerbM, true, rb.inner())
+}
+
+// apronMesh is an island roundabout's apron (style.rbApronM): a ring of
+// setts, mountable, round the island, which then starts that far in.
+func (rb *roundabout) apronMesh(paving, ground, kerb int, apron float64) []gltf.Primitive {
+	out := rb.centreMesh(paving, kerb, centreRiseM, false, rb.inner())
+	return append(out, rb.centreMesh(ground, kerb, islandKerbM, true, math.Max(1, rb.inner()-apron))...)
 }
 
 // pavedMesh is a flat roundabout's paved centre circle, in material paving.
 func (rb *roundabout) pavedMesh(paving, kerb int) []gltf.Primitive {
-	return rb.centreMesh(paving, kerb, centreRiseM, false)
+	return rb.centreMesh(paving, kerb, centreRiseM, false, rb.inner())
 }
 
 // paved tells whether a roundabout has a paved centre circle.
@@ -388,10 +395,10 @@ func (rb roundabout) paved() bool {
 
 // centreMesh is a disc inside the ring, rise up with a kerb round it:
 // grass (in vertex colours) or paving (with UVs).
-func (rb *roundabout) centreMesh(mat, kerb int, rise float64, grassy bool) []gltf.Primitive {
+func (rb *roundabout) centreMesh(mat, kerb int, rise float64, grassy bool, radius float64) []gltf.Primitive {
 	top := gltf.Primitive{Material: mat}
 	wall := gltf.Primitive{Material: kerb}
-	in := rb.circle(rb.inner())
+	in := rb.circle(radius)
 	grass := landColors[scenery.LandNone]
 	up := [3]float64{0, 1, 0}
 	y := func(q [2]float64) float64 { return rb.height(q[0], q[1]) + overlayLiftM }

@@ -25,9 +25,10 @@ type roadMaterials struct {
 	surface    [5]int // by scenery.Surface
 	lane, walk int
 	kerb       int
-	ground     int // the terrain's
-	island     int // a roundabout's island: grass in its vertices, not land (the cut leaves it)
-	paving     int // a roundabout\'s paved centre circle
+	ground     int     // the terrain's
+	island     int     // a roundabout's island: grass in its vertices, not land (the cut leaves it)
+	paving     int     // a roundabout\'s paved centre circle
+	apronM     float64 // an island roundabout's apron of setts round the island (style.rbApronM)
 }
 
 func addRoadMaterials(d *gltf.Doc, st *style) roadMaterials {
@@ -49,6 +50,7 @@ func addRoadMaterials(d *gltf.Doc, st *style) roadMaterials {
 	m.kerb = mat("kerb", 0xc8c6c0, 0.8)
 	m.island = d.AddMaterial(gltf.Material{Name: "island", Color: [4]float32{1, 1, 1, 1}, Roughness: 1})
 	m.paving = mat("roundabout centre", st.roundaboutCentre, 0.9)
+	m.apronM = st.rbApronM
 	return m
 }
 

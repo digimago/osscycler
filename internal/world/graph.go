@@ -94,6 +94,11 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 	}
 	hasWays := sc != nil && len(sc.Ways) > 0 && len(sc.RouteOn) > 0 && sc.RouteStepM > 0
 	rbs := findRoundabouts(ways, true)
+	if minR := styleFor(o.Region).rbIslandMinR; minR > 0 {
+		for i := range rbs {
+			rbs[i].island = rbs[i].island || rbs[i].r >= minR
+		}
+	}
 	steps := max(1, int(math.Ceil(c.Distance/pathStep)))
 	step := c.Distance / float64(steps)
 

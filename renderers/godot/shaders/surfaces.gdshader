@@ -95,15 +95,17 @@ void fragment() {
 			rp = vec2(UV.y * 5.0, UV.x * 6.0);
 		}
 		vec2 cell = floor(rp / 7.0);
-		if (h21(cell + 17.3) > 0.8) {
+		// Rare and soft (owner's marks, 2026-10-16: patches in rows and
+		// outlined crisp read as painted boxes).
+		if (h21(cell + 17.3) > 0.94) {
 			vec2 o = (vec2(h21(cell + 3.1), h21(cell + 5.7)) * 0.5 + 0.1) * 7.0;
 			vec2 size = vec2(1.5 + 3.5 * h21(cell + 9.2), 1.0 + 2.0 * h21(cell + 11.4));
 			vec2 q = rp - cell * 7.0 - o;
 			float e = min(min(q.x, size.x - q.x), min(q.y, size.y - q.y));
 			float in_patch = smoothstep(-0.01, 0.01, e);
 			float seam = inside(e, 0.1);
-			c = mix(c, base * (0.62 + 0.12 * grain), in_patch);
-			c *= 1.0 - 0.6 * seam;
+			c = mix(c, base * (0.8 + 0.1 * grain), in_patch);
+			c *= 1.0 - 0.25 * seam;
 			h += 0.004 * in_patch + 0.002 * seam;
 			rough -= 0.15 * seam;
 		}
@@ -111,8 +113,8 @@ void fragment() {
 		// raised, where a warped noise field crosses its middle.
 		vec2 w = p + 1.8 * vec2(vnoise(p * 0.35), vnoise(p * 0.35 + 9.1));
 		float n = vnoise(w * 0.22);
-		float tar = inside(n - 0.5, 0.02) * smoothstep(0.4, 0.55, vnoise(p * 0.05 + 3.0)) * near(p, 0.2);
-		c = mix(c, vec3(0.01), tar * 0.95);
+		float tar = inside(n - 0.5, 0.015) * smoothstep(0.62, 0.75, vnoise(p * 0.05 + 3.0)) * near(p, 0.15);
+		c = mix(c, vec3(0.02), tar * 0.7);
 		rough -= 0.35 * tar;
 		h += 0.003 * tar;
 	} else if (kind == 1 || kind == 2) {

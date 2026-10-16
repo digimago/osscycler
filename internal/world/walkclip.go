@@ -2,6 +2,7 @@ package world
 
 import (
 	"math"
+	"sort"
 
 	"github.com/digimago/osscycler/internal/gltf"
 )
@@ -188,4 +189,122 @@ func triHeight(q [3][3]float64, x, z float64) (float64, bool) {
 	u := (px*bz - pz*bx) / det
 	v := (ax*pz - az*px) / det
 	return q[0][1] + u*(q[1][1]-q[0][1]) + v*(q[2][1]-q[0][1]), true
+}
+
+// closeOpenWalks closes every sidewalk edge that nothing closes (owner,
+// 2026-10-16, mark at 0.51 km: looking through a sidewalk where a
+// junction's met a road's): an edge of a slab no other slab continues and
+// no face hangs from goes down by walkFootM + its kerb into the ground.
+// It returns how many edges it closed.
+func closeOpenWalks(chunks map[[2]int][]gltf.Primitive, walkMat, kerbMat int) int {
+	type pt [3]int32
+	q := func(x, y, z float32) pt { return pt{int32(x * 50), int32(y * 50), int32(z * 50)} } // 2 cm
+	type ekey [2]pt
+	norm := func(a, b pt) ekey {
+		if b[0] < a[0] || b[0] == a[0] && (b[2] < a[2] || b[2] == a[2] && b[1] < a[1]) {
+			a, b = b, a
+		}
+		return ekey{a, b}
+	}
+	slab := map[ekey]int{}
+	hung := map[ekey]bool{} // a face's top edge
+	type ref struct {
+		k    [2]int
+		pi   int
+		a, b uint32
+	}
+	first := map[ekey]ref{}
+	keys := chunkOrder(chunks)
+	for _, k := range keys {
+		for pi := range chunks[k] {
+			p := &chunks[k][pi]
+			if p.Material != walkMat && p.Material != kerbMat {
+				continue
+			}
+			at := func(i uint32) (float32, float32, float32) {
+				return p.Positions[3*i], p.Positions[3*i+1], p.Positions[3*i+2]
+			}
+			for t := 0; t+2 < len(p.Indices); t += 3 {
+				ids := [3]uint32{p.Indices[t], p.Indices[t+1], p.Indices[t+2]}
+				var v [3][3]float32
+				for j, id := range ids {
+					v[j][0], v[j][1], v[j][2] = at(id)
+				}
+				ny := (v[1][2]-v[0][2])*(v[2][0]-v[0][0]) - (v[1][0]-v[0][0])*(v[2][2]-v[0][2])
+				if math.Abs(float64(ny)) < 1e-6 {
+					// A face: its two highest corners are the edge it hangs from.
+					hi := [2]int{0, 1}
+					for j := 2; j < 3; j++ {
+						if v[j][1] > v[hi[0]][1] {
+							hi[0] = j
+						} else if v[j][1] > v[hi[1]][1] {
+							hi[1] = j
+						}
+					}
+					a, b := v[hi[0]], v[hi[1]]
+					hung[norm(q(a[0], a[1], a[2]), q(b[0], b[1], b[2]))] = true
+					continue
+				}
+				if p.Material != walkMat {
+					continue
+				}
+				for j := range 3 {
+					a, b := v[j], v[(j+1)%3]
+					e := norm(q(a[0], a[1], a[2]), q(b[0], b[1], b[2]))
+					slab[e]++
+					if _, ok := first[e]; !ok {
+						first[e] = ref{k, pi, ids[j], ids[(j+1)%3]}
+					}
+				}
+			}
+		}
+	}
+	es := make([]ekey, 0, len(slab))
+	for e, n := range slab {
+		if n == 1 && !hung[e] {
+			es = append(es, e)
+		}
+	}
+	sort.Slice(es, func(i, j int) bool {
+		a, b := es[i], es[j]
+		for x := range 2 {
+			for c := range 3 {
+				if a[x][c] != b[x][c] {
+					return a[x][c] < b[x][c]
+				}
+			}
+		}
+		return false
+	})
+	for _, e := range es {
+		r := first[e]
+		p := &chunks[r.k][r.pi]
+		var a, b [3]float32
+		copy(a[:], p.Positions[3*r.a:3*r.a+3])
+		copy(b[:], p.Positions[3*r.b:3*r.b+3])
+		hangFace(p, a, b, float32(kerbM+walkFootM))
+	}
+	return len(es)
+}
+
+// hangFace adds a face from edge a-b down by drop, seen from both sides.
+func hangFace(p *gltf.Primitive, a, b [3]float32, drop float32) {
+	base := uint32(len(p.Positions) / 3)
+	nx, nz := b[2]-a[2], a[0]-b[0]
+	if l := float32(math.Hypot(float64(nx), float64(nz))); l > 0 {
+		nx, nz = nx/l, nz/l
+	}
+	for _, v := range [4][3]float32{a, b, {b[0], b[1] - drop, b[2]}, {a[0], a[1] - drop, a[2]}} {
+		p.Positions = append(p.Positions, v[0], v[1], v[2])
+		if len(p.Normals) > 0 {
+			p.Normals = append(p.Normals, nx, 0, nz)
+		}
+		if len(p.Colors) > 0 {
+			p.Colors = append(p.Colors, 1, 1, 1)
+		}
+		if len(p.UVs) > 0 {
+			p.UVs = append(p.UVs, 0, 0)
+		}
+	}
+	p.Indices = append(p.Indices, base, base+1, base+2, base, base+2, base+3, base, base+2, base+1, base, base+3, base+2)
 }

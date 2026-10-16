@@ -50,3 +50,30 @@ func TestSidewalksAreClippedOffCarriageways(t *testing.T) {
 		t.Error("the clipped edge is open: no face closes it")
 	}
 }
+
+// A sidewalk slab's edge nothing closes gets a face down into the ground
+// (owner, 2026-10-16, 0.51 km: looking through a sidewalk); an edge a
+// face already hangs from, or another slab continues, doesn't.
+func TestOpenSidewalkEdgesAreClosed(t *testing.T) {
+	slab := func(x0, x1 float32) gltf.Primitive {
+		p := gltf.Primitive{Material: 2}
+		p.Positions = []float32{x0, kerbM, 0, x1, kerbM, 0, x1, kerbM, 2, x0, kerbM, 2}
+		p.Normals = []float32{0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0}
+		p.Indices = []uint32{0, 2, 1, 0, 3, 2}
+		return p
+	}
+	// Two slabs end to end: their shared edge is no opening; the other
+	// six edges are.
+	chunks := map[[2]int][]gltf.Primitive{{0, 0}: {slab(0, 3), slab(3, 6)}}
+	if n := closeOpenWalks(chunks, 2, 3); n != 6 {
+		t.Errorf("%d edges closed, want 6 (the shared one stays open)", n)
+	}
+	// With a kerb face hanging from the long edge at z 0 of the first.
+	kerb := gltf.Primitive{Material: 3}
+	kerb.Positions = []float32{0, kerbM, 0, 3, kerbM, 0, 3, 0, 0, 0, 0, 0}
+	kerb.Indices = []uint32{0, 1, 2, 0, 2, 3}
+	chunks = map[[2]int][]gltf.Primitive{{0, 0}: {slab(0, 3), slab(3, 6), kerb}}
+	if n := closeOpenWalks(chunks, 2, 3); n != 5 {
+		t.Errorf("%d edges closed, want 5 (one has its kerb)", n)
+	}
+}

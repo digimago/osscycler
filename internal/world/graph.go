@@ -447,6 +447,7 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 	// Sidewalks off the carriageways (decks left out: a road passing over
 	// a sidewalk cuts nothing).
 	clearWalksOffRoads(roads, roadMats.walk, roadMats.kerb, func(mat int) bool { return carriageway[w.doc.MaterialName(mat)] })
+	closeOpenWalks(roads, roadMats.walk, roadMats.kerb)
 	for k, ps := range decks {
 		roads[k] = append(roads[k], ps...)
 	}

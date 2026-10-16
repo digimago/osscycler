@@ -111,3 +111,39 @@ func TestStitchAcross(t *testing.T) {
 		t.Errorf("edges along one kerb line: %d stitched", n)
 	}
 }
+
+// A strip of nothing a hand wide between a sidewalk's end and the asphalt
+// beside it (no shared vertex: the land's finest cell can't fill it) is
+// zipped shut into the asphalt; a strip wider than seamMaxM, or one in
+// the air (a bridge's edge over a road), is not.
+func TestStitchSeams(t *testing.T) {
+	quad := func(m int, y float32, pts ...[2]float32) gltf.Primitive {
+		p := gltf.Primitive{Material: m}
+		for _, q := range pts {
+			p.Positions = append(p.Positions, q[0], y, q[1])
+			p.Normals = append(p.Normals, 0, 1, 0)
+		}
+		p.Indices = []uint32{0, 1, 2, 0, 2, 3}
+		return p
+	}
+	const road, walk = 1, 2
+	joins := func(m int) bool { return m == road || m == walk }
+	first := func(m int) bool { return m == road }
+	// A sidewalk slab ending at x = 4, the asphalt beginning at x = 4.3.
+	seam := func(gap, dy float32) []gltf.Primitive {
+		return []gltf.Primitive{
+			quad(road, 0, [2]float32{4 + gap, -2}, [2]float32{10, -2}, [2]float32{10, 2}, [2]float32{4 + gap, 2}),
+			quad(walk, dy, [2]float32{0, -1}, [2]float32{4, -1}, [2]float32{4, 1}, [2]float32{0, 1}),
+		}
+	}
+	ps := seam(0.3, 0.1)
+	if n := stitchSeams(ps, joins, first); n != 1 || len(ps[0].Indices) != 12 {
+		t.Errorf("a 0.3 m seam: %d zipped (asphalt %d indices), want 1 into the asphalt", n, len(ps[0].Indices))
+	}
+	if n := stitchSeams(seam(0.8, 0.1), joins, first); n != 0 {
+		t.Errorf("a 0.8 m strip: %d zipped, want none (land)", n)
+	}
+	if n := stitchSeams(seam(0.3, 2), joins, first); n != 0 {
+		t.Errorf("a seam 2 m up (a bridge's edge): %d zipped, want none", n)
+	}
+}

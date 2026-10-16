@@ -53,6 +53,8 @@ const (
 	abreastMaxM     = 4.0  // and less than this (higher is a hillside or a bridge, not a lane behind a wall)
 	abreastCrossCos = 0.5  // not across a side road's mouth: one crossing within 60° of square
 	abreastAcrossM  = 0.6  // or one whose surface reaches this far in over the sidewalk
+	abreastEndM     = 0.5  // its ends: a block this high over the sidewalk, square
+	abreastThickM   = 0.25 // and this thick
 	barrierPostM    = 4.0
 	wallOffM        = 1.0 // a wall's foot this far off the edge: a strip of grass and the gutter
 	wallAboveM      = 1.0 // a road surface this much above a road's own stands behind its wall, not in its way
@@ -272,10 +274,14 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 					// top (a low wall left it standing over it as a cliff).
 					s.wall[k] = true
 					s.h[k] = math.Min(3.6, z3-zc+0.4)
-				case town && ok3 && z3-zc > riseTown:
+				case a.walk[si] && ok3 && z3-zc > riseTown:
 					// In town a low wall at the bank's foot, behind the
 					// sidewalk, the lawn rising on above it (owner's shot of
-					// the Rue du Hohneck at 0.89 km, 2026-10-16).
+					// the Rue du Hohneck at 0.89 km, 2026-10-16); only behind
+					// a sidewalk: along a lane without one the bank is a lawn
+					// (the wall and its flat fill had made a terrace with a
+					// grey rim below a house at 1.35 km, where the aerial
+					// shows grass sloping to the lane).
 					s.wall[k], s.town[k] = true, true
 					s.h[k] = math.Min(townWallM, 0.3+0.4*(z3-zc))
 				case !town && ok3 && z3-zc > riseWall:
@@ -399,6 +405,12 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 				if h, ok := t.surfaces.highest(ef, -nf, 0); ok && h < base+abreastLowM {
 					continue
 				}
+				// Nor across another road's carriageway (a service road's
+				// mouth crossing the sidewalk's line to the node: the wall had
+				// run across it, 4.225 km).
+				if sp.roadNear(ef, nf, 0, a.line) >= 0 {
+					continue
+				}
 				for g := band + 0.05; g <= band+abreastReachM; g += 0.05 {
 					e, nn := at(k, sign*g)
 					h, ok := t.surfaces.highest(e, -nn, 0)
@@ -408,6 +420,9 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 					dz := h - base
 					if dz <= abreastLowM || dz >= abreastMaxM {
 						break // the first surface behind: level with this road, or far above
+					}
+					if a.onPatch && dz <= abreastStepM {
+						break // inside its own junction the apron beside it is no step (a wall had run across a junction at 4.225 km)
 					}
 					if j := sp.roadNear(e, nn, 0.5, a.line); j >= 0 {
 						if jo := j + 1; jo < len(t.fine) && t.fine[jo].line == t.fine[j].line {
@@ -433,7 +448,7 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 					// The coping a quarter metre deep, the land filled in
 					// level behind it up to the road behind (a strip of
 					// lawn, as at the uphill road's end of the wall).
-					face[k], bottom[k], step[k] = band+0.02, base-walkFootM, dz
+					face[k], bottom[k], step[k] = band-0.02, base-walkFootM, dz // the face a hair inside the slab's edge: no hairline between
 					inner[k], behind[k], level[k] = math.Min(g+0.2, band+0.27), g+0.1, hFill-0.02
 					top[k], on[k] = h+math.Min(0.15, dz), true
 					break
@@ -448,9 +463,10 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 				if most <= abreastStepM {
 					continue
 				}
-				// One sample on at either end the wall comes down to the
-				// sidewalk, so it runs out to nothing (a run starts at the
-				// first sample with a step: it had ended 0.3-0.5 m tall).
+				// One sample on at either end the wall comes down to a low
+				// block, abreastEndM over the sidewalk, and ends square there
+				// (the owner's photo of the lane's mouth: the wall ends as a
+				// block knee high, not a wedge to nothing).
 				end := func(k int) bool {
 					if k < 0 || k >= n || on[k] || t.fine[ln.from+k].open[si] {
 						return false
@@ -460,8 +476,8 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 					if a.walk[si] {
 						base += kerbM
 					}
-					face[k] = sideEdge(a, si) + 0.02
-					inner[k], bottom[k], top[k] = face[k], base-walkFootM, base
+					face[k] = sideEdge(a, si) - 0.02
+					inner[k], bottom[k], top[k] = face[k]+abreastThickM, base-walkFootM, base+abreastEndM
 					return true
 				}
 				if end(r.from - 1) {

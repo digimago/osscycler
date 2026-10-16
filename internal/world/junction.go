@@ -343,6 +343,9 @@ func walksOnSpans(ls []*roadLine, ps []patch) {
 						continue
 					}
 					a, b := ss[r.i], ss[r.i+1]
+					if a.onPatch || b.onPatch {
+						continue // inside a junction its outline decides, not the road's band
+					}
 					if segDist([2]float64{a.e, a.n}, [2]float64{b.e, b.n}, e, n) < math.Min(a.hw, b.hw) {
 						return true
 					}
@@ -353,8 +356,18 @@ func walksOnSpans(ls []*roadLine, ps []patch) {
 	}
 	for li, l := range ls {
 		ss := l.samples
+		// Probed at its kerb line, per side; the slab stops only where
+		// this sample and both its neighbours are covered: it runs one
+		// frame into the junction and the cutter trims it to the outline
+		// exactly (stopped at the last clear sample, it ended up to a frame
+		// short, a strip of land too thin for the land's finest cell: a
+		// hole; 1.365 km of the Route des Américains).
+		var cov [2][]bool
+		for side := range 2 {
+			cov[side] = make([]bool, len(ss))
+		}
 		for i := range ss {
-			s := &ss[i]
+			s := ss[i]
 			if !s.onPatch || !s.walk[0] && !s.walk[1] {
 				continue
 			}
@@ -366,9 +379,14 @@ func walksOnSpans(ls []*roadLine, ps []patch) {
 			}
 			rx, rn := dn/d, -de/d // right of the way
 			for side, sign := range []float64{-1, 1} {
-				off := s.hw + s.walkWidth(side)/2
-				if s.walk[side] && covered(li, s.e+sign*rx*off, s.n+sign*rn*off) {
-					s.walk[side] = false
+				off := s.hw + 0.15
+				cov[side][i] = s.walk[side] && covered(li, s.e+sign*rx*off, s.n+sign*rn*off)
+			}
+		}
+		for i := range ss {
+			for side := range 2 {
+				if cov[side][i] && (i == 0 || cov[side][i-1]) && (i+1 == len(ss) || cov[side][i+1]) {
+					ss[i].walk[side] = false
 				}
 			}
 		}

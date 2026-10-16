@@ -37,6 +37,7 @@ type style struct {
 	dryAboveM      float64 // grass dries towards straw above this height (0: never; Manifest.Ground.DryAboveM)
 	junctionLevelM float64 // a junction reaches along a road alongside only while within this in height (0: any)
 	walkGuessRank  int     // sidewalks guessed from built-up land only on roads of this class rank or higher (0: all)
+	squareMouths   bool    // unridden side roads meet a main road square over their last metres (mouths.go)
 	cornerWalk     bool    // sidewalks end square, and where only one road at a junction has one it runs on to the corner (else they ramp down, and go halfway round)
 	roadside       bool    // barriers, retaining walls, rock netting, bend posts, kilometre markers (roadside.go)
 	quays          bool    // stone quays along rivers in town (quays.go)
@@ -210,10 +211,11 @@ var styleFR = style{
 	// And a sidewalk ends at a lane's mouth, square with it, rather than
 	// turning halfway into it (the same photo: it had wrapped round into
 	// the lane's mouth at the road's level, floating beside its ramp).
-	cornerWalk:  true,
-	quays:       true,
-	gableToView: true,
-	gableWood:   0x4e3626, // dark stained boards, as on the Rue du Hohneck
+	cornerWalk:   true,
+	squareMouths: true,
+	quays:        true,
+	gableToView:  true,
+	gableWood:    0x4e3626, // dark stained boards, as on the Rue du Hohneck
 	// La Bresse's roundabouts (owner, 2026-10-16, marks at 0.51-0.54 km):
 	// a raised, planted island inside a narrow apron of reddish setts,
 	// not a flat disc ridden straight across.
@@ -261,7 +263,7 @@ var styleFR = style{
 // it is copied, not changed.
 func (o *Options) regionScenery() {
 	st := styleFor(o.Region)
-	if st.walkGuessRank == 0 || o.Scenery == nil {
+	if st.walkGuessRank == 0 && !st.squareMouths || o.Scenery == nil {
 		return
 	}
 	var ways []scenery.Way
@@ -273,6 +275,18 @@ func (o *Options) regionScenery() {
 			ways = append([]scenery.Way(nil), o.Scenery.Ways...)
 		}
 		ways[i].Sidewalk, ways[i].WalkGuessed = [2]bool{}, false
+	}
+	if st.squareMouths {
+		ridden := map[int]bool{}
+		for _, k := range o.Scenery.RouteOn {
+			if k >= 0 {
+				ridden[k] = true
+			}
+		}
+		if ways == nil {
+			ways = o.Scenery.Ways
+		}
+		ways = squareMouths(ways, ridden)
 	}
 	if ways != nil {
 		sc := *o.Scenery

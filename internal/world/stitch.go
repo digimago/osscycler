@@ -21,6 +21,9 @@ const (
 	// A wedge longer than stitchMaxLenM is a sliver only if its height
 	// changes by stitchLongDyM at most from its apex to its open end.
 	stitchMaxLenM = 6.0
+	seamMaxM      = 0.4 // stitchSeams: a seam at most this wide
+	seamMaxDyM    = 0.3 // and its two sides within this in height
+	seamCos       = 0.8 // and nearly parallel
 	stitchLongDyM = 0.3
 )
 
@@ -87,6 +90,219 @@ func stitchAcross(ps []gltf.Primitive, joins, first func(mat int) bool) int {
 		}
 	}
 	return added
+}
+
+// stitchSeams zips shut the seams between the open edges of the surfaces
+// in ps whose material joins (one), narrower than seamMaxM and nearly
+// parallel: a sidewalk's end against a junction's outline, two road
+// pieces meeting without a shared vertex. The land's finest cell can't
+// fill a strip that thin (1.365 km of the Route des Américains: a 0.25 m
+// strip of nothing between the sidewalk's square end and the junction's
+// rounded corner), and no real street has a hand's width of ground there.
+// Each closing quad goes into the first primitive first is true for (the
+// asphalt); seams in the air (one surface over the other by more than
+// seamMaxDyM) are left: a bridge over a road.
+func stitchSeams(ps []gltf.Primitive, joins, first func(mat int) bool) int {
+	var group []*gltf.Primitive
+	for i := range ps {
+		if joins(ps[i].Material) && first(ps[i].Material) {
+			group = append(group, &ps[i])
+		}
+	}
+	if len(group) == 0 {
+		return 0
+	}
+	for i := range ps {
+		if joins(ps[i].Material) && !first(ps[i].Material) {
+			group = append(group, &ps[i])
+		}
+	}
+	type seg struct {
+		a, b   [3]float64
+		ra, rb vref
+	}
+	var all []seg
+	posOf := func(p *gltf.Primitive, i uint32) [3]float64 {
+		q := p.Positions[3*i : 3*i+3]
+		return [3]float64{float64(q[0]), float64(q[1]), float64(q[2])}
+	}
+	key := func(q [3]float64) [2]int64 {
+		return [2]int64{int64(math.Round(q[0] / stitchSnapM)), int64(math.Round(q[2] / stitchSnapM))}
+	}
+	// Open edges of upward triangles, per primitive (an edge shared with
+	// another primitive's triangle is a seam of width 0: zipped by nothing).
+	var tris [][3][3]float64
+	for gi, p := range group {
+		type ek [2][2]int64
+		count := map[ek]int{}
+		edges := map[ek][2]uint32{}
+		for t := 0; t+2 < len(p.Indices); t += 3 {
+			a, b, c := p.Indices[t], p.Indices[t+1], p.Indices[t+2]
+			pa, pb, pc := posOf(p, a), posOf(p, b), posOf(p, c)
+			ny := (pb[2]-pa[2])*(pc[0]-pa[0]) - (pb[0]-pa[0])*(pc[2]-pa[2])
+			if math.Abs(ny) < 1e-6 {
+				continue
+			}
+			tris = append(tris, [3][3]float64{pa, pb, pc})
+			for _, e := range [3][2]uint32{{a, b}, {b, c}, {c, a}} {
+				x, y := key(posOf(p, e[0])), key(posOf(p, e[1]))
+				if x == y {
+					continue
+				}
+				k := ek{x, y}
+				if x[0] > y[0] || x[0] == y[0] && x[1] > y[1] {
+					k = ek{y, x}
+				}
+				count[k]++
+				edges[k] = e
+			}
+		}
+		for k, n := range count {
+			if n == 1 {
+				e := edges[k]
+				all = append(all, seg{posOf(p, e[0]), posOf(p, e[1]), vref{gi, e[0]}, vref{gi, e[1]}})
+			}
+		}
+	}
+	sort.Slice(all, func(i, j int) bool { // a fixed order: the same world every build
+		x, y := all[i], all[j]
+		for c := range 3 {
+			if x.a[c] != y.a[c] {
+				return x.a[c] < y.a[c]
+			}
+		}
+		for c := range 3 {
+			if x.b[c] != y.b[c] {
+				return x.b[c] < y.b[c]
+			}
+		}
+		return false
+	})
+	const cell = 2.0
+	grid := map[[2]int][]int{}
+	for ti, t := range tris {
+		lo, hi := [2]float64{math.Inf(1), math.Inf(1)}, [2]float64{math.Inf(-1), math.Inf(-1)}
+		for _, v := range t {
+			lo = [2]float64{math.Min(lo[0], v[0]), math.Min(lo[1], v[2])}
+			hi = [2]float64{math.Max(hi[0], v[0]), math.Max(hi[1], v[2])}
+		}
+		for gx := int(math.Floor(lo[0] / cell)); gx <= int(math.Floor(hi[0]/cell)); gx++ {
+			for gz := int(math.Floor(lo[1] / cell)); gz <= int(math.Floor(hi[1]/cell)); gz++ {
+				grid[[2]int{gx, gz}] = append(grid[[2]int{gx, gz}], ti)
+			}
+		}
+	}
+	covered := func(x, z float64) bool {
+		for _, ti := range grid[[2]int{int(math.Floor(x / cell)), int(math.Floor(z / cell))}] {
+			t := tris[ti]
+			if inTri2([6]float64{t[0][0], t[0][2], t[1][0], t[1][2], t[2][0], t[2][2]}, x, z) {
+				return true
+			}
+		}
+		return false
+	}
+	segGrid := map[[2]int][]int{}
+	for i, s := range all {
+		for gx := int(math.Floor(math.Min(s.a[0], s.b[0]) / cell)); gx <= int(math.Floor(math.Max(s.a[0], s.b[0])/cell)); gx++ {
+			for gz := int(math.Floor(math.Min(s.a[2], s.b[2]) / cell)); gz <= int(math.Floor(math.Max(s.a[2], s.b[2])/cell)); gz++ {
+				segGrid[[2]int{gx, gz}] = append(segGrid[[2]int{gx, gz}], i)
+			}
+		}
+	}
+	// The point of segment s nearest x, z, by its parameter.
+	along := func(s seg, x, z float64) (float64, [3]float64) {
+		dx, dz := s.b[0]-s.a[0], s.b[2]-s.a[2]
+		l2 := dx*dx + dz*dz
+		f := 0.0
+		if l2 > 0 {
+			f = math.Max(0, math.Min(1, ((x-s.a[0])*dx+(z-s.a[2])*dz)/l2))
+		}
+		return f, [3]float64{s.a[0] + f*dx, s.a[1] + f*(s.b[1]-s.a[1]), s.a[2] + f*dz}
+	}
+	added := 0
+	used := make([]bool, len(all))
+	for i, e := range all {
+		if used[i] || all[i].ra.p >= len(group) {
+			continue
+		}
+		ex, ez := e.b[0]-e.a[0], e.b[2]-e.a[2]
+		el := math.Hypot(ex, ez)
+		if el < stitchSnapM {
+			continue
+		}
+		mx, mz := (e.a[0]+e.b[0])/2, (e.a[2]+e.b[2])/2
+		best, bestD := -1, seamMaxM
+		for gx := int(math.Floor((mx - seamMaxM) / cell)); gx <= int(math.Floor((mx+seamMaxM)/cell)); gx++ {
+			for gz := int(math.Floor((mz - seamMaxM) / cell)); gz <= int(math.Floor((mz+seamMaxM)/cell)); gz++ {
+				for _, j := range segGrid[[2]int{gx, gz}] {
+					if j == i || used[j] || all[j].ra.p == e.ra.p {
+						continue // the same primitive: its own edges
+					}
+					f := all[j]
+					fx, fz := f.b[0]-f.a[0], f.b[2]-f.a[2]
+					fl := math.Hypot(fx, fz)
+					if fl < stitchSnapM || math.Abs(ex*fx+ez*fz)/(el*fl) < seamCos {
+						continue
+					}
+					// Both ends of e near f, and across a gap, not along it.
+					_, pa := along(f, e.a[0], e.a[2])
+					_, pb := along(f, e.b[0], e.b[2])
+					da, db := math.Hypot(pa[0]-e.a[0], pa[2]-e.a[2]), math.Hypot(pb[0]-e.b[0], pb[2]-e.b[2])
+					d := math.Max(da, db)
+					if d >= bestD || d < stitchSnapM || math.Abs(pa[1]-e.a[1]) > seamMaxDyM || math.Abs(pb[1]-e.b[1]) > seamMaxDyM {
+						continue
+					}
+					// The gap between: uncovered at its middle (a seam, not an
+					// overlap or a surface's own notch), with some area.
+					gx2, gz2 := (e.a[0]+e.b[0]+pa[0]+pb[0])/4, (e.a[2]+e.b[2]+pa[2]+pb[2])/4
+					if covered(gx2, gz2) {
+						continue
+					}
+					best, bestD = j, d
+				}
+			}
+		}
+		if best < 0 {
+			continue
+		}
+		f := all[best]
+		_, pa := along(f, e.a[0], e.a[2])
+		_, pb := along(f, e.b[0], e.b[2])
+		q := group[0]
+		addQuadUp(q, e.a, e.b, pb, pa)
+		used[i], used[best] = true, true
+		added++
+	}
+	return added
+}
+
+// addQuadUp adds quad a b c d (x y z) to p facing up, with up normals and
+// white colour / zero UVs where p has those attributes.
+func addQuadUp(p *gltf.Primitive, a, b, c, d [3]float64) {
+	base := uint32(len(p.Positions) / 3)
+	for _, q := range [4][3]float64{a, b, c, d} {
+		p.Positions = append(p.Positions, float32(q[0]), float32(q[1]), float32(q[2]))
+		if len(p.Normals) > 0 {
+			p.Normals = append(p.Normals, 0, 1, 0)
+		}
+		if len(p.Colors) > 0 {
+			p.Colors = append(p.Colors, 1, 1, 1)
+		}
+		if len(p.UVs) > 0 {
+			p.UVs = append(p.UVs, float32(q[0]/5), float32(q[2]/5))
+		}
+	}
+	for _, t := range [2][3]uint32{{0, 1, 2}, {0, 2, 3}} {
+		pa, pb, pc := [3]float64{a[0], a[1], a[2]}, [3]float64{}, [3]float64{}
+		pts := [4][3]float64{a, b, c, d}
+		pa, pb, pc = pts[t[0]], pts[t[1]], pts[t[2]]
+		ny := (pb[2]-pa[2])*(pc[0]-pa[0]) - (pb[0]-pa[0])*(pc[2]-pa[2])
+		if ny > 0 {
+			p.Indices = append(p.Indices, base+t[0], base+t[1], base+t[2])
+		} else {
+			p.Indices = append(p.Indices, base+t[0], base+t[2], base+t[1])
+		}
+	}
 }
 
 // vref is a vertex of one of a group's primitives.

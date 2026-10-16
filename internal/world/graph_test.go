@@ -1075,3 +1075,24 @@ func TestTailOntoLap(t *testing.T) {
 		t.Errorf("the tail's turn moved")
 	}
 }
+
+// Land between two roads close beside it on opposite sides lies at the
+// lower one's level (owner, 2026-10-16, Rue du Hohneck at 1.34 km: a
+// lane climbing beside the main road); on one side only, or wide apart,
+// it eases as before.
+func TestLandBetweenCloseRoadsIsLevel(t *testing.T) {
+	main := gPiece{k: [2]int{1, 0}, gap: 1.5, ele: 10, qe: 0, qn: -2}
+	lane := gPiece{k: [2]int{2, 0}, gap: 2, ele: 11.2, qe: 0, qn: 3}
+	if low, ok := island([]gPiece{main, lane}, 0, 0); !ok || low != 10 {
+		t.Errorf("between the main road and the lane: %v, %v; want the main road's 10 m", low, ok)
+	}
+	same := gPiece{k: [2]int{2, 0}, gap: 3, ele: 11.2, qe: 0, qn: -4}
+	if _, ok := island([]gPiece{main, same}, 0, 0); ok {
+		t.Error("two roads on one side made an island")
+	}
+	far := lane
+	far.gap = 8
+	if _, ok := island([]gPiece{main, far}, 0, 0); ok {
+		t.Error("roads 9.5 m apart made an island")
+	}
+}

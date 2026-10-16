@@ -195,8 +195,13 @@ func buildingMesh(p *gltf.Primitive, s *surface, st *style, f scenery.Footprint,
 		if st.gableToView && rect.long < gableSquare*rect.short {
 			hl, hw := rect.long/2, rect.short/2
 			bx, by := -ay, ax
-			along := math.Abs(s.at(rect.cx+ax*hl, rect.cy+ay*hl)-s.at(rect.cx-ax*hl, rect.cy-ay*hl)) / rect.long
-			across := math.Abs(s.at(rect.cx+bx*hw, rect.cy+by*hw)-s.at(rect.cx-bx*hw, rect.cy-by*hw)) / rect.short
+			// The hillside round it, not under it: a house stands on a
+			// levelled terrace (owner, 2026-10-16: the house above the Rue
+			// du Hohneck at 0.89 km kept its ridge along the valley).
+			r := math.Max(gableReachM, hl)
+			along := math.Abs(s.at(rect.cx+ax*r, rect.cy+ay*r)-s.at(rect.cx-ax*r, rect.cy-ay*r)) / (2 * r)
+			r = math.Max(gableReachM, hw)
+			across := math.Abs(s.at(rect.cx+bx*r, rect.cy+by*r)-s.at(rect.cx-bx*r, rect.cy-by*r)) / (2 * r)
 			if across > along && across > gableSlope {
 				rect.long, rect.short = rect.short, rect.long
 				ax, ay = bx, by
@@ -323,8 +328,9 @@ const (
 )
 
 const (
-	gableSquare = 1.6  // a house no longer than this times its width may turn its gable to the view
+	gableSquare = 2.2  // a house no longer than this times its width may turn its gable to the view (owner, 2026-10-16: Swiss-type chalets of several flats turn their wide gable to the valley)
 	gableSlope  = 0.06 // on ground falling this steeply across it
+	gableReachM = 15.0 // measured this far either side of its middle
 )
 
 // shadeHouse is c a little lighter or darker, by the house's seed.

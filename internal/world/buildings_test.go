@@ -210,3 +210,43 @@ func TestWindowsAvoidAdjoiningBuildings(t *testing.T) {
 		t.Errorf("with an annex: windows on %d faces (free: %d)", annexed, free)
 	}
 }
+
+// On a hillside a French house turns a gable to the valley, a chalet
+// longer along the slope's contour too (owner, 2026-10-16: the Rue du
+// Hohneck's chalets): its ridge runs down the fall line; a Dutch one
+// keeps it along its length.
+func TestGablesTurnToTheView(t *testing.T) {
+	c := northCourse(t)
+	// The ground falls 15 % to the east.
+	ground := func(lat, lon float64) (float64, bool) {
+		e, _ := c.Project(lat, lon)
+		return 30 - 0.15*e, true
+	}
+	tr := testTerrain(c, Options{Elevation: ground})
+	s := &surface{t: tr, lists: map[[2]int]chunkLists{}}
+	// 9 m east-west, 18 m north-south: long along the contour.
+	chalet := scenery.Footprint{ID: 5, Kind: scenery.KindHouse, WallM: 6, RoofM: 4,
+		Outline: [][2]float64{{-60, 400}, {-51, 400}, {-51, 418}, {-60, 418}}}
+	ridgeAlongEast := func(st *style) bool {
+		var p gltf.Primitive
+		buildingMesh(&p, s, st, chalet, nil, nil)
+		top := float32(-1e9)
+		for k := 1; k < len(p.Positions); k += 3 {
+			top = max(top, p.Positions[k])
+		}
+		minX, maxX, minZ, maxZ := float32(1e9), float32(-1e9), float32(1e9), float32(-1e9)
+		for k := 0; k+2 < len(p.Positions); k += 3 {
+			if p.Positions[k+1] > top-0.01 {
+				minX, maxX = min(minX, p.Positions[k]), max(maxX, p.Positions[k])
+				minZ, maxZ = min(minZ, p.Positions[k+2]), max(maxZ, p.Positions[k+2])
+			}
+		}
+		return maxX-minX > maxZ-minZ
+	}
+	if !ridgeAlongEast(&styleFR) {
+		t.Error("a French chalet on the hillside keeps its ridge along the contour")
+	}
+	if ridgeAlongEast(&styleNL) {
+		t.Error("a Dutch house turned its ridge")
+	}
+}

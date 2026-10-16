@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using Godot;
 using Osscycler.Hud;
 using Osscycler.V1;
@@ -172,6 +173,16 @@ public partial class Main : Node3D
         if (args.Get("ghost", "") != "")
             _ghostAhead = args.Number("ghost", 10);
         _look = Mathf.DegToRad((float)args.Number("look", 0));
+        // --camera x,y,z,yaw,pitch: the camera fixed in the world's frame
+        // (x east, y up, z south; yaw clockwise from north, pitch up, -90
+        // straight down, north at the top), for top-down views and close
+        // looks at a world's faults; no HUD.
+        if (args.Get("camera", "") is { Length: > 0 } cam)
+        {
+            var v = cam.Split(',').Select(x => float.Parse(x, System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+            if (v.Length == 5)
+                _fixedCamera = (new Vector3(v[0], v[1], v[2]), Mathf.DegToRad(v[3]), Mathf.DegToRad(v[4]));
+        }
         AddChild(_camera);
         // The fade under the HUD: the haze's own colour, so a swap reads as
         // riding through a bank of mist.
@@ -710,8 +721,21 @@ public partial class Main : Node3D
     // ahead (riders look a little into a bend). The head stays nearer
     // level than the bike, on climbs as the TUI's road view does, and
     // leans a little with it in bends.
+    (Vector3 At, float Yaw, float Pitch)? _fixedCamera;
+
     void Place(double delta)
     {
+        if (_fixedCamera is var (camAt, camYaw, camPitch))
+        {
+            var flat = new Vector3(Mathf.Sin(camYaw), 0, -Mathf.Cos(camYaw));
+            var look = flat * Mathf.Cos(camPitch) + Vector3.Up * Mathf.Sin(camPitch);
+            var up = Mathf.Abs(camPitch) > Mathf.DegToRad(89) ? flat : Vector3.Up;
+            _camera.Transform = new Transform3D(Basis.LookingAt(look, up), camAt);
+            _grass?.Update(_camera.Position);
+            if (_hud.Node is CanvasLayer hudLayer)
+                hudLayer.Visible = false;
+            return;
+        }
         var w = _world!;
         double at = Viewed;
         var here = w.InLane(at);

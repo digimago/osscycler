@@ -706,6 +706,33 @@ func (w *World) addBuildings(t *terrain, fps []scenery.Footprint) error {
 		return be / best, bn / best, true
 	}
 	var keys [][2]int
+	// Whether a point lies in another building than id (one adjoining it:
+	// a terrace's next house, an annex), by 20 m cell.
+	type foot struct {
+		id   int64
+		poly [][2]float64
+	}
+	cells := map[[2]int][]foot{}
+	for _, f := range fps {
+		lo, hi := [2]float64{math.Inf(1), math.Inf(1)}, [2]float64{math.Inf(-1), math.Inf(-1)}
+		for _, q := range f.Outline {
+			lo = [2]float64{math.Min(lo[0], q[0]), math.Min(lo[1], q[1])}
+			hi = [2]float64{math.Max(hi[0], q[0]), math.Max(hi[1], q[1])}
+		}
+		for gx := int(math.Floor(lo[0] / 20)); gx <= int(math.Floor(hi[0]/20)); gx++ {
+			for gy := int(math.Floor(lo[1] / 20)); gy <= int(math.Floor(hi[1]/20)); gy++ {
+				cells[[2]int{gx, gy}] = append(cells[[2]int{gx, gy}], foot{f.ID, f.Outline})
+			}
+		}
+	}
+	other := func(id int64, e, n float64) bool {
+		for _, f := range cells[[2]int{int(math.Floor(e / 20)), int(math.Floor(n / 20))}] {
+			if f.id != id && inPoly(f.poly, e, n) {
+				return true
+			}
+		}
+		return false
+	}
 	for _, f := range fps {
 		var cx, cy float64
 		for _, q := range f.Outline {
@@ -718,7 +745,7 @@ func (w *World) addBuildings(t *terrain, fps []scenery.Footprint) error {
 			byChunk[k] = p
 			keys = append(keys, k)
 		}
-		buildingMesh(p, s, styleFor(t.o.Region), f, toRoad)
+		buildingMesh(p, s, styleFor(t.o.Region), f, toRoad, func(e, n float64) bool { return other(f.ID, e, n) })
 	}
 	for _, k := range keys {
 		if p := byChunk[k]; len(p.Indices) > 0 {

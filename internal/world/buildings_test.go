@@ -30,7 +30,7 @@ func TestBuildings(t *testing.T) {
 	house := scenery.Footprint{ID: 1, Kind: scenery.KindHouse, WallM: 5, RoofM: 4,
 		Outline: [][2]float64{{-30, 400}, {-18, 400}, {-18, 408}, {-30, 408}}}
 	var p gltf.Primitive
-	buildingMesh(&p, s, &styleNL, house, nil)
+	buildingMesh(&p, s, &styleNL, house, nil, nil)
 	top := math.Inf(-1)
 	for _, q := range house.Outline {
 		top = math.Max(top, s.at(q[0], q[1]))
@@ -54,7 +54,7 @@ func TestBuildings(t *testing.T) {
 	block := scenery.Footprint{ID: 2, Kind: scenery.KindFlat, WallM: 12,
 		Outline: [][2]float64{{30, 500}, {50, 500}, {50, 520}, {30, 520}}}
 	p = gltf.Primitive{}
-	buildingMesh(&p, s, &styleNL, block, nil)
+	buildingMesh(&p, s, &styleNL, block, nil, nil)
 	lo, hi := ys(&p)
 	glo, ghi := math.Inf(1), math.Inf(-1)
 	for _, q := range block.Outline {
@@ -97,7 +97,7 @@ func TestGablesMeetTheirWalls(t *testing.T) {
 	house := scenery.Footprint{ID: 2, Kind: scenery.KindHouse, WallM: 5, RoofM: 4,
 		Outline: [][2]float64{{-30, 400}, {-18, 400}, {-18, 407.3}, {-18.6, 408}, {-30, 408}}}
 	var p gltf.Primitive
-	buildingMesh(&p, s, &styleNL, house, nil)
+	buildingMesh(&p, s, &styleNL, house, nil, nil)
 	// Wall top corners: vertices of upright faces at their highest.
 	type v2 [2]float32
 	walls := map[v2]bool{}
@@ -130,14 +130,14 @@ func TestWindowsFitTheirFaces(t *testing.T) {
 	house := scenery.Footprint{ID: 3, Kind: scenery.KindHouse, WallM: 5.6, RoofM: 4,
 		Outline: [][2]float64{{-30, 400}, {-18.5, 400}, {-18.5, 408}, {-30, 408}}}
 	var p gltf.Primitive
-	buildingMesh(&p, s, &styleNL, house, nil)
+	buildingMesh(&p, s, &styleNL, house, nil, nil)
 	if len(p.UV2s) != len(p.UVs) {
 		t.Fatalf("%d UV2 values for %d UV", len(p.UV2s), len(p.UVs))
 	}
 	walls, gables := 0, 0
 	for i := 0; i+2 < len(p.Indices); i += 3 {
 		ids := p.Indices[i : i+3]
-		cnt := math.Floor(float64(p.UV2s[2*ids[0]]))
+		cnt := math.Mod(math.Floor(float64(p.UV2s[2*ids[0]])), 100)
 		if cnt == 0 {
 			continue
 		}
@@ -164,5 +164,49 @@ func TestWindowsFitTheirFaces(t *testing.T) {
 	}
 	if walls == 0 {
 		t.Error("no wall has windows")
+	}
+}
+
+// A free-standing house's walls keep their windows (a wall's scan for
+// adjoining buildings once lost its last stretch, and every window, when
+// its length wasn't a multiple of the step); a wall an annex covers half
+// of has its bays on the other half only.
+func TestWindowsAvoidAdjoiningBuildings(t *testing.T) {
+	c := northCourse(t)
+	tr := testTerrain(c, Options{})
+	s := &surface{t: tr, lists: map[[2]int]chunkLists{}}
+	house := scenery.Footprint{ID: 4, Kind: scenery.KindFlat, WallM: 6,
+		Outline: [][2]float64{{-30, 400}, {-18.3, 400}, {-18.3, 410}, {-30, 410}}}
+	count := func(covered func(e, n float64) bool) (faces int, minE, maxE float64) {
+		var p gltf.Primitive
+		buildingMesh(&p, s, &styleNL, house, nil, covered)
+		minE, maxE = math.Inf(1), math.Inf(-1)
+		for i := 0; i+2 < len(p.Indices); i += 3 {
+			ids := p.Indices[i : i+3]
+			if math.Mod(math.Floor(float64(p.UV2s[2*ids[0]])), 100) == 0 {
+				continue
+			}
+			faces++
+			// The south wall (n 400): its window bays' extent in e.
+			if p.Positions[3*ids[0]+2] == -400 && p.Positions[3*ids[1]+2] == -400 && p.Positions[3*ids[2]+2] == -400 {
+				for _, v := range ids {
+					u := float64(p.UVs[2*v])
+					if u >= 0 && u <= 1 {
+						minE = math.Min(minE, float64(p.Positions[3*v]))
+					}
+					maxE = math.Max(maxE, float64(p.Positions[3*v]))
+				}
+			}
+		}
+		return
+	}
+	free, _, _ := count(func(e, n float64) bool { return false })
+	if free < 8 {
+		t.Errorf("a free-standing house has windows on %d faces, want all four walls'", free)
+	}
+	// An annex against the south wall's west half (e -30 .. -24).
+	annexed, _, _ := count(func(e, n float64) bool { return n < 400 && e < -24 })
+	if annexed < free-2 || annexed > free {
+		t.Errorf("with an annex: windows on %d faces (free: %d)", annexed, free)
 	}
 }

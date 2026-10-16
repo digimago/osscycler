@@ -40,7 +40,9 @@ var (
 // material).
 // toRoad, when set, is the unit direction (east, north) from a point to
 // the nearest road, false with none near.
-func buildingMesh(p *gltf.Primitive, s *surface, st *style, f scenery.Footprint, toRoad func(e, n float64) (float64, float64, bool)) {
+// covered, when set, tells whether a point lies in another building (one
+// adjoining this one): no windows on a wall where it does.
+func buildingMesh(p *gltf.Primitive, s *surface, st *style, f scenery.Footprint, toRoad func(e, n float64) (float64, float64, bool), covered func(e, n float64) bool) {
 	pts := f.Outline
 	n := len(pts)
 	if n < 3 {
@@ -100,7 +102,8 @@ func buildingMesh(p *gltf.Primitive, s *surface, st *style, f scenery.Footprint,
 					g += (lay.groundB - lay.groundA) * x / l
 				}
 				p.UVs = append(p.UVs, float32((x-lay.x0)/pitch+lay.clad), float32(q[1]-lay.ref))
-				p.UV2s = append(p.UV2s, float32(float64(lay.count)+lay.maxTop/100), float32(g-lay.ref))
+				// UV2 x: (door + 1)·100 + count + top / 100.
+				p.UV2s = append(p.UV2s, float32(float64(lay.door+1)*100+float64(lay.count)+lay.maxTop/100), float32(g-lay.ref))
 			} else {
 				p.UVs = append(p.UVs, 0, -1)
 				p.UV2s = append(p.UV2s, 0, 0)
@@ -123,7 +126,42 @@ func buildingMesh(p *gltf.Primitive, s *surface, st *style, f scenery.Footprint,
 			continue
 		}
 		out := [3]float64{dy / l, 0, -dx / l}
-		cnt := int(math.Floor((l - 2*winMarginM) / pitch))
+		// The longest stretch of the wall no adjoining building covers
+		// (owner, 2026-10-16, 1.26 km: windows ran on into a low annex
+		// built against the house and showed cut by it).
+		from, to := 0.0, l
+		if covered != nil {
+			ox, oy := dy/l*0.3, -dx/l*0.3 // just outside the wall
+			best, start := 0.0, -1.0
+			steps := max(1, int(math.Ceil(l/0.25)))
+			for i := 0; i <= steps; i++ {
+				t := l * float64(i) / float64(steps) // to the wall's end exactly
+				e, nn := a[0]+dx*t/l+ox, a[1]+dy*t/l+oy
+				free := !covered(e, nn)
+				if free && start < 0 {
+					start = t
+				}
+				if start >= 0 && (!free || i == steps) {
+					if t-start > best {
+						best, from, to = t-start, start, t
+					}
+					start = -1
+				}
+			}
+			if best == 0 {
+				from, to = 0, 0
+			}
+		}
+		cnt := int(math.Floor((to - from - 2*winMarginM) / pitch))
+		// A door in the middle bay of a wall facing the road, where the
+		// ground row is at the ground (owner, 2026-10-16).
+		door := -1
+		if toRoad != nil && cnt >= 1 {
+			mx, my := (a[0]+b[0])/2, (a[1]+b[1])/2
+			if re, rn, ok := toRoad(mx, my); ok && re*dy/l-rn*dx/l > 0.5 {
+				door = cnt / 2
+			}
+		}
 		// The highest ground along the wall for the whole of it: a row of
 		// windows is there or not, never cut where the slope crosses its
 		// sills (owner, 2026-10-16: a side wall on a 3 m slope had half its
@@ -132,8 +170,8 @@ func buildingMesh(p *gltf.Primitive, s *surface, st *style, f scenery.Footprint,
 		for f := 0.25; f < 1; f += 0.25 {
 			gw = math.Max(gw, s.at(a[0]+f*dx, a[1]+f*dy))
 		}
-		lay = winLayout{count: max(0, cnt), x0: (l - float64(max(0, cnt))*pitch) / 2, ref: lo,
-			maxTop: eave - lo - winUnderEaveM, groundA: gw, groundB: gw}
+		lay = winLayout{count: max(0, cnt), x0: from + (to-from-float64(max(0, cnt))*pitch)/2, ref: lo,
+			maxTop: eave - lo - winUnderEaveM, groundA: gw, groundB: gw, door: door}
 		add(wall, out, pt(a, base), pt(b, base), pt(b, eave), pt(a, eave))
 		lay = winLayout{}
 	}
@@ -199,7 +237,7 @@ func buildingMesh(p *gltf.Primitive, s *surface, st *style, f scenery.Footprint,
 				}
 				k = try
 			}
-			lay = winLayout{count: k, x0: hw - float64(k)*pitch/2, clad: off,
+			lay = winLayout{count: k, x0: hw - float64(k)*pitch/2, clad: off, door: -1,
 				// The row's sill at the storeys' first sill: winFloorM + the sill height.
 				ref: eave + winGableSillM - (winFloorM + winSillM), maxTop: winFloorM + winSillM + winHeightM + 0.01,
 				groundA: -100, groundB: -100}
@@ -259,7 +297,7 @@ func gable(add func([3]float32, [3]float64, ...[3]float64), pt func([2]float64, 
 // top may reach over it, the ground at either end of the face, its
 // cladding's u offset.
 type winLayout struct {
-	count                  int
+	count, door            int // door: the bay with a door in the ground row, -1 none
 	x0, ref, maxTop        float64
 	groundA, groundB, clad float64
 }
@@ -267,7 +305,7 @@ type winLayout struct {
 // Window layout (the renderer's surfaces.gdshader keeps the same
 // measures for a window in its bay and its storey).
 const (
-	winPitchMin, winPitchMax = 2.4, 2.9 // a bay's width, per house
+	winPitchMin, winPitchMax = 2.1, 2.6 // a bay's width, per house (owner, 2026-10-16: 2.4-2.9 left a column out)
 	winMarginM               = 0.75     // the bays keep this far off a wall's ends: shutters a metre or more from a corner (owner, 2026-10-16)
 	winFloorM                = 0.25     // the first storey's floor over the lowest ground
 	winSillM                 = 0.9      // a sill over its floor

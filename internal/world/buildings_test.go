@@ -146,6 +146,10 @@ func TestWindowsFitTheirFaces(t *testing.T) {
 			lo, hi = math.Min(lo, float64(p.UVs[2*v])), math.Max(hi, float64(p.UVs[2*v]))
 		}
 		maxTop := math.Mod(float64(p.UV2s[2*ids[0]]), 1) * 100
+		// One ground for the whole face: rows whole, never cut on the slant.
+		if g := p.UV2s[2*ids[0]+1]; p.UV2s[2*ids[1]+1] != g || p.UV2s[2*ids[2]+1] != g {
+			t.Errorf("a face's ground varies along it: rows would be cut where the slope crosses them")
+		}
 		if lo > 0.1 || hi < cnt-0.1 {
 			t.Errorf("a face's %v bays lie past it (u %.2f..%.2f)", cnt, lo, hi)
 		}

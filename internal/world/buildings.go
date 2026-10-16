@@ -124,8 +124,16 @@ func buildingMesh(p *gltf.Primitive, s *surface, st *style, f scenery.Footprint,
 		}
 		out := [3]float64{dy / l, 0, -dx / l}
 		cnt := int(math.Floor((l - 2*winMarginM) / pitch))
+		// The highest ground along the wall for the whole of it: a row of
+		// windows is there or not, never cut where the slope crosses its
+		// sills (owner, 2026-10-16: a side wall on a 3 m slope had half its
+		// lower row, one window cut on the slant).
+		gw := math.Max(s.at(a[0], a[1]), s.at(b[0], b[1]))
+		for f := 0.25; f < 1; f += 0.25 {
+			gw = math.Max(gw, s.at(a[0]+f*dx, a[1]+f*dy))
+		}
 		lay = winLayout{count: max(0, cnt), x0: (l - float64(max(0, cnt))*pitch) / 2, ref: lo,
-			maxTop: eave - lo - winUnderEaveM, groundA: s.at(a[0], a[1]), groundB: s.at(b[0], b[1])}
+			maxTop: eave - lo - winUnderEaveM, groundA: gw, groundB: gw}
 		add(wall, out, pt(a, base), pt(b, base), pt(b, eave), pt(a, eave))
 		lay = winLayout{}
 	}

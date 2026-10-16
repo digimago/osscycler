@@ -690,6 +690,21 @@ func (w *World) addBuildings(t *terrain, fps []scenery.Footprint) error {
 	mat := w.doc.AddMaterial(gltf.Material{Name: "building", Color: [4]float32{1, 1, 1, 1}, Roughness: 0.9})
 	s := &surface{t: t, lists: map[[2]int]chunkLists{}}
 	byChunk := map[[2]int]*gltf.Primitive{}
+	// The nearest road's direction from a point (within 40 m), for which
+	// way a house's ends face.
+	roads := newRouteGrid(t.fine, 40)
+	toRoad := func(e, n float64) (float64, float64, bool) {
+		best, be, bn := 40.0, 0.0, 0.0
+		roads.within(e, n, 40, func(i int) {
+			if d := math.Hypot(t.fine[i].e-e, t.fine[i].n-n); d < best {
+				best, be, bn = d, t.fine[i].e-e, t.fine[i].n-n
+			}
+		})
+		if best >= 40 || best == 0 {
+			return 0, 0, false
+		}
+		return be / best, bn / best, true
+	}
 	var keys [][2]int
 	for _, f := range fps {
 		var cx, cy float64
@@ -703,7 +718,7 @@ func (w *World) addBuildings(t *terrain, fps []scenery.Footprint) error {
 			byChunk[k] = p
 			keys = append(keys, k)
 		}
-		buildingMesh(p, s, styleFor(t.o.Region), f)
+		buildingMesh(p, s, styleFor(t.o.Region), f, toRoad)
 	}
 	for _, k := range keys {
 		if p := byChunk[k]; len(p.Indices) > 0 {

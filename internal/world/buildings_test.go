@@ -30,7 +30,7 @@ func TestBuildings(t *testing.T) {
 	house := scenery.Footprint{ID: 1, Kind: scenery.KindHouse, WallM: 5, RoofM: 4,
 		Outline: [][2]float64{{-30, 400}, {-18, 400}, {-18, 408}, {-30, 408}}}
 	var p gltf.Primitive
-	buildingMesh(&p, s, &styleNL, house)
+	buildingMesh(&p, s, &styleNL, house, nil)
 	top := math.Inf(-1)
 	for _, q := range house.Outline {
 		top = math.Max(top, s.at(q[0], q[1]))
@@ -54,7 +54,7 @@ func TestBuildings(t *testing.T) {
 	block := scenery.Footprint{ID: 2, Kind: scenery.KindFlat, WallM: 12,
 		Outline: [][2]float64{{30, 500}, {50, 500}, {50, 520}, {30, 520}}}
 	p = gltf.Primitive{}
-	buildingMesh(&p, s, &styleNL, block)
+	buildingMesh(&p, s, &styleNL, block, nil)
 	lo, hi := ys(&p)
 	glo, ghi := math.Inf(1), math.Inf(-1)
 	for _, q := range block.Outline {
@@ -83,5 +83,39 @@ func TestBuildings(t *testing.T) {
 	a2, b2 := colours(&styleNL, house, splitmix(1))
 	if a1 != a2 || b1 != b2 {
 		t.Error("colours differ between builds")
+	}
+}
+
+// A gabled house whose outline isn't quite its rectangle (a notch, a
+// corner cut) stands on the rectangle: every gable's base corner is a
+// wall's top corner, so they meet in one plane (owner, 2026-10-16: a seam
+// between the floors and the gable).
+func TestGablesMeetTheirWalls(t *testing.T) {
+	c := northCourse(t)
+	tr := testTerrain(c, Options{})
+	s := &surface{t: tr, lists: map[[2]int]chunkLists{}}
+	house := scenery.Footprint{ID: 2, Kind: scenery.KindHouse, WallM: 5, RoofM: 4,
+		Outline: [][2]float64{{-30, 400}, {-18, 400}, {-18, 407.3}, {-18.6, 408}, {-30, 408}}}
+	var p gltf.Primitive
+	buildingMesh(&p, s, &styleNL, house, nil)
+	// Wall top corners: vertices of upright faces at their highest.
+	type v2 [2]float32
+	walls := map[v2]bool{}
+	for t := 0; t+2 < len(p.Indices); t += 3 {
+		var q [3][3]float32
+		for k := range 3 {
+			i := p.Indices[t+k]
+			q[k] = [3]float32{p.Positions[3*i], p.Positions[3*i+1], p.Positions[3*i+2]}
+		}
+		ny := (q[1][2]-q[0][2])*(q[2][0]-q[0][0]) - (q[1][0]-q[0][0])*(q[2][2]-q[0][2])
+		if math.Abs(float64(ny)) < 1e-4 {
+			for _, v := range q {
+				walls[v2{v[0], v[2]}] = true
+			}
+		}
+	}
+	// The rectangle's 4 corners and each gable's apex.
+	if len(walls) != 6 {
+		t.Errorf("the upright faces have %d corners, want the rectangle's 4 and 2 gable apexes", len(walls))
 	}
 }

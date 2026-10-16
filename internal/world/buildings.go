@@ -38,11 +38,26 @@ var (
 
 // buildingMesh adds one building to p (vertex colours on a white
 // material).
-func buildingMesh(p *gltf.Primitive, s *surface, st *style, f scenery.Footprint) {
+// toRoad, when set, is the unit direction (east, north) from a point to
+// the nearest road, false with none near.
+func buildingMesh(p *gltf.Primitive, s *surface, st *style, f scenery.Footprint, toRoad func(e, n float64) (float64, float64, bool)) {
 	pts := f.Outline
 	n := len(pts)
 	if n < 3 {
 		return
+	}
+	// A gabled house stands on the rectangle its roof is built on: walls
+	// and gables share their edges in one plane (owner, 2026-10-16: a seam
+	// showed between the floors and the gable where the outline left the
+	// rectangle).
+	rect, ax, ay := minRect(pts)
+	gabled := f.RoofM > 0 && polyArea(pts) >= rectangular*rect.area && n <= 8
+	if gabled {
+		hl, hw := rect.long/2, rect.short/2
+		bx, by := -ay, ax
+		c := func(u, v float64) [2]float64 { return [2]float64{rect.cx + ax*u + bx*v, rect.cy + ay*u + by*v} }
+		pts = [][2]float64{c(-hl, -hw), c(hl, -hw), c(hl, hw), c(-hl, hw)}
+		n = 4
 	}
 	lo, hi := math.Inf(1), math.Inf(-1)
 	for _, q := range pts {
@@ -61,6 +76,7 @@ func buildingMesh(p *gltf.Primitive, s *surface, st *style, f scenery.Footprint)
 	// ground); elsewhere (roofs, gables' tops) v -1: no windows.
 	along := 0.0
 	uvWall := false
+	uOff := 0.0 // timberU on a timber-clad face
 	add := func(c [3]float32, n [3]float64, v ...[3]float64) {
 		first := uint32(len(p.Positions) / 3)
 		for k, q := range v {
@@ -68,11 +84,14 @@ func buildingMesh(p *gltf.Primitive, s *surface, st *style, f scenery.Footprint)
 			p.Normals = append(p.Normals, float32(n[0]), float32(n[1]), float32(-n[2]))
 			p.Colors = append(p.Colors, c[0], c[1], c[2])
 			if uvWall {
+				// Along the face: the projection on its base edge v0 → v1.
+				ex, ez := v[1][0]-v[0][0], v[1][2]-v[0][2]
 				u := along
-				if k == 1 || k == 2 {
-					u = along + math.Hypot(v[1][0]-v[0][0], v[1][2]-v[0][2])
+				if l := math.Hypot(ex, ez); l > 0 {
+					u += ((q[0]-v[0][0])*ex + (q[2]-v[0][2])*ez) / l
 				}
-				p.UVs = append(p.UVs, float32(u), float32(q[1]-lo))
+				_ = k
+				p.UVs = append(p.UVs, float32(u+uOff), float32(q[1]-lo))
 			} else {
 				p.UVs = append(p.UVs, 0, -1)
 			}
@@ -109,11 +128,47 @@ func buildingMesh(p *gltf.Primitive, s *surface, st *style, f scenery.Footprint)
 		flat()
 		return
 	}
-	area := polyArea(pts)
-	rect, ax, ay := minRect(pts)
 	switch {
-	case area >= rectangular*rect.area && n <= 8:
-		gable(add, pt, rect, ax, ay, eave, f.RoofM, wall, roof)
+	case gabled:
+		// A house on a slope in a style that turns it to the view: the
+		// ridge down the fall line, a gable facing the valley (owner,
+		// 2026-10-16, La Bresse's Rue du Hohneck), when it is square
+		// enough for either way.
+		if st.gableToView && rect.long < gableSquare*rect.short {
+			hl, hw := rect.long/2, rect.short/2
+			bx, by := -ay, ax
+			along := math.Abs(s.at(rect.cx+ax*hl, rect.cy+ay*hl)-s.at(rect.cx-ax*hl, rect.cy-ay*hl)) / rect.long
+			across := math.Abs(s.at(rect.cx+bx*hw, rect.cy+by*hw)-s.at(rect.cx-bx*hw, rect.cy-by*hw)) / rect.short
+			if across > along && across > gableSlope {
+				rect.long, rect.short = rect.short, rect.long
+				ax, ay = bx, by
+			}
+		}
+		// Each gable's cladding (owner, 2026-10-16): timber where it faces
+		// the road with its windows; else mostly the walls' render, now
+		// and then zinc squares or slate.
+		cladOf := func(end float64) (float64, [3]float32) {
+			if st.gableWood == 0 {
+				return 0, wall
+			}
+			if toRoad != nil && rect.short >= 2.5 {
+				if re, rn, ok := toRoad(rect.cx+ax*end*rect.long/2, rect.cy+ay*end*rect.long/2); ok && re*ax*end+rn*ay*end > 0.5 {
+					return timberU, shadeHouse(srgbLinear(st.gableWood), rng)
+				}
+			}
+			switch r := unit(splitmix(rng + 11)); {
+			case r < 0.1:
+				return zincU, shadeHouse(srgbLinear(0x8c9296), rng)
+			case r < 0.2:
+				return slateU, shadeHouse(srgbLinear(0x40434a), rng)
+			}
+			return 0, wall
+		}
+		gable(add, pt, rect, ax, ay, eave, f.RoofM, roof, func(end float64) [3]float32 {
+			off, c := cladOf(end)
+			uvWall, along, uOff = true, 0, off
+			return c
+		}, func() { uvWall, uOff = false, 0 })
 	case convex(pts) && n <= maxHipPoints:
 		var cx, cy float64
 		for _, q := range pts {
@@ -132,7 +187,7 @@ func buildingMesh(p *gltf.Primitive, s *surface, st *style, f scenery.Footprint)
 // gable roofs the rectangle r (axis ax, ay along its long side) with a
 // ridge along its middle, the gable ends filled.
 func gable(add func([3]float32, [3]float64, ...[3]float64), pt func([2]float64, float64) [3]float64,
-	r rectangle, ax, ay, eave, roofM float64, wall, roof [3]float32) {
+	r rectangle, ax, ay, eave, roofM float64, roof [3]float32, gableAt func(end float64) [3]float32, done func()) {
 	bx, by := -ay, ax // across
 	o := overhangM
 	corner := func(u, v float64) [2]float64 {
@@ -157,8 +212,29 @@ func gable(add func([3]float32, [3]float64, ...[3]float64), pt func([2]float64, 
 			v[0], v[1] = v[1], v[0]
 			n = faceNormal(v[0], v[1], v[2])
 		}
-		add(wall, n, v...)
+		c := gableAt(end) // its cladding; windows in it too
+		add(c, n, v...)
+		done()
 	}
+}
+
+// Added to a wall's u where it is clad (the renderer draws the cladding;
+// surfaces.gdshader's kind 5): timber boards, zinc squares, slate.
+const (
+	timberU = 10000.0
+	zincU   = 20000.0
+	slateU  = 30000.0
+)
+
+const (
+	gableSquare = 1.6  // a house no longer than this times its width may turn its gable to the view
+	gableSlope  = 0.06 // on ground falling this steeply across it
+)
+
+// shadeHouse is c a little lighter or darker, by the house's seed.
+func shadeHouse(c [3]float32, rng uint64) [3]float32 {
+	k := float32(0.88 + 0.24*unit(splitmix(rng+3)))
+	return [3]float32{c[0] * k, c[1] * k, c[2] * k}
 }
 
 // faceNormal is the upward-or-outward normal of a triangle given as east,

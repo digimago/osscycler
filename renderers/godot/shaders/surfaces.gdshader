@@ -162,6 +162,37 @@ void fragment() {
 	} else if (kind == 5) {
 		rough = 0.9;
 		vec2 w = UV;
+		// Cladding (the builder adds 10000 to u for timber, 20000 for zinc,
+		// 30000 for slate): timber as vertical boards 15 cm wide with dark
+		// gaps, each its own tone, grain along them; zinc and slate as
+		// diamonds (owner, 2026-10-16), 30 cm across, each its own tone,
+		// their joints dark and set back.
+		float clad = floor((w.x + 5000.0) / 10000.0);
+		if (w.x > 5000.0) {
+			w.x -= clad * 10000.0;
+			float fb = near(w, 0.03);
+			if (clad == 1.0) {
+				float bw = 0.15;
+				float board = floor(w.x / bw);
+				float gap = 1.0 - inside(fract(w.x / bw) - 0.5, 0.9);
+				float tone = 0.8 + 0.35 * h21(vec2(board, 3.7));
+				float grain = 0.9 + 0.2 * vnoise(vec2(w.x * 40.0, w.y * 1.5 + board * 7.0));
+				c = base * mix(1.0, tone * grain, fb);
+				c = mix(c, base * 0.35, gap * fb);
+				h = (0.012 * (1.0 - gap) - 0.004 * grain) * fb;
+				rough = 0.85;
+			} else {
+				vec2 d = vec2(w.x + w.y, w.x - w.y) / 0.21; // diamonds 30 cm across
+				vec2 cellD = floor(d);
+				vec2 f = fract(d) - 0.5;
+				float joint = 1.0 - inside(f.x, 0.9) * inside(f.y, 0.9);
+				float tone = 0.85 + 0.25 * h21(cellD + clad);
+				c = base * mix(1.0, tone, fb);
+				c = mix(c, base * 0.4, joint * fb);
+				h = 0.006 * (1.0 - joint) * fb;
+				rough = clad == 2.0 ? 0.45 : 0.6; // zinc a little sheen
+			}
+		}
 		if (w.y >= 0.0 && abs(wnrm.y) < 0.3) {
 			// Storeys 2.8 m, windows 1.0 × 1.3 m from 0.9 m above each
 			// floor, every 2.7 m along the wall; each building's own rhythm

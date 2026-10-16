@@ -29,6 +29,7 @@ type roadMaterials struct {
 	island     int     // a roundabout's island: grass in its vertices, not land (the cut leaves it)
 	paving     int     // a roundabout\'s paved centre circle
 	apronM     float64 // an island roundabout's apron of setts round the island (style.rbApronM)
+	cornerWalk bool    // a junction's sidewalk stops at the corner where only one road has one (style.cornerWalk)
 }
 
 func addRoadMaterials(d *gltf.Doc, st *style) roadMaterials {
@@ -51,6 +52,7 @@ func addRoadMaterials(d *gltf.Doc, st *style) roadMaterials {
 	m.island = d.AddMaterial(gltf.Material{Name: "island", Color: [4]float32{1, 1, 1, 1}, Roughness: 1})
 	m.paving = mat("roundabout centre", st.roundaboutCentre, 0.9)
 	m.apronM = st.rbApronM
+	m.cornerWalk = st.cornerWalk
 	return m
 }
 

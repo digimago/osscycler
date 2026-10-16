@@ -246,6 +246,7 @@ func flatPast(cell float64) float64 { return 1.5 * cell }
 // Build makes the world for c.
 func Build(c *course.Course, o Options) (*World, error) {
 	o.defaults()
+	o.regionScenery()
 	if c.Distance < 2*fineStep {
 		return nil, errors.New("world: course too short")
 	}

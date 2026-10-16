@@ -43,6 +43,7 @@ import (
 // course keeps to the network, and the land gives way to the roads.
 func BuildGraph(c *course.Course, o Options) (*World, error) {
 	o.defaults()
+	o.regionScenery()
 	if c.Distance < 2*fineStep {
 		return nil, errors.New("world: course too short")
 	}
@@ -127,7 +128,7 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 			heightsStraight(l, &t, ways, func(w scenery.Way) bool { return w.Bridge || w.Tunnel }, true)
 		}
 		net := newGnet(lines, ways, rbs)
-		net.anchorHeights()
+		net.anchorHeights(ways)
 		progress(0.05)
 
 		own := make([][4]float64, steps+1)

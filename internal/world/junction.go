@@ -118,7 +118,7 @@ func patchMeshes(p patch, m roadMaterials, v *verger) []gltf.Primitive {
 		if walkOnRoad(p, w) {
 			continue
 		}
-		walkMesh(p, w, &walk, &kerb)
+		walkMesh(p, w, &walk, &kerb, m.cornerWalk)
 	}
 	for _, q := range []gltf.Primitive{walk, kerb} {
 		if len(q.Indices) > 0 {
@@ -146,8 +146,13 @@ func patchMeshes(p patch, m roadMaterials, v *verger) []gltf.Primitive {
 
 // walkMesh is a sidewalk a junction carries: on a kerb along its outline,
 // walkM wide, its ends where the roads' sidewalks end. Where only one road
-// has a sidewalk on that side, it goes halfway round and stops.
-func walkMesh(p patch, w walkChain, walk, kerb *gltf.Primitive) {
+// has a sidewalk on that side, it goes halfway round and stops, or with
+// corner none is drawn: the road's own sidewalk ends at its cut, square
+// with the other road's mouth.
+func walkMesh(p patch, w walkChain, walk, kerb *gltf.Primitive, corner bool) {
+	if corner && w.fromA != w.fromB {
+		return
+	}
 	k := w.kerb
 	if len(k) < 2 {
 		return

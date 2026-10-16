@@ -211,7 +211,7 @@ func TestGraphNodesShareAHeight(t *testing.T) {
 		}
 	}
 	g := newGnet(ls, ways, nil)
-	g.anchorHeights()
+	g.anchorHeights(ways)
 	var at []float64
 	for k, l := range g.lines {
 		for _, st := range g.stops[k] {

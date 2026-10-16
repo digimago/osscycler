@@ -4,6 +4,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/digimago/osscycler/internal/gltf"
 	"github.com/digimago/osscycler/internal/scenery"
 )
 
@@ -152,5 +153,88 @@ func TestGraphLaneBesideTheRoadBehindAWall(t *testing.T) {
 	}
 	if r := w.Check(); r.HolesM2 > 0.1 {
 		t.Errorf("holes %.2f m² (%v), want none between the roads", r.HolesM2, r.Holes)
+	}
+}
+
+// A minor road meeting a major one (owner's photo of the lane off the Rue
+// du Hohneck, 2026-10-16): the node is at the major road's height, and
+// the minor road keeps it, flat, out past the major road's edge and a
+// metre more before it climbs.
+func TestMinorRoadMouthIsFlat(t *testing.T) {
+	ways := []scenery.Way{
+		{Line: [][2]float64{{-100, 0}, {0, 0}, {100, 0}}, Nodes: []int64{1, 2, 3}, Name: "Main", Class: "secondary", WidthM: 6},
+		{Line: [][2]float64{{0, 0}, {0, 100}}, Nodes: []int64{2, 4}, Name: "Side", Class: "residential", WidthM: 4},
+	}
+	ls := networkLines(ways, nil, func(e, n float64) bool { return true })
+	for _, l := range ls {
+		for i := range l.samples {
+			s := &l.samples[i]
+			if s.way == 0 {
+				s.ele = 10
+			} else {
+				s.ele = 10 + 0.1*s.d // the side road climbs 10 % from the node
+			}
+		}
+	}
+	g := newGnet(ls, ways, nil)
+	g.anchorHeights(ways)
+	if math.Abs(g.ele[2]-10) > 0.01 {
+		t.Errorf("the junction at %.2f m, want the main road's 10", g.ele[2])
+	}
+	for _, l := range g.lines {
+		if l.samples[0].way != 1 {
+			continue
+		}
+		reach := 3 + gMouthFlatM // the main road's half width, and the flat metre
+		for _, s := range l.samples {
+			if s.d <= reach-0.01 && math.Abs(s.ele-10) > 0.01 {
+				t.Errorf("the side road at %.1f m from the node is %.2f m high, want flat at 10", s.d, s.ele)
+			}
+		}
+		if s := sampleBetween(l, 40); s.ele < 13 {
+			t.Errorf("40 m up the side road at %.2f m: it should climb on beyond its mouth", s.ele)
+		}
+	}
+}
+
+// A French village's residential lanes have no sidewalks guessed from the
+// built-up land beside them; its through roads keep theirs, and tagged
+// sidewalks stay. The map data, shared, is left as it was.
+func TestFrenchLanesHaveNoGuessedSidewalks(t *testing.T) {
+	ways := []scenery.Way{
+		{Class: "residential", Sidewalk: [2]bool{true, true}, WalkGuessed: true},
+		{Class: "secondary", Sidewalk: [2]bool{true, true}, WalkGuessed: true},
+		{Class: "residential", Sidewalk: [2]bool{true, false}},
+	}
+	sc := &scenery.Scenery{Ways: ways}
+	for _, c := range []struct {
+		region string
+		want   [3]bool
+	}{{RegionFR, [3]bool{false, true, true}}, {RegionNL, [3]bool{true, true, true}}} {
+		o := Options{Region: c.region, Scenery: sc}
+		o.regionScenery()
+		for i, w := range o.Scenery.Ways {
+			if got := w.Sidewalk[0]; got != c.want[i] {
+				t.Errorf("%s: way %d (%s) sidewalk %v, want %v", c.region, i, w.Class, got, c.want[i])
+			}
+		}
+	}
+	if !sc.Ways[0].Sidewalk[0] {
+		t.Error("the shared map data was changed")
+	}
+}
+
+// Where only one road at a junction has a sidewalk, a French junction ends
+// it at the corner (owner's photo of the lane's mouth): no sidewalk of the
+// junction's own; elsewhere it goes halfway round.
+func TestJunctionWalkStopsAtTheCorner(t *testing.T) {
+	var p patch // no roads: the heights don't matter here, only whether it is drawn
+	w := walkChain{kerb: [][2]float64{{0, 0}, {2, 0}, {4, 1}, {5, 3}}, fromA: true}
+	for _, corner := range []bool{false, true} {
+		var walk, kerb gltf.Primitive
+		walkMesh(p, w, &walk, &kerb, corner)
+		if drawn := len(walk.Indices) > 0; drawn == corner {
+			t.Errorf("corner %v: the junction's own sidewalk drawn %v", corner, drawn)
+		}
 	}
 }

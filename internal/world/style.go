@@ -36,6 +36,8 @@ type style struct {
 	reliefM        float64 // the meso relief's strength on slopes, m (0: none; gland.relief)
 	dryAboveM      float64 // grass dries towards straw above this height (0: never; Manifest.Ground.DryAboveM)
 	junctionLevelM float64 // a junction reaches along a road alongside only while within this in height (0: any)
+	walkGuessRank  int     // sidewalks guessed from built-up land only on roads of this class rank or higher (0: all)
+	cornerWalk     bool    // where only one road at a junction has a sidewalk, it ends at the corner (else halfway round)
 	roadside       bool    // barriers, retaining walls, rock netting, bend posts, kilometre markers (roadside.go)
 	quays          bool    // stone quays along rivers in town (quays.go)
 	gableToView    bool    // houses on a slope turn a gable to the valley (buildings.go)
@@ -201,9 +203,17 @@ var styleFR = style{
 	dryAboveM:      1150,
 	roadside:       true,
 	junctionLevelM: abreastStepM,
-	quays:          true,
-	gableToView:    true,
-	gableWood:      0x4e3626, // dark stained boards, as on the Rue du Hohneck
+	// A French village's residential lanes and service roads have no
+	// sidewalks (owner's photo of a lane off the Rue du Hohneck, 2026-10-16:
+	// grass at one edge, a wall at the other); its through roads do.
+	walkGuessRank: 5, // tertiary
+	// And a sidewalk ends at a lane's mouth, square with it, rather than
+	// turning halfway into it (the same photo: it had wrapped round into
+	// the lane's mouth at the road's level, floating beside its ramp).
+	cornerWalk:  true,
+	quays:       true,
+	gableToView: true,
+	gableWood:   0x4e3626, // dark stained boards, as on the Rue du Hohneck
 	// La Bresse's roundabouts (owner, 2026-10-16, marks at 0.51-0.54 km):
 	// a raised, planted island inside a narrow apron of reddish setts,
 	// not a flat disc ridden straight across.
@@ -243,4 +253,30 @@ var styleFR = style{
 			scenery.LandNone:   {broad: map[string]float64{"mountain beech": 70, "rowan": 30}},
 		}},
 	},
+}
+
+// regionScenery adapts the map data to the region's style: guessed
+// sidewalks dropped from roads below its walkGuessRank. The ways keep
+// their order (RouteOn indexes them); the map data itself is shared, so
+// it is copied, not changed.
+func (o *Options) regionScenery() {
+	st := styleFor(o.Region)
+	if st.walkGuessRank == 0 || o.Scenery == nil {
+		return
+	}
+	var ways []scenery.Way
+	for i, w := range o.Scenery.Ways {
+		if !w.WalkGuessed || classRank[w.Class] >= st.walkGuessRank {
+			continue
+		}
+		if ways == nil {
+			ways = append([]scenery.Way(nil), o.Scenery.Ways...)
+		}
+		ways[i].Sidewalk, ways[i].WalkGuessed = [2]bool{}, false
+	}
+	if ways != nil {
+		sc := *o.Scenery
+		sc.Ways = ways
+		o.Scenery = &sc
+	}
 }

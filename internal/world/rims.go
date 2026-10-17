@@ -51,6 +51,14 @@ func rimMesh(outline [][2]float64, height func(e, n float64) float64, land, road
 			f := float64(j) / float64(k)
 			e, n := a[0]+f*de, a[1]+f*dn
 			c := col{e: e, n: n}
+			// Where the outline runs under a road (a car park or an apron
+			// overlapping the roads it meets) the road is the surface: no
+			// rim, which stood as a line across the Hohneck col's apron
+			// (16.1 km of the Route des Américains).
+			if _, under := road.at(e, n); under {
+				cols = append(cols, c)
+				continue
+			}
 			pe, pn := e+oe*rimOutM, n+on*rimOutM
 			// Beside a road the rim closes to the road's surface (a car park
 			// standing a few centimetres off it showed a dark gap).

@@ -73,3 +73,51 @@ func TestRuns(t *testing.T) {
 		t.Errorf("runs = %v", got)
 	}
 }
+
+// A barrier stands where the land falls away from the road itself, not
+// where a car park lies beside the road and the drop is beyond it (the
+// Hohneck car parks, 15.33 km of the Route des Américains: a guardrail
+// stood on the asphalt in front of the car park).
+func TestNoBarrierBesideACarPark(t *testing.T) {
+	c := northCourse(t)
+	kx := 111195 * math.Cos(52*math.Pi/180)
+	elev := func(lat, lon float64) (float64, bool) {
+		x, y := (lon-5)*kx, (lat-52)*111195
+		if y < 300 || y > 700 || x <= 3 {
+			return 10, true
+		}
+		return 10 - (x - 3), true // falling 1 in 1 east of the road
+	}
+	build := func(carPark bool) (east int) {
+		tr := testTerrain(c, Options{Region: RegionFR, Elevation: elev})
+		if carPark {
+			// A car park from the road's edge 12 m out, along the slope.
+			p := gltf.Primitive{Material: 1}
+			for _, q := range [][3]float64{{3.5, 10, -300}, {12, 10, -300}, {12, 10, -700}, {3.5, 10, -700}} {
+				p.Positions = append(p.Positions, float32(q[0]), float32(q[1]), float32(q[2]))
+			}
+			p.Indices = []uint32{0, 1, 2, 0, 2, 3}
+			cut := newCutter()
+			cut.add(p)
+			tr.surfaces = cut
+		}
+		w := &World{doc: gltf.New("test")}
+		if err := w.addRoadside(tr, nil, nil, nil, 0); err != nil {
+			t.Fatal(err)
+		}
+		for _, p := range w.prims {
+			for v := 0; v+2 < len(p.Positions); v += 3 {
+				if x, n := float64(p.Positions[v]), -float64(p.Positions[v+2]); x > 3 && n > 300 && n < 700 {
+					east++
+				}
+			}
+		}
+		return
+	}
+	if build(false) == 0 {
+		t.Fatal("no barrier where the land falls away east of the road")
+	}
+	if n := build(true); n > 0 {
+		t.Errorf("%d roadside vertices east of the road with a car park beside it, want no barrier there", n)
+	}
+}

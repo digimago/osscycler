@@ -58,6 +58,7 @@ const (
 	barrierPostM    = 4.0
 	wallOffM        = 1.0 // a wall's foot this far off the edge: a strip of grass and the gutter
 	wallAboveM      = 1.0 // a road surface this much above a road's own stands behind its wall, not in its way
+	besideLevelM    = 1.5 // a paved surface beside the road no lower than this is beside it, not a drop: no barrier
 
 	snowPoleStepM = 45.0 // snow poles along the road on each side, staggered
 	snowPoleOffM  = 0.7
@@ -264,7 +265,21 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 						}
 					}
 				}
-				if ok1 && ok2 && zc-z2 > fallDrop && zc-z1 > fallDrop*0.4 && !a.walk[si] {
+				// A barrier where the land falls away from the road itself:
+				// not where a car park (or another road) lies beside it at
+				// about its level and the drop is beyond that (the Hohneck
+				// car parks, 15.33 km: a guardrail stood on the asphalt in
+				// front of the car park). A road well below (the Chemin de
+				// Schmargult under the Route des Crêtes, 15.85 km) is a drop
+				// like any other.
+				paved := func(e, n float64) bool {
+					if t.surfaces == nil {
+						return false
+					}
+					h, ok := t.surfaces.highest(e, -n, 0.5)
+					return ok && h > zc-besideLevelM
+				}
+				if ok1 && ok2 && zc-z2 > fallDrop && zc-z1 > fallDrop*0.4 && !a.walk[si] && !paved(e1, n1) && !paved(e2, n2) {
 					s.rail[k] = true
 				}
 				switch {

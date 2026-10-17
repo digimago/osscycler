@@ -375,6 +375,7 @@ func Build(c *course.Course, o Options) (*World, error) {
 		t.markAloft(lines)
 	}
 	markDecks(lines, c.Distance, styleFor(o.Region).junctionLevelM > 0)
+	hideOwnWaysInLots(lines, patches, o.Scenery) // before t.fine: the roadside reads those samples
 	for k, l := range lines {
 		for i := range l.samples {
 			l.samples[i].line = k
@@ -395,7 +396,6 @@ func Build(c *course.Course, o Options) (*World, error) {
 		}
 	}
 	progress(0.1) // the network, junctions and path
-	hideOwnWaysInLots(lines, patches, o.Scenery)
 	roads, decks := roadPrims(lines, patches, o.ChunkM, roadMats, verges)
 	for k, p := range pavedIslands(roads, ground, roadMats.surface[scenery.SurfaceAsphalt], o.ChunkM) {
 		roads[k] = append(roads[k], p)
@@ -432,6 +432,7 @@ func Build(c *course.Course, o Options) (*World, error) {
 	// (Terrain + verges) − roads and car parks: nothing of the land lies
 	// over them.
 	lots := parkingLots(&t, o.Scenery, roadMats, roads)
+	pathOverLots(px, py, pz, lots)
 	if t.cut && len(lots) > 0 {
 		var landPrims, roadPrimsAll []gltf.Primitive
 		landPrims = append(landPrims, meshes...)
@@ -950,7 +951,15 @@ func parkingLots(t *terrain, sc *scenery.Scenery, m roadMaterials, roads map[[2]
 		prims = append(prims, roads[k]...)
 	}
 	rs := newSurfaceIndex(prims, func(mat int) bool { return paved[mat] }, 200)
-	height := func(e, n float64) float64 { return parkingHeight(s.at(e, n), e, n, rs) }
+	height := func(e, n float64) float64 {
+		g := 0.0
+		for _, de := range [3]float64{-parkSmoothM, 0, parkSmoothM} {
+			for _, dn := range [3]float64{-parkSmoothM, 0, parkSmoothM} {
+				g += s.at(e+de, n+dn) / 9
+			}
+		}
+		return parkingHeight(g, e, n, rs)
+	}
 	var out []parkingLot
 	for _, lot := range sc.Parking {
 		outline := parkingOntoRoads(lot.Outline, rs)
@@ -1081,11 +1090,63 @@ func parkingOntoRoads(outline [][2]float64, rs *landSurface) [][2]float64 {
 // parkBlendM of a road surface it takes the road's height, just under it,
 // easing to the ground further in.
 const (
-	parkBlendM = 4.0
+	parkBlendM = 8.0
+	// parkSmoothM: a car park is graded, not the ground model's 5 m cells
+	// as they are: its height off the roads is the land's mean over a 3 × 3
+	// of points this far apart (the Hohneck's summit car park, 2026-10-17:
+	// the model's bumps and a 1.5 m bank inside its entrance rippled the
+	// surface).
+	parkSmoothM = 10.0
 	// parkCellM: a car park's triangles near a road follow it this finely
 	// (4 m rose above the road's edge between their corners).
 	parkCellM = 1.0
 )
+
+// pathOverLots puts the rider's path over a car park at the car park's
+// surface (the course's own way through one is the car park's: not
+// drawn, and its heights are the ground model's, 1.5 m over the summit
+// car park of the Hohneck, where the path floated), eased over pathLotEaseM
+// either side.
+func pathOverLots(px, py, pz []float64, lots []parkingLot) {
+	if len(lots) == 0 {
+		return
+	}
+	n := len(pz)
+	want := make([]float64, n)
+	in := make([]bool, n)
+	for i := range pz {
+		for _, l := range lots {
+			if inPoly(l.outline, px[i], py[i]) {
+				want[i], in[i] = l.height(px[i], py[i]), true
+				break
+			}
+		}
+	}
+	out := append([]float64(nil), pz...)
+	for i := range pz {
+		if in[i] {
+			out[i] = want[i]
+			continue
+		}
+		// Near a lot: the lot's correction at its nearest point in the
+		// lot, eased out (the heights themselves blended had pulled a
+		// point on a 12 % climb down by 0.4 m, a step: the correction is
+		// what carries over, not the height 5 m away).
+		for k := 1; k <= pathLotEaseN; k++ {
+			for _, j := range [2]int{i - k, i + k} {
+				if j >= 0 && j < n && in[j] {
+					f := float64(k) / float64(pathLotEaseN+1)
+					out[i] = pz[i] + (want[j]-pz[j])*(1-f)
+					k = pathLotEaseN + 1
+					break
+				}
+			}
+		}
+	}
+	copy(pz, out)
+}
+
+const pathLotEaseN = 2 // path points (10 m) over which the path eases onto a car park's surface
 
 // parkingHeight is a car park's surface at e, n over ground g: the nearest
 // road surface (rs) within parkBlendM sets it, eased out to g + the lift.

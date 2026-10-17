@@ -127,6 +127,11 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 			// tunnel, polder ride 5.17 km).
 			heightsStraight(l, &t, ways, func(w scenery.Way) bool { return w.Bridge || w.Tunnel }, true)
 		}
+		// After the heights: smoothed over the whole road, a road's end at
+		// a car park's edge keeps its grade (trimmed first, the one-sided
+		// mean left the end a metre low on a 15 % climb, a step up into
+		// the Hohneck's summit car park).
+		lines = trimLinesInLots(lines, o.Scenery.Parking)
 		net := newGnet(lines, ways, rbs)
 		net.anchorHeights(ways)
 		progress(0.05)
@@ -316,6 +321,7 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 		}
 	}
 	markDecks(lines, c.Distance, styleFor(o.Region).junctionLevelM > 0)
+	hideOwnWaysInLots(lines, patches, o.Scenery) // before t.fine: the roadside reads those samples
 	for k, l := range lines {
 		for i := range l.samples {
 			l.samples[i].line = k
@@ -323,7 +329,6 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 		t.fine = append(t.fine, l.samples...)
 		t.loops = append(t.loops, l.loop)
 	}
-	hideOwnWaysInLots(lines, patches, o.Scenery)
 	roads, decks := roadPrims(lines, patches, o.ChunkM, roadMats, nil)
 	for k, p := range pavedIslands(roads, ground, roadMats.surface[scenery.SurfaceAsphalt], o.ChunkM) {
 		roads[k] = append(roads[k], p)
@@ -371,6 +376,7 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 		// its outline's few big triangles stood up to 12 cm off it.
 		under = append(under, l.mesh)
 	}
+	pathOverLots(px, py, pz, lots)
 	// What plants and grass keep off: the roads and car parks (not the
 	// water: its reeds grow along its edge).
 	cut := newCutter()

@@ -369,3 +369,54 @@ func TestRimNotUnderARoad(t *testing.T) {
 		}
 	}
 }
+
+// Roads inside a car park (its aisles, a road's last metres inside it)
+// are taken out of the network: the car park is the surface there (the
+// Hohneck's summit car park: a loop ridden in it was matched onto the
+// service way through it and came out as a hairpin on that line).
+func TestTrimLinesInLots(t *testing.T) {
+	road := &roadLine{}
+	for n := 0.0; n <= 100; n += fineStep {
+		road.samples = append(road.samples, sample{d: n, e: 0, n: n, ele: 10, hw: 2})
+	}
+	aisle := &roadLine{}
+	for e := 10.0; e <= 30; e += fineStep {
+		aisle.samples = append(aisle.samples, sample{d: e - 10, e: e, n: 70, ele: 10, hw: 1.5})
+	}
+	own := &roadLine{route: true}
+	for n := 0.0; n <= 100; n += fineStep {
+		own.samples = append(own.samples, sample{d: n, e: 20, n: n, ele: 10, hw: 1.75})
+	}
+	// The car park from n 60 on, over e 5..40: the road's last 40 m and
+	// the whole aisle lie in it.
+	lots := []scenery.Parking{{Outline: [][2]float64{{-5, 60}, {40, 60}, {40, 120}, {-5, 120}}}}
+	out := trimLinesInLots([]*roadLine{road, aisle, own}, lots)
+	if len(out) != 2 {
+		t.Fatalf("%d lines, want the road's outside piece and the course's own line", len(out))
+	}
+	for _, l := range out {
+		if l.route {
+			if len(l.samples) != len(own.samples) {
+				t.Error("the course's own line was trimmed")
+			}
+			continue
+		}
+		if last := l.samples[len(l.samples)-1]; last.n >= 60 || len(l.samples) < 25 {
+			t.Errorf("the road's piece ends at %.0f m with %d samples, want outside the car park, 30 samples", last.n, len(l.samples))
+		}
+	}
+}
+
+// An apron (a paved junction area mapped as a highway) keeps the roads
+// running over it; only a car park's aisles are trimmed.
+func TestApronKeepsItsRoads(t *testing.T) {
+	road := &roadLine{}
+	for n := 0.0; n <= 100; n += fineStep {
+		road.samples = append(road.samples, sample{d: n, e: 0, n: n, ele: 10, hw: 2})
+	}
+	lots := []scenery.Parking{{Outline: [][2]float64{{-10, 40}, {10, 40}, {10, 60}, {-10, 60}}, Apron: true}}
+	out := trimLinesInLots([]*roadLine{road}, lots)
+	if len(out) != 1 || len(out[0].samples) != len(road.samples) {
+		t.Errorf("the road through an apron was trimmed: %d lines", len(out))
+	}
+}

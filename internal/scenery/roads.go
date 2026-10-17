@@ -57,6 +57,10 @@ type Parking struct {
 	// (course.Project), the first point not repeated.
 	Outline [][2]float64
 	Surface Surface
+	// Apron: a paved area mapped as a highway (area=yes: a junction's
+	// apron, a turning area), a surface the roads through it keep running
+	// over, rather than a car park whose aisles are its own.
+	Apron bool
 }
 
 // PlaceSign is a place-name sign where the route enters a built-up area
@@ -614,7 +618,7 @@ func parkings(c *course.Course, d *Data, r []routePt, roads []*road, east, north
 			off = math.Copysign(buildingClearM+depth/2, off)
 		}
 		lot := Parking{DistanceM: float64(i)*c.Spacing + (a0+a1)/2, OffsetM: off, LengthM: a1 - a0, DepthM: depth, Name: t["name"],
-			Surface: surfaceOf(t["surface"], "")}
+			Surface: surfaceOf(t["surface"], ""), Apron: apron}
 		for k := range xs {
 			if k == len(xs)-1 && xs[k] == xs[0] && ys[k] == ys[0] {
 				break // the ring's closing point

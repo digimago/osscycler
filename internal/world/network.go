@@ -44,6 +44,53 @@ type chainPoint struct {
 	reversed bool
 }
 
+// trimLinesInLots takes the roads' samples inside a car park or a paved
+// area (scenery.Parking) out of the network: the car park is the surface
+// there, its aisles and a road's last metres inside it are no roads to
+// draw or to match the course onto (owner, 2026-10-17: the Hohneck's
+// summit car park, a loop ridden in it; matched onto the service way
+// through it, the loop came out as a hairpin on that line). A line is
+// cut into its pieces outside the lots; pieces shorter than minLineM go.
+// Not inside an apron (a paved junction area): its roads run on over it.
+func trimLinesInLots(ls []*roadLine, lots []scenery.Parking) []*roadLine {
+	if len(lots) == 0 {
+		return ls
+	}
+	inLot := func(e, n float64) bool {
+		for _, lot := range lots {
+			if !lot.Apron && inPoly(lot.Outline, e, n) {
+				return true
+			}
+		}
+		return false
+	}
+	var out []*roadLine
+	for _, l := range ls {
+		if l.route {
+			out = append(out, l)
+			continue
+		}
+		var piece []sample
+		flush := func() {
+			if len(piece) >= 2 && (piece[len(piece)-1].d-piece[0].d >= minLineM || len(piece) == len(l.samples)) {
+				c := *l
+				c.samples = piece
+				out = append(out, &c)
+			}
+			piece = nil
+		}
+		for _, s := range l.samples {
+			if inLot(s.e, s.n) {
+				flush()
+				continue
+			}
+			piece = append(piece, s)
+		}
+		flush()
+	}
+	return out
+}
+
 // drawable says whether way k is drawn: motorways (viaducts and tunnels
 // come later), driveways, and tunnels the route doesn't ride are left
 // out. Bridges are drawn, on decks (bridges.go).
@@ -715,6 +762,14 @@ func newNetwork(c *course.Course, o Options, line *smoothLine, route []sample, t
 		n.lines = networkLines(sc.Ways, ridden, near)
 		for _, l := range n.lines {
 			finishRoad(l.samples, o.CellM)
+			heights(l, t, sc.Ways)
+		}
+		joinHeights(n.lines)
+		// After the heights (smoothed over the whole road, so a road's end
+		// at a car park's edge keeps its grade), the roads inside car parks
+		// are taken out: the car park is the surface there.
+		n.lines = trimLinesInLots(n.lines, sc.Parking)
+		for _, l := range n.lines {
 			for i, s := range l.samples {
 				drawn[s.way] = true
 				n.byWay[s.way] = append(n.byWay[s.way], sampleRef{l, i})
@@ -723,10 +778,6 @@ func newNetwork(c *course.Course, o Options, line *smoothLine, route []sample, t
 		course := courseRoads(route, mapOn, drawn, n.lines, sc.Ways)
 		fineD := c.Distance / float64(len(route)-1)
 		n.on = func(d float64) int { return course[max(0, min(int(math.Round(d/fineD)), len(course)-1))] }
-		for _, l := range n.lines {
-			heights(l, t, sc.Ways)
-		}
-		joinHeights(n.lines)
 	}
 	if !hasWays {
 		// No map roads: the road is the route's, as it always was.

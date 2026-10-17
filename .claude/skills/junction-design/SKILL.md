@@ -122,6 +122,13 @@ wall). Which wall:
   without one the bank is a lawn (a wall and its flat fill made a
   terrace with a grey rim below a house).
 
+A paved area mapped as `highway=* area=yes` (a col's apron, a turning
+area) is a car park to the world, never a road along its ring; roads
+crossing it lose their skirt over it, the course's own way isn't drawn
+inside it. Roadside items (snow poles, bend posts, kilometre markers)
+never stand on a drawn surface; a barrier is one run along a slope,
+gaps under 30 m closed except at a mouth, pieces under 16 m dropped.
+
 What is wrong and must not be built: a wall standing in a road's
 asphalt (place it from the *drawn surfaces*, never from a centre line
 and a guessed width); a wall across a junction or a mouth; a wall whose

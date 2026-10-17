@@ -256,7 +256,7 @@ func TestMarkTerraces(t *testing.T) {
 		return l
 	}
 	road, lane := line(0, 10, true), line(0+3+walkM+1.5+1.5, 11.2, false)
-	markTerraces([]*roadLine{road, lane})
+	markTerraces([]*roadLine{road, lane}, nil)
 	s := road.samples[10]
 	if s.terrace[1] == 0 || s.walk[1] || s.terraceWalk[1] != walkM {
 		t.Fatalf("the road's sample: terrace %.2f walk %v terraceWalk %.2f; want a terrace with its sidewalk's width, the sidewalk off", s.terrace[1], s.walk[1], s.terraceWalk[1])
@@ -268,8 +268,199 @@ func TestMarkTerraces(t *testing.T) {
 		t.Error("the lane, the higher road, got a terrace of its own")
 	}
 	level := line(0, 10, true)
-	markTerraces([]*roadLine{level, line(0+3+walkM+3, 10.1, false)})
+	markTerraces([]*roadLine{level, line(0+3+walkM+3, 10.1, false)}, nil)
 	if level.samples[10].terrace[1] != 0 {
 		t.Error("a road level with the one beside it got a terrace")
+	}
+}
+
+// A terrace's asphalt filler ramps only at a mouth, where a road crosses
+// the sidewalk's line or a junction takes it; where the terrace ends
+// because the road above drifts out of reach, the land takes over from
+// the wall's end (10.92 km of the Route des Américains: the filler, flat
+// at the lower road's level, ran out under the road above).
+func TestTerraceApronOnlyAtAMouth(t *testing.T) {
+	line := func(e0, n0, n1, ele float64, walk bool) *roadLine {
+		l := &roadLine{}
+		for n := n0; n <= n1+1e-9; n += fineStep {
+			s := sample{d: n - n0, e: e0, n: n, ele: ele, hw: 3, edge: 3}
+			s.walk[1] = walk
+			l.samples = append(l.samples, s)
+		}
+		return l
+	}
+	m := roadMaterials{surface: [5]int{1, 1, 1, 1, 1}, walk: 2, kerb: 3}
+	band := 3 + walkM
+	// The lower road's level beyond the terrace's band: a filler would be
+	// the only thing drawn there under 10.5 m.
+	lowBeyond := func(ps map[[2]int][]gltf.Primitive, n0, n1 float64) int {
+		c := 0
+		for _, pp := range ps {
+			for _, p := range pp {
+				for v := 0; v+2 < len(p.Positions); v += 3 {
+					e, y, n := float64(p.Positions[v]), float64(p.Positions[v+1]), -float64(p.Positions[v+2])
+					if n >= n0 && n <= n1 && e > band+0.3 && y < 10.5 {
+						c++
+					}
+				}
+			}
+		}
+		return c
+	}
+	// The higher road alongside from 10 to 30 m only: the terrace ends in
+	// the open at both ends.
+	road, lane := line(0, 0, 60, 10, true), line(band+1.5+1.5, 10, 30, 11.2, false)
+	markTerraces([]*roadLine{road, lane}, nil)
+	if road.samples[10].terrace[1] == 0 {
+		t.Fatal("no terrace beside the higher road")
+	}
+	if c := lowBeyond(terracePrims([]*roadLine{road, lane}, m, 250), 0, 60); c > 0 {
+		t.Errorf("%d filler vertices at the lower road's level beyond the terrace's band: the terrace ends in the open, where the land takes over", c)
+	}
+	// A road crossing the sidewalk's line at 32 m, at the road's level: a
+	// mouth, and the filler ramps up to the slab there.
+	road, lane = line(0, 0, 60, 10, true), line(band+1.5+1.5, 10, 34, 11.2, false)
+	cross := &roadLine{}
+	for e := 3.0; e <= 12; e += fineStep {
+		cross.samples = append(cross.samples, sample{d: e - 3, e: e, n: 32, ele: 10, hw: 2, edge: 2})
+	}
+	markTerraces([]*roadLine{road, lane, cross}, nil)
+	if !road.samples[16].terraceMouth[1] {
+		t.Fatal("the crossing road at 32 m isn't a mouth to the terrace")
+	}
+	for k := range road.samples {
+		if road.samples[k].terraceMouth[1] {
+			road.samples[k].walk[1] = false // the junction takes the sidewalk at the mouth
+		}
+	}
+	if c := lowBeyond(terracePrims([]*roadLine{road, lane, cross}, m, 250), 24, 36); c == 0 {
+		t.Error("no filler ramps from the mouth up to the slab")
+	}
+}
+
+// Two roads alongside each other a step apart in height, too far apart
+// for a wall between them: the land between is a straight bank from the
+// higher one's edge down to the lower's, not level at each edge with a
+// cliff in the middle (owner, 2026-10-17: the Route des Crêtes coming down
+// beside the Route des Américains at 10.91 km).
+func TestGraphBankBetweenRoadsAStepApart(t *testing.T) {
+	c := graphCourse(t, "bank", append(along([2]float64{0, 0}, [2]float64{0, 400}, 20), [2]float64{0, 400}))
+	ground := func(lat, lon float64) (float64, bool) {
+		e, _ := c.Project(lat, lon)
+		if e > 6 {
+			return 11.5, true
+		}
+		return 10, true
+	}
+	// The higher road's edge 4.5 m from the main road's: beyond a wall's
+	// reach (terraceReachM), so a bank.
+	upper := [][2]float64{{10, -40}, {10, 440}}
+	ways := []scenery.Way{
+		{Line: [][2]float64{{0, -40}, {0, 440}}, Nodes: []int64{1, 2}, Name: "Main", Class: "secondary", WidthM: 7},
+		{Line: upper, Nodes: []int64{3, 4}, Name: "Upper", Class: "residential", WidthM: 4},
+	}
+	on := routeOn(c.Distance, func(float64) int { return 0 })
+	w, err := BuildGraph(c, Options{Generator: "test", Region: RegionFR, Elevation: ground, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var vs [][3]float64 // the land between the roads' edges, mid-course
+	for _, p := range w.prims {
+		if w.doc.MaterialName(p.Material) != "terrain" {
+			continue
+		}
+		for v := 0; v+2 < len(p.Positions); v += 3 {
+			x, y, n := float64(p.Positions[v]), float64(p.Positions[v+1]), -float64(p.Positions[v+2])
+			if n > 150 && n < 250 && x > 3.3 && x < 8.2 {
+				vs = append(vs, [3]float64{x, y, n})
+			}
+		}
+	}
+	if len(vs) < 20 {
+		t.Fatalf("%d land vertices between the roads, want a bank of them", len(vs))
+	}
+	worst := 0.0
+	for i, a := range vs {
+		for _, b := range vs[i+1:] {
+			if d := math.Hypot(a[0]-b[0], a[2]-b[2]); d > 0.1 && d < 0.7 {
+				worst = math.Max(worst, math.Abs(a[1]-b[1]))
+			}
+		}
+	}
+	if worst > 0.6 {
+		t.Errorf("the land between the roads steps %.2f m within 0.7 m: a cliff, want a bank", worst)
+	}
+	if r := w.Check(); r.HolesM2 > 0.1 || r.LandOverRoadM2 > 0.05 {
+		t.Errorf("holes %.2f m², land over road %.2f m² between the roads", r.HolesM2, r.LandOverRoadM2)
+	}
+}
+
+// A terrace's asphalt filler comes down with the wall's top within the end
+// wedges (its far edge stays the road above's), so it ends no higher than
+// the wall's end over the bank beside it.
+func TestTerraceFillerComesDownAtItsEnds(t *testing.T) {
+	line := func(e0, n0, n1, ele float64, walk bool) *roadLine {
+		l := &roadLine{}
+		for n := n0; n <= n1+1e-9; n += fineStep {
+			s := sample{d: n - n0, e: e0, n: n, ele: ele, hw: 3, edge: 3}
+			s.walk[1] = walk
+			l.samples = append(l.samples, s)
+		}
+		return l
+	}
+	band := 3 + walkM
+	road, lane := line(0, 0, 60, 10, true), line(band+1.5+1.5, 10, 40, 11.2, false)
+	markTerraces([]*roadLine{road, lane}, nil)
+	m := roadMaterials{surface: [5]int{1, 1, 1, 1, 1}, walk: 2, kerb: 3}
+	lo, hi := math.Inf(1), math.Inf(-1) // the filler's edge at the wall's back
+	for _, pp := range terracePrims([]*roadLine{road, lane}, m, 250) {
+		for _, p := range pp {
+			if p.Material != 1 {
+				continue
+			}
+			for v := 0; v+2 < len(p.Positions); v += 3 {
+				if e := float64(p.Positions[v]); math.Abs(e-(band+terraceCopeM)) < 0.05 {
+					y := float64(p.Positions[v+1])
+					lo, hi = math.Min(lo, y), math.Max(hi, y)
+				}
+			}
+		}
+	}
+	if hi < 11.1 {
+		t.Errorf("the filler's near edge reaches %.2f m at most, want the road above's 11.2 along the wall", hi)
+	}
+	if lo > 10+kerbM+terraceEndM {
+		t.Errorf("the filler's near edge comes down to %.2f m, want the wall's end height %.2f", lo, 10+kerbM+terraceEndM)
+	}
+}
+
+// Two roads alongside, level at first and then a step apart: the join's
+// reach over to the other road (joinAlongside) tapers out where they are
+// level, and never onto the stretch where the other is a level of its own.
+func TestJoinAlongsideStopsAtALevelApart(t *testing.T) {
+	main, side := &roadLine{}, &roadLine{}
+	for n := 0.0; n <= 100; n += fineStep {
+		main.samples = append(main.samples, sample{d: n, e: 0, n: n, ele: 10, hw: 3.5})
+		ele := 10.0
+		if n >= 50 {
+			ele = 11.5
+		}
+		side.samples = append(side.samples, sample{d: n, e: 6.5, n: n, ele: ele, hw: 2})
+	}
+	joinAlongside([]*roadLine{main, side}, 5, abreastStepM)
+	joinedLevel, wideApart := false, 0.0
+	for _, s := range main.samples {
+		switch {
+		case s.n < 44:
+			joinedLevel = joinedLevel || s.wide[1] > 0.5
+		case s.n >= 50:
+			wideApart = math.Max(wideApart, s.wide[1])
+		}
+	}
+	if !joinedLevel {
+		t.Error("the roads aren't joined where level")
+	}
+	if wideApart > 0 {
+		t.Errorf("the main road reaches %.2f m over towards the road a level above it", wideApart)
 	}
 }

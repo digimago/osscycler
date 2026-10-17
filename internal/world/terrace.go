@@ -26,16 +26,21 @@ import (
 // slab's edge); terraceWall draws the wall and the fill behind it with
 // the roadside.
 const (
-	terraceReachM = 3.0  // a road surface this near behind the sidewalk's edge
-	terraceStepM  = 0.35 // higher by this somewhere along the run: a wall
-	terraceLowM   = 0.03 // on while higher by this
-	terraceMaxM   = 4.0  // not a hillside or a bridge
-	terraceMinM   = 6.0  // a run shorter than this is none
-	terraceEndM   = 0.3  // the wall's ends: this high over the sidewalk
-	terraceSlope  = 0.4  // its wedges rise this much per metre
-	terraceCopeM  = 0.25 // the wall's thickness
-	terraceCrossC = 0.5  // a road within 60° of square at the probe: a mouth, not alongside
-	terraceApronM = 2.5  // the asphalt filler ramp at each end, this long
+	terraceReachM    = 3.0  // a road surface this near behind the sidewalk's edge
+	terraceStepM     = 0.35 // higher by this somewhere along the run: a wall
+	terraceLowM      = 0.03 // on while higher by this
+	terraceMaxM      = 4.0  // not a hillside or a bridge
+	terraceMinM      = 6.0  // a run shorter than this is none
+	terraceEndM      = 0.3  // the wall's ends: this high over the sidewalk
+	terraceSlope     = 0.4  // its wedges rise this much per metre
+	terraceCopeM     = 0.25 // the wall's thickness
+	terraceCrossC    = 0.5  // a road within 60° of square at the probe: a mouth, not alongside
+	terraceApronM    = 2.5  // the asphalt filler ramp at each end, this long
+	terraceAsphaltM  = 0.6  // the asphalt behind the wall at least this wide
+	terraceLapM      = 0.5  // and over the road above's edge by this (its edge is known to a probe step; slivers between)
+	terraceTurnDeg   = 3.5  // the wall's wedges turn this much towards the mouth (owner: nothing is straight in France; it narrows the sidewalk a little)
+	terraceParapetM  = 0.15 // the wall's top stands this much over the asphalt behind it
+	terraceConvergeM = 1.5  // a road behind closing in by this over the run towards a junction both roads meet at: a Y, not a terrace
 )
 
 // markTerraces marks, on each road's samples, the runs where a higher
@@ -44,7 +49,14 @@ const (
 // sidewalk's width there (0: the wall at the carriageway's edge),
 // terraceBack the height of the surface behind, terraceBehind its offset.
 // The road's own sidewalk is turned off there.
-func markTerraces(lines []*roadLine) {
+// The two mouths are junctions of their own (owner, 2026-10-17: a junction
+// is a node in the graph and its own thing; place the sidewalk between
+// them with the wall on top; the upper junction flush with the wall's
+// terrain side; fill the area between terrain, wall and the next junction
+// with asphalt): a sample whose band lies inside a junction's outline is
+// no terrace sample, so the slab and wall start and end at the mouths'
+// edges.
+func markTerraces(lines []*roadLine, patches []patch) {
 	var all []sample
 	var owner []int // the line each sample is of (sample.line isn't set yet here)
 	for li, l := range lines {
@@ -88,6 +100,7 @@ func markTerraces(lines []*roadLine) {
 			step := make([]float64, n)
 			back := make([]float64, n)
 			behind := make([]float64, n)
+			jct := make([]bool, n) // inside a junction's outline
 			for i := range ss {
 				s := ss[i]
 				if s.again || s.aloft {
@@ -105,9 +118,21 @@ func markTerraces(lines []*roadLine) {
 					bw, base = s.hw+s.walkWidth(si), s.ele+kerbM
 				}
 				at := func(off float64) (float64, float64) { return s.e + rx*off, s.n + rn*off }
-				// Not where a road crosses the sidewalk's line (a mouth).
+				// Not where a road crosses the sidewalk's line (a mouth), nor
+				// inside a junction's outline.
 				fe, fn := at(bw)
+				for _, p := range patches {
+					if inPoly(p.poly, fe, fn) || inPoly(p.poly, s.e, s.n) {
+						jct[i] = true
+						break
+					}
+				}
 				if o, _, ok := near(fe, fn, li); ok && o.ele < base+terraceLowM {
+					ss[i].terraceMouth[si] = true
+					continue
+				}
+				if jct[i] {
+					ss[i].terraceMouth[si] = true
 					continue
 				}
 				for g := bw + 0.3; g <= bw+terraceReachM; g += 0.3 {
@@ -127,18 +152,33 @@ func markTerraces(lines []*roadLine) {
 					if dz <= terraceLowM || dz >= terraceMaxM {
 						break
 					}
+					// The surface behind: the road above's edge, its height at
+					// the first probe that finds it (its maximum within reach
+					// stood the asphalt behind the wall over the road above
+					// where it climbs).
 					if !on[i] {
-						on[i], band[i], step[i], behind[i] = true, bw, dz, g
+						on[i], band[i], step[i], behind[i], back[i] = true, bw, dz, g, o.ele
 					}
-					back[i] = math.Max(back[i], o.ele)
 				}
 			}
-			for _, r := range runs(on) {
+			for _, r := range strictRuns(on) {
 				most := 0.0
 				for k := r.from; k <= r.to; k++ {
 					most = math.Max(most, step[k])
 				}
 				if most <= terraceStepM || ss[r.to].d-ss[r.from].d < terraceMinM {
+					continue
+				}
+				// A road behind that closes in on this one towards a junction
+				// they meet at is a Y's other arm, not a lane on a terrace: the
+				// wedge between them is grass and the junction's own mouth
+				// takes over (owner's photos, 2026-10-17, of the Route des
+				// Crêtes joining the Route des Américains at 10.93 km: a grass
+				// wedge, a wide asphalt mouth, no wall). A lane behind a wall
+				// runs parallel: its gap stays.
+				gap := func(k int) float64 { return behind[k] - band[k] }
+				if r.to+1 < n && jct[r.to+1] && gap(r.from)-gap(r.to) > terraceConvergeM ||
+					r.from > 0 && jct[r.from-1] && gap(r.to)-gap(r.from) > terraceConvergeM {
 					continue
 				}
 				// Where nothing was found behind (the road above bends away
@@ -165,10 +205,11 @@ func markTerraces(lines []*roadLine) {
 					case pk >= 0 && nk >= 0:
 						f := (ss[k].d - ss[pk].d) / math.Max(ss[nk].d-ss[pk].d, 1e-9)
 						back[k], band[k] = back[pk]+f*(back[nk]-back[pk]), band[pk]
+						behind[k] = behind[pk] + f*(behind[nk]-behind[pk])
 					case pk >= 0:
-						back[k], band[k] = back[pk], band[pk]
+						back[k], band[k], behind[k] = back[pk], band[pk], behind[pk]
 					case nk >= 0:
-						back[k], band[k] = back[nk], band[nk]
+						back[k], band[k], behind[k] = back[nk], band[nk], behind[nk]
 					}
 				}
 				for k := r.from; k <= r.to; k++ {
@@ -195,7 +236,7 @@ func terraceRuns(ss []sample, f func(si int, r sideRun, pos func(k int, d float6
 		for k := range n {
 			on[k] = ss[k].terrace[si] > 0
 		}
-		rs := runs(on)
+		rs := strictRuns(on)
 		if len(rs) == 0 {
 			continue
 		}
@@ -243,9 +284,11 @@ func terracePrims(lines []*roadLine, m roadMaterials, chunkM float64) map[[2]int
 		ss := l.samples
 		terraceRuns(ss, func(si int, r sideRun, pos func(k int, d float64) (float64, float64)) {
 			key := [2]int{int(math.Floor(ss[r.from].e / chunkM)), int(math.Floor(ss[r.from].n / chunkM))}
+			top, _ := terraceTops(ss, 0, r, si)
 			slab := gltf.Primitive{Material: m.walk}
 			kerb := gltf.Primitive{Material: m.kerb}
 			apron := gltf.Primitive{Material: m.surface[ss[r.from].surface]}
+			paved := gltf.Primitive{Material: m.surface[ss[r.from].surface]} // behind the wall, to the road above
 			pt := func(k int, d, y float64) [3]float64 {
 				e, n := pos(k, d)
 				return [3]float64{e, y, -n}
@@ -253,6 +296,26 @@ func terracePrims(lines []*roadLine, m roadMaterials, chunkM float64) map[[2]int
 			up := [3]float64{0, 1, 0}
 			for k := r.from; k < r.to; k++ {
 				a, b := ss[k], ss[k+1]
+				// Asphalt from the wall's back to the road above (its edge
+				// at terraceBehind), at that road's level: the owner's
+				// "fill the area between terrain, wall and the next junction
+				// with asphalt" (grass fill had read as a lawn on a shelf).
+				if a.terraceBehind[si] > 0 && b.terraceBehind[si] > 0 {
+					fa, fb := a.terrace[si]+terraceCopeM, b.terrace[si]+terraceCopeM
+					// At least terraceAsphaltM wide: thinner, the land beside it
+					// couldn't follow its edge (holes at 1.22 km).
+					ea, eb := math.Max(fa+terraceAsphaltM, a.terraceBehind[si]+terraceLapM), math.Max(fb+terraceAsphaltM, b.terraceBehind[si]+terraceLapM)
+					ya, yb := a.terraceBack[si]-0.01, b.terraceBack[si]-0.01
+					// Along the wall it keeps under the wall's top, so within
+					// the end wedges it comes down with the wall to the
+					// lower road's level while its far edge stays the road
+					// above's: a warped surface (the owner: in reality the
+					// slopes up to a terrace are convoluted), where a flat
+					// shelf had ended in a step over the bank beside the
+					// wall's end (the Route des Crêtes at 10.92 km).
+					na, nb := math.Min(ya, top[k-r.from]-terraceParapetM), math.Min(yb, top[k+1-r.from]-terraceParapetM)
+					tquad(&paved, pt(k, fa, na), pt(k+1, fb, nb), pt(k+1, eb, yb), pt(k, ea, ya), up)
+				}
 				if a.terraceWalk[si] == 0 {
 					continue // the wall at the carriageway's edge: no slab
 				}
@@ -300,7 +363,21 @@ func terracePrims(lines []*roadLine, m roadMaterials, chunkM float64) map[[2]int
 				if joins {
 					continue
 				}
-				far := math.Max(band+terraceCopeM, a.terraceBehind[si])
+				// Only at a mouth: where the terrace ends because the road
+				// above drifts out of reach, the land takes over from the
+				// wall's end, and a flat filler at the lower road's level
+				// would run out under the road above (10.92 km of the Route
+				// des Américains: the Route des Crêtes coming down beside
+				// it; the rider looked under its edge, the sky through).
+				if out < 0 || out >= len(ss) || !ss[out].terraceMouth[si] {
+					continue
+				}
+				far := math.Max(band+terraceCopeM+terraceAsphaltM, a.terraceBehind[si]+terraceLapM)
+				// The filler laps in over the carriageway too, a centimetre
+				// above it (the junction's surface at the mouth stops at the
+				// side road's cut, and the corner between it and the filler
+				// was a sliver with nothing drawn: 1.23 km).
+				inner -= terraceLapM
 				reach := 0.0
 				prev := [2][3]float64{pt(k, inner, base+0.01), pt(k, far, base+0.01)}
 				for i := out; i >= 0 && i < len(ss) && reach < terraceApronM; i += dir {
@@ -312,7 +389,7 @@ func terracePrims(lines []*roadLine, m roadMaterials, chunkM float64) map[[2]int
 					prev = cur
 				}
 			}
-			for _, p := range []gltf.Primitive{slab, kerb, apron} {
+			for _, p := range []gltf.Primitive{slab, kerb, apron, paved} {
 				if len(p.Indices) > 0 {
 					out[key] = append(out[key], p)
 				}
@@ -322,9 +399,40 @@ func terracePrims(lines []*roadLine, m roadMaterials, chunkM float64) map[[2]int
 	return out
 }
 
-// terraceWall draws a terrace's wall and the fill behind it: the samples
-// from+r.from..from+r.to of the terrain's fine samples, side si.
-func terraceWall(t *terrain, from int, r sideRun, si int, walls, fill *gltf.Primitive, landColour func(e, n float64) [3]float32, pos func(k int, d float64) (float64, float64)) {
+// terraceTops is a terrace wall's top at each sample of run r (samples
+// from+r.from..from+r.to of ss, side si), and the distance along the run:
+// the surface behind, smoothed, with a parapet (terraceParapetM), within
+// the wedges rising from the ends (slope up, straight, slope down).
+func terraceTops(ss []sample, from int, r sideRun, si int) (top, dist []float64) {
+	n := r.to - r.from + 1
+	back := make([]float64, n)
+	base := make([]float64, n)
+	dist = make([]float64, n)
+	for k := 0; k < n; k++ {
+		a := ss[from+r.from+k]
+		base[k], back[k] = terraceBase(a, si), a.terraceBack[si]
+		if k > 0 {
+			b := ss[from+r.from+k-1]
+			dist[k] = dist[k-1] + math.Hypot(a.e-b.e, a.n-b.n)
+		}
+	}
+	top = make([]float64, n)
+	for k := range top {
+		sum, c := 0.0, 0
+		for j := max(0, k-2); j <= min(n-1, k+2); j++ {
+			sum, c = sum+back[j], c+1
+		}
+		plateau := sum/float64(c) + terraceParapetM
+		end := math.Min(dist[k], dist[n-1]-dist[k])
+		top[k] = math.Max(base[k]+terraceEndM, math.Min(plateau, base[k]+terraceEndM+terraceSlope*end))
+	}
+	return top, dist
+}
+
+// terraceWall draws a terrace's wall: the samples from+r.from..from+r.to
+// of the terrain's fine samples, side si (the asphalt behind it is
+// terracePrims').
+func terraceWall(t *terrain, from int, r sideRun, si int, walls *gltf.Primitive, pos func(k int, d float64) (float64, float64)) {
 	n := r.to - r.from + 1
 	if n < 2 {
 		return
@@ -332,28 +440,25 @@ func terraceWall(t *terrain, from int, r sideRun, si int, walls, fill *gltf.Prim
 	concrete, cope := srgbLinear(0xb9b5ad), srgbLinear(0xa8a49c)
 	band := make([]float64, n)
 	base := make([]float64, n)
-	back := make([]float64, n)
-	behind := make([]float64, n)
-	dist := make([]float64, n)
 	for k := 0; k < n; k++ {
 		a := t.fine[from+r.from+k]
-		band[k], base[k], back[k], behind[k] = a.terrace[si], terraceBase(a, si), a.terraceBack[si], a.terraceBehind[si]
-		if k > 0 {
-			b := t.fine[from+r.from+k-1]
-			dist[k] = dist[k-1] + math.Hypot(a.e-b.e, a.n-b.n)
-		}
+		band[k], base[k] = a.terrace[si], terraceBase(a, si)
 	}
-	// The top: the surface behind, smoothed, with a parapet, within the
-	// wedges rising from the ends (slope up, straight, slope down).
-	top := make([]float64, n)
-	for k := range top {
-		sum, c := 0.0, 0
-		for j := max(0, k-2); j <= min(n-1, k+2); j++ {
-			sum, c = sum+back[j], c+1
-		}
-		plateau := sum/float64(c) + 0.15
+	top, dist := terraceTops(t.fine, from, r, si)
+	// The wedges turn towards the mouths by terraceTurnDeg (owner,
+	// 2026-10-17: for better flow; it narrows the sidewalk a little, but
+	// this is France, nothing is straight): where the top is below the
+	// plateau, the face comes in by the turn's tangent per metre to the
+	// end. The slopes are then what the road above makes them, not
+	// symmetric (the owner: a convoluted, warped surface in reality).
+	turn := math.Tan(terraceTurnDeg * math.Pi / 180)
+	face := make([]float64, n)
+	for k := range face {
+		face[k] = band[k] - 0.02
 		end := math.Min(dist[k], dist[n-1]-dist[k])
-		top[k] = math.Max(base[k]+terraceEndM, math.Min(plateau, base[k]+terraceEndM+terraceSlope*end))
+		if wedge := (top[k] - base[k] - terraceEndM) / terraceSlope; end < wedge+1e-9 {
+			face[k] -= turn * (wedge - end)
+		}
 	}
 	pt := func(k int, d, y float64) [3]float64 {
 		e, nn := pos(r.from+k, d)
@@ -361,8 +466,8 @@ func terraceWall(t *terrain, from int, r sideRun, si int, walls, fill *gltf.Prim
 	}
 	flip := func(v [3]float64) [3]float64 { return [3]float64{-v[0], -v[1], -v[2]} }
 	for k := 0; k+1 < n; k++ {
-		f0, f1 := pt(k, band[k]-0.02, base[k]-walkFootM), pt(k+1, band[k+1]-0.02, base[k+1]-walkFootM)
-		t0, t1 := pt(k, band[k]-0.02, top[k]), pt(k+1, band[k+1]-0.02, top[k+1])
+		f0, f1 := pt(k, face[k], base[k]-walkFootM), pt(k+1, face[k+1], base[k+1]-walkFootM)
+		t0, t1 := pt(k, face[k], top[k]), pt(k+1, face[k+1], top[k+1])
 		nf := wallNormal(f0, f1, t0, 1)
 		quad(walls, f0, f1, t1, t0, nf, concrete)
 		quad(walls, f1, f0, t0, t1, flip(nf), concrete)
@@ -372,22 +477,36 @@ func terraceWall(t *terrain, from int, r sideRun, si int, walls, fill *gltf.Prim
 		nb := wallNormal(b0, b1, c0, 1)
 		quad(walls, b0, b1, c1, c0, nb, concrete)
 		quad(walls, b1, b0, c0, c1, flip(nb), concrete)
-		// The land behind, level to the road above.
-		if behind[k] > 0 && behind[k+1] > 0 {
-			q := [4][3]float64{pt(k, band[k]+terraceCopeM, back[k]-0.02), pt(k+1, band[k+1]+terraceCopeM, back[k+1]-0.02), pt(k+1, behind[k+1], back[k+1]-0.02), pt(k, behind[k], back[k]-0.02)}
-			if !overRoad(t, q) {
-				col := landColour(q[0][0], -q[0][2])
-				addUp(fill, q[0], q[1], q[2], col)
-				addUp(fill, q[0], q[2], q[3], col)
-			}
-		}
 	}
 	// The wall's ends, square blocks.
 	for _, k := range []int{0, n - 1} {
-		w0, w1 := pt(k, band[k]-0.02, base[k]-walkFootM), pt(k, band[k]+terraceCopeM, base[k]-walkFootM)
-		w2, w3 := pt(k, band[k]+terraceCopeM, top[k]), pt(k, band[k]-0.02, top[k])
+		w0, w1 := pt(k, face[k], base[k]-walkFootM), pt(k, band[k]+terraceCopeM, base[k]-walkFootM)
+		w2, w3 := pt(k, band[k]+terraceCopeM, top[k]), pt(k, face[k], top[k])
 		nw := wallNormal(w0, w1, w3, 1)
 		quad(walls, w0, w1, w2, w3, nw, concrete)
 		quad(walls, w1, w0, w3, w2, flip(nw), concrete)
 	}
+}
+
+// strictRuns is runs without bridging gaps: a gap in a terrace is a
+// mouth, and the slab and wall must stop at it (runs closes gaps of a few
+// samples, and the terrace had run across the lane's mouth: "a wall
+// running across the driveway", owner, 2026-10-17).
+func strictRuns(on []bool) []sideRun {
+	var out []sideRun
+	for i := 0; i < len(on); {
+		if !on[i] {
+			i++
+			continue
+		}
+		j := i
+		for j+1 < len(on) && on[j+1] {
+			j++
+		}
+		if j > i {
+			out = append(out, sideRun{i, j})
+		}
+		i = j + 1
+	}
+	return out
 }

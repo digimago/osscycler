@@ -232,12 +232,15 @@ type sample struct {
 	// height and its offset from the line (terrace.go).
 	terraceBack   [2]float64
 	terraceBehind [2]float64
-	onPatch       bool // within a junction's span: the junction draws the surface
-	underPatch    bool // a road not of the junction, lying on its patch
-	aloft         bool // on a bridge or viaduct, off the ground (cut terrain)
-	oneway        int8 // traffic only along the line (1), only against it (-1), or both (0)
-	way           int  // the map's way it belongs to (network roads)
-	line          int  // the road line it belongs to (the terrain's samples)
+	// terraceMouth: a road crosses the sidewalk's line here, or a junction
+	// takes it: a terrace ending against it ends at a mouth (terrace.go).
+	terraceMouth [2]bool
+	onPatch      bool // within a junction's span: the junction draws the surface
+	underPatch   bool // a road not of the junction, lying on its patch
+	aloft        bool // on a bridge or viaduct, off the ground (cut terrain)
+	oneway       int8 // traffic only along the line (1), only against it (-1), or both (0)
+	way          int  // the map's way it belongs to (network roads)
+	line         int  // the road line it belongs to (the terrain's samples)
 }
 
 const (
@@ -347,7 +350,7 @@ func Build(c *course.Course, o Options) (*World, error) {
 		walksOnSpans(lines, patches)
 	}
 	if styleFor(o.Region).junctionLevelM > 0 {
-		markTerraces(lines)
+		markTerraces(lines, patches)
 	}
 	// Junctions built from their node carry the sidewalks; overlays stop
 	// them short.

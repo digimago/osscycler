@@ -287,7 +287,7 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 		walksOnSpans(lines, patches)
 	}
 	if styleFor(o.Region).junctionLevelM > 0 {
-		markTerraces(lines)
+		markTerraces(lines, patches)
 	}
 	var overlays []patch
 	for _, p := range patches {

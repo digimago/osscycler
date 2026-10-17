@@ -2354,6 +2354,12 @@ func joinAlongside(ls []*roadLine, cell, levelM float64) {
 		ss := l.samples
 		target := make([]float64, len(ss))
 		joined := make([]bool, len(ss))
+		// apart: a road within mergeGapM on that side, but a level of its
+		// own: the join's taper stops short of it (the taper had reached
+		// partway over to a road a step higher, a sliver with nothing drawn
+		// between the two; the terrace or the bank between them is the
+		// land's, terrace.go and bankBetween).
+		apart := make([][2]bool, len(ss))
 		for i := range ss {
 			s := &ss[i]
 			de, dn := dir(ss, i)
@@ -2373,23 +2379,26 @@ func joinAlongside(ls []*roadLine, cell, levelM float64) {
 							continue // not alongside
 						}
 						f := math.Max(0, math.Min(1, ((s.e-a.e)*ae+(s.n-a.n)*an)/(al*al)))
-						if levelM > 0 && math.Abs(a.ele+f*(b.ele-a.ele)-s.ele) > levelM {
-							continue // a level of its own
-						}
 						pe, pn := a.e+f*ae, a.n+f*an
 						gap := math.Hypot(s.e-pe, s.n-pn) - s.hw - (a.hw + f*(b.hw-a.hw))
-						if gap < bestGap {
-							side := 1 // right of the way this road runs
-							if de*(pn-s.n)-dn*(pe-s.e) > 0 {
-								side = 0
+						side := 1 // right of the way this road runs
+						if de*(pn-s.n)-dn*(pe-s.e) > 0 {
+							side = 0
+						}
+						if levelM > 0 && math.Abs(a.ele+f*(b.ele-a.ele)-s.ele) > levelM {
+							if gap < mergeGapM {
+								apart[i][side] = true
 							}
+							continue // a level of its own
+						}
+						if gap < bestGap {
 							bestGap, bestEle, bestSide, bestLine = gap, a.ele+f*(b.ele-a.ele), side, r.l
 						}
 					}
 				}
 			}
-			if bestLine < 0 || bestGap >= mergeGapM {
-				continue
+			if bestLine < 0 || bestGap >= mergeGapM || apart[i][bestSide] {
+				continue // (apart: a level candidate a sample behind, found across the diagonal)
 			}
 			if !s.walk[bestSide] {
 				s.butt[bestSide] = true
@@ -2411,7 +2420,7 @@ func joinAlongside(ls []*roadLine, cell, levelM float64) {
 				w[i] = ss[i].wide[side]
 			}
 			for i := range ss {
-				if ss[i].walk[side] {
+				if ss[i].walk[side] || apart[i][side] {
 					continue
 				}
 				best := w[i]

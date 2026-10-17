@@ -353,7 +353,7 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 		// road alongside (the slab is drawn with the road meshes).
 		terraceRuns(t.fine[ln.from:ln.to+1], func(si int, r sideRun, pos func(k int, d float64) (float64, float64)) {
 			e0, n0 := t.fine[ln.from+r.from].e, t.fine[ln.from+r.from].n
-			terraceWall(t, ln.from, r, si, prim(items, e0, n0, mat), prim(fills, e0, n0, ground), landColour, pos)
+			terraceWall(t, ln.from, r, si, prim(items, e0, n0, mat), pos)
 		})
 
 		// Snow poles, staggered either side, on roads up where snow lies

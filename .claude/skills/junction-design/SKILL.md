@@ -174,7 +174,13 @@ Every piece shares its edges or is tucked under its neighbour:
    heights* first (`squareMouths`, mouth levelling), rebuild, look.
 4. Build the structure as one unit, suppressing what it replaces.
 5. Rebuild, `area_check`, rasters at every end and corner, top-down and
-   the photos' angles. Repeat until watertight.
+   the photos' angles. Repeat until watertight. Then look from the
+   other way (owner, 2026-10-17: tracks will be ridden in reverse): from
+   beyond the spot looking back along the course, `look_deg` −120…−150
+   for the left side and +120…+150 for the right (positive is right of
+   the way ahead). Other faces show: skirts, wall ends, roadside items
+   standing on a surface they shouldn't (a guardrail in front of a car
+   park at 15.33 km).
 6. Tests: the structure on a hand-made course (`graphCourse`, ways with
    a node per point) that fails without the fix; Dutch worlds compared;
    `make check`; versions bumped (`BuilderVersion`, `GraphVersion`).

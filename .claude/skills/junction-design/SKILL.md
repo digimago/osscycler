@@ -40,8 +40,19 @@ for a top-down view with pitch -90 and close looks; cross-sections with
    the samples' `ele` or the cutter's `highest`:
    - under 0.35 m (`abreastStepM`): one surface, or the land eased
      between them (`gland.blend`, the island rule at the lower level).
-   - 0.35-4 m: a **terrace** (`terrace.go`): a retaining wall on the
-     lower road's sidewalk edge, level fill behind to the upper road.
+   - 0.35-4 m, the roads running *parallel* (the gap steady): a
+     **terrace** (`terrace.go`): a retaining wall on the lower road's
+     sidewalk edge, asphalt fill behind to the upper road.
+   - 0.35-4 m, the roads *converging* on a junction they share (the gap
+     closing by more than `terraceConvergeM`, 1.5 m, over the run): a
+     **Y's wedge**, not a terrace. The owner's photos of the Route des
+     Crêtes joining the Route des Américains (10.93 km, 2026-10-17):
+     a grass wedge between the two roads, a wide asphalt mouth, no
+     wall. The land between is a straight bank from the higher edge to
+     the lower (`bankBetween`), run on into the gap however narrow
+     (`coverKind` lets the land between two roads a level apart through
+     the tuck); the junction's own surface takes over where the heights
+     come within `junctionLevelM`.
    - over 4 m, or the roads cross: a **deck** (`bridges.go`) or a tunnel
      (`heightsStraight` with the tunnel rule); never a wall that tall
      beside a lane.
@@ -82,8 +93,20 @@ wall). Which wall:
   gap between road surfaces and a sidewalk; extend the road with a few
   triangles over the land either side of the in-between sidewalk): the
   road's surface ramps up to the slab's end over `terraceApronM`, as
-  wide as slab, wall and fill together; where the road's own sidewalk
-  goes on, the slab joins it flush instead. Three stages, because the
+  wide as slab, wall and fill together, lapping 0.5 m in over the
+  carriageway; where the road's own sidewalk goes on, the slab joins it
+  flush instead. **Only at a mouth** (`terraceMouth`: a road crossing
+  the sidewalk's line, or a junction's outline): where the terrace ends
+  because the road behind drifts out of reach, the land takes over from
+  the wall's end, and a filler there ran out flat under the road above.
+  The fill behind the wall keeps under the wall's top (`terraceTops`),
+  so within the end wedges it comes down with the wall to the lower
+  road while its far edge stays the road above's: a warped surface, as
+  the owner says the real slopes up to a terrace are. A run never
+  bridges a gap (`strictRuns`: a gap in the probe is a mouth; bridged,
+  the wall ran across the driveway) and starts outside every junction's
+  outline. Its wedges turn 3.5° towards the mouths (`terraceTurnDeg`;
+  owner: nothing in France is straight). Three stages, because the
   land must know every surface: `markTerraces` on the samples before
   the meshes (band, sidewalk width, the surface behind, the road's own
   sidewalk off), `terracePrims` draws slab, kerb and fillers **with the

@@ -286,6 +286,9 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 	if styleFor(o.Region).cornerWalk {
 		walksOnSpans(lines, patches)
 	}
+	if styleFor(o.Region).junctionLevelM > 0 {
+		markTerraces(lines)
+	}
 	var overlays []patch
 	for _, p := range patches {
 		if p.overlay {
@@ -323,6 +326,9 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 	roads, decks := roadPrims(lines, patches, o.ChunkM, roadMats, nil)
 	for k, p := range pavedIslands(roads, ground, roadMats.surface[scenery.SurfaceAsphalt], o.ChunkM) {
 		roads[k] = append(roads[k], p)
+	}
+	for k, ps := range terracePrims(lines, roadMats, o.ChunkM) {
+		roads[k] = append(roads[k], ps...)
 	}
 	// The carriageway as drawn: the rider's path again, its turns swept as
 	// wide as it allows, and the riding line kept on it.

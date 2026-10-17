@@ -349,169 +349,12 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 			}
 		}
 
-		// A road surface just behind this road's edge and sidewalk, higher
-		// by a step: a concrete wall along the sidewalk's outer edge, its top
-		// following that surface (owner's photos of the Rue du Hohneck at
-		// 1.34 km, 2026-10-16: a straight wall of panels along the
-		// sidewalk, the lane, its junction and the uphill road behind it,
-		// wedging down where the uphill road comes down to its mouth).
-		// Measured on the drawn surfaces, so the wall is straight whatever
-		// the upper road's line does (placed from that line, it had
-		// zig-zagged into the lane's asphalt and across the sidewalk).
-		for si, sign := range []float64{-1, 1} {
-			face := make([]float64, n)
-			inner := make([]float64, n)
-			bottom := make([]float64, n)
-			top := make([]float64, n)
-			step := make([]float64, n)
-			behind := make([]float64, n) // the fill behind it, to here
-			level := make([]float64, n)  // at this height
-			on := make([]bool, n)
-			for k := range n {
-				a := t.fine[ln.from+k]
-				if t.surfaces == nil || !(near[k] || a.onPatch && !a.again && !a.aloft && isNear(a.e, a.n)) || a.open[si] {
-					continue
-				}
-				// Its edge and sidewalk, their widest nearby: a junction's
-				// span draws no sidewalk of the road's own, the junction
-				// carries it (the wall had stood at the carriageway's edge
-				// there, out of the lane's reach, grass between).
-				band, walked := 0.0, false
-				for j := 0; j < n; j++ {
-					b := t.fine[ln.from+j]
-					if math.Abs(dist[j]-dist[k]) > gBandNearM {
-						continue
-					}
-					band = math.Max(band, sideEdge(b, si))
-					walked = walked || b.walk[si]
-				}
-				base := a.ele
-				if walked {
-					base += kerbM
-				}
-				// Not where a higher road comes across the sidewalk's line: a
-				// side road's mouth (a road along it only touches the band's
-				// outer edge; a wall had stood across a side road leaving at
-				// a shallow angle, 2.04 km of the Route des Américains).
-				ei, ni := at(k, sign*(band-abreastAcrossM))
-				if h, ok := t.surfaces.highest(ei, -ni, 0); ok && h > base+abreastLowM {
-					continue
-				}
-				// Nor on a road at this road's own level: a junction's or a
-				// carriageway going on (wall pieces had stood in a junction
-				// at 4.225 km); a higher road at the face is the one behind,
-				// a few decimetres over the sidewalk's edge, and fine.
-				ef, nf := at(k, sign*(band+0.02))
-				if h, ok := t.surfaces.highest(ef, -nf, 0); ok && h < base+abreastLowM {
-					continue
-				}
-				// Nor across another road's carriageway (a service road's
-				// mouth crossing the sidewalk's line to the node: the wall had
-				// run across it, 4.225 km).
-				if sp.roadNear(ef, nf, 0, a.line) >= 0 {
-					continue
-				}
-				for g := band + 0.05; g <= band+abreastReachM; g += 0.05 {
-					e, nn := at(k, sign*g)
-					h, ok := t.surfaces.highest(e, -nn, 0)
-					if !ok {
-						continue
-					}
-					dz := h - base
-					if dz <= abreastLowM || dz >= abreastMaxM {
-						break // the first surface behind: level with this road, or far above
-					}
-					if a.onPatch && dz <= abreastStepM {
-						break // inside its own junction the apron beside it is no step (a wall had run across a junction at 4.225 km)
-					}
-					if j := sp.roadNear(e, nn, 0.5, a.line); j >= 0 {
-						if jo := j + 1; jo < len(t.fine) && t.fine[jo].line == t.fine[j].line {
-							oe, on2 := t.fine[jo].e-t.fine[j].e, t.fine[jo].n-t.fine[j].n
-							if l := math.Hypot(oe, on2); l > 0 && math.Abs(oe*dir[k][0]+on2*dir[k][1])/l < abreastCrossCos {
-								break // a side road's mouth: no wall across it
-							}
-						}
-					}
-					// Its top over the highest road behind it within its reach
-					// (a junction's surface may lie between it and the lane,
-					// lower: the lane's edge had shown over the wall, 1.358 km
-					// of the Route des Américains), a parapet no higher than
-					// the step, so its ends run out to nothing.
-					hFill := h
-					for g2 := g + 0.25; g2 <= band+abreastReachM; g2 += 0.25 {
-						e2, n2 := at(k, sign*g2)
-						if h2, ok := t.surfaces.highest(e2, -n2, 0); ok && h2 > h && h2-base < abreastMaxM {
-							h = h2
-						}
-					}
-					dz = h - base
-					// The coping a quarter metre deep, the land filled in
-					// level behind it up to the road behind (a strip of
-					// lawn, as at the uphill road's end of the wall).
-					face[k], bottom[k], step[k] = band-0.02, base-walkFootM, dz // the face a hair inside the slab's edge: no hairline between
-					inner[k], behind[k], level[k] = math.Min(g+0.2, band+0.27), g+0.1, hFill-0.02
-					top[k], on[k] = h+math.Min(0.15, dz), true
-					break
-				}
-			}
-			for _, r := range runs(on) {
-				// A wall where the step somewhere along it is a real one.
-				most := 0.0
-				for k := r.from; k <= r.to; k++ {
-					most = math.Max(most, step[k])
-				}
-				if most <= abreastStepM {
-					continue
-				}
-				// One sample on at either end the wall comes down to a low
-				// block, abreastEndM over the sidewalk, and ends square there
-				// (the owner's photo of the lane's mouth: the wall ends as a
-				// block knee high, not a wedge to nothing).
-				end := func(k int) bool {
-					if k < 0 || k >= n || on[k] || t.fine[ln.from+k].open[si] {
-						return false
-					}
-					a := t.fine[ln.from+k]
-					base := a.ele
-					if a.walk[si] {
-						base += kerbM
-					}
-					face[k] = sideEdge(a, si) - 0.02
-					inner[k], bottom[k], top[k] = face[k]+abreastThickM, base-walkFootM, base+abreastEndM
-					return true
-				}
-				if end(r.from - 1) {
-					r.from--
-				}
-				if end(r.to + 1) {
-					r.to++
-				}
-				p := prim(items, t.fine[ln.from+r.from].e, t.fine[ln.from+r.from].n, mat)
-				pos := func(k int, d float64) (float64, float64) { return at(k, sign*d) }
-				abreastWall(p, r, inner, face, bottom, top, pos)
-				fill := prim(fills, t.fine[ln.from+r.from].e, t.fine[ln.from+r.from].n, ground)
-				for k := r.from; k < r.to; k++ {
-					if behind[k] <= inner[k]+0.05 || behind[k+1] <= inner[k+1]+0.05 {
-						continue
-					}
-					var q [4][3]float64
-					for c, kk := range [4]int{k, k + 1, k + 1, k} {
-						d := inner[kk]
-						if c >= 2 {
-							d = behind[kk]
-						}
-						e, nn := pos(kk, d)
-						q[c] = [3]float64{e, level[kk], -nn}
-					}
-					if overRoad(t, q) {
-						continue
-					}
-					col := landColour(q[0][0], -q[0][2])
-					addUp(fill, q[0], q[1], q[2], col)
-					addUp(fill, q[0], q[2], q[3], col)
-				}
-			}
-		}
+		// Terraces (terrace.go): the wall and its fill in front of a higher
+		// road alongside (the slab is drawn with the road meshes).
+		terraceRuns(t.fine[ln.from:ln.to+1], func(si int, r sideRun, pos func(k int, d float64) (float64, float64)) {
+			e0, n0 := t.fine[ln.from+r.from].e, t.fine[ln.from+r.from].n
+			terraceWall(t, ln.from, r, si, prim(items, e0, n0, mat), prim(fills, e0, n0, ground), landColour, pos)
+		})
 
 		// Snow poles, staggered either side, on roads up where snow lies
 		// (style's snowPoleAboveM), clear of barriers and walls; bend
@@ -638,6 +481,16 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 			}
 		}
 		return nil
+	}
+	// The fills (land behind walls and terraces) clipped by the road
+	// surfaces, as the verges are: a fill over a mouth's thin junction
+	// triangle slipped between overRoad's samples (1.07 and 1.6 km of the
+	// Route des Américains).
+	if t.surfaces != nil {
+		for k, p := range fills {
+			c := t.surfaces.clip(*p)
+			fills[k] = &c
+		}
 	}
 	if err := add(fills, "terrain"); err != nil {
 		return err
@@ -982,41 +835,6 @@ func drain(p *gltf.Primitive, e, y, n float64, dir [2]float64) {
 	}
 	tri(p, base, base+1, base+2, [3]float64{0, 1, 0})
 	tri(p, base, base+2, base+3, [3]float64{0, 1, 0})
-}
-
-// abreastWall is a concrete wall along run: its face at face[k] from the
-// road's line (the sidewalk's outer edge), from bottom[k] up to top[k],
-// its coping back to inner[k], under the surface behind it.
-func abreastWall(p *gltf.Primitive, r sideRun, inner, face, bottom, top []float64, pos func(k int, d float64) (float64, float64)) {
-	c, cope := srgbLinear(0xb9b5ad), srgbLinear(0xa8a49c)
-	pt := func(k int, d, y float64) [3]float64 {
-		e, n := pos(k, d)
-		return [3]float64{e, y, -n}
-	}
-	for k := r.from; k < r.to; k++ {
-		if top[k] == 0 || top[k+1] == 0 {
-			continue
-		}
-		a0, b0 := pt(k, face[k], bottom[k]), pt(k+1, face[k+1], bottom[k+1])
-		a1, b1 := pt(k, face[k], top[k]), pt(k+1, face[k+1], top[k+1])
-		nrm := wallNormal(a0, b0, a1, 1)
-		quad(p, a0, b0, b1, a1, nrm, c)
-		quad(p, b0, a0, a1, b1, [3]float64{-nrm[0], -nrm[1], -nrm[2]}, c)
-		a2, b2 := pt(k, inner[k], top[k]), pt(k+1, inner[k+1], top[k+1])
-		quad(p, a1, b1, b2, a2, [3]float64{0, 1, 0}, cope)
-		quad(p, b1, a1, a2, b2, [3]float64{0, -1, 0}, cope)
-	}
-	// The ends, closed from the foot to the coping.
-	for _, k := range []int{r.from, r.to} {
-		if top[k] == 0 {
-			continue
-		}
-		a0, b0 := pt(k, face[k], bottom[k]), pt(k, inner[k], bottom[k])
-		a1, b1 := pt(k, face[k], top[k]), pt(k, inner[k], top[k])
-		n := wallNormal(a0, b0, a1, 1)
-		quad(p, a0, b0, b1, a1, n, c)
-		quad(p, b0, a0, a1, b1, [3]float64{-n[0], -n[1], -n[2]}, c)
-	}
 }
 
 // overRoad tells whether the land filled in as quad q (x y z corners)

@@ -514,6 +514,9 @@ func (t *terrain) roadGap(e, n float64, _ []int, skip int) float64 {
 // left): its carriageway, and its sidewalk there or its reach over to a
 // road alongside.
 func sideEdge(s sample, side int) float64 {
+	if s.terrace[side] > 0 {
+		return s.terrace[side] // the terrace's slab (terrace.go) is the road's edge there
+	}
 	if s.walk[side] {
 		return s.hw + s.walkWidth(side)
 	}

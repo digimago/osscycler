@@ -221,13 +221,23 @@ type sample struct {
 	butt [2]bool
 	// walkW: the sidewalk's width on that side where a building leaves it
 	// less than walkM (0: walkM; walls.go).
-	walkW      [2]float64
-	onPatch    bool // within a junction's span: the junction draws the surface
-	underPatch bool // a road not of the junction, lying on its patch
-	aloft      bool // on a bridge or viaduct, off the ground (cut terrain)
-	oneway     int8 // traffic only along the line (1), only against it (-1), or both (0)
-	way        int  // the map's way it belongs to (network roads)
-	line       int  // the road line it belongs to (the terrain's samples)
+	walkW [2]float64
+	// terrace: a terrace's band (the sidewalk's outer offset) on that side,
+	// where a higher road runs alongside behind it (terrace.go); 0: none.
+	terrace [2]float64
+	// terraceWalk: the terrace's sidewalk width on that side (0: the wall
+	// stands at the carriageway's edge).
+	terraceWalk [2]float64
+	// terraceBack, terraceBehind: the surface behind the terrace, its
+	// height and its offset from the line (terrace.go).
+	terraceBack   [2]float64
+	terraceBehind [2]float64
+	onPatch       bool // within a junction's span: the junction draws the surface
+	underPatch    bool // a road not of the junction, lying on its patch
+	aloft         bool // on a bridge or viaduct, off the ground (cut terrain)
+	oneway        int8 // traffic only along the line (1), only against it (-1), or both (0)
+	way           int  // the map's way it belongs to (network roads)
+	line          int  // the road line it belongs to (the terrain's samples)
 }
 
 const (
@@ -336,6 +346,9 @@ func Build(c *course.Course, o Options) (*World, error) {
 	if styleFor(o.Region).cornerWalk {
 		walksOnSpans(lines, patches)
 	}
+	if styleFor(o.Region).junctionLevelM > 0 {
+		markTerraces(lines)
+	}
 	// Junctions built from their node carry the sidewalks; overlays stop
 	// them short.
 	var overlays []patch
@@ -382,6 +395,9 @@ func Build(c *course.Course, o Options) (*World, error) {
 	roads, decks := roadPrims(lines, patches, o.ChunkM, roadMats, verges)
 	for k, p := range pavedIslands(roads, ground, roadMats.surface[scenery.SurfaceAsphalt], o.ChunkM) {
 		roads[k] = append(roads[k], p)
+	}
+	for k, ps := range terracePrims(lines, roadMats, o.ChunkM) {
+		roads[k] = append(roads[k], ps...)
 	}
 	progress(0.2)
 	if t.cut {

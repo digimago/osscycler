@@ -238,3 +238,38 @@ func TestJunctionWalkStopsAtTheCorner(t *testing.T) {
 		}
 	}
 }
+
+// A lane 1.2 m above a road, its edge 1.5 m behind the road's sidewalk,
+// is a terrace (owner's photos of the Rue du Hohneck): the road's samples
+// along it carry the band, the sidewalk's width, the lane's height and
+// its offset, and the road's own sidewalk is off there; where the lane
+// is level with the road, nothing.
+func TestMarkTerraces(t *testing.T) {
+	line := func(e0, ele float64, walk bool) *roadLine {
+		l := &roadLine{}
+		for i := 0; i <= 20; i++ {
+			d := float64(i) * fineStep
+			s := sample{d: d, e: e0, n: d, ele: ele, hw: 3, edge: 3}
+			s.walk[1] = walk
+			l.samples = append(l.samples, s)
+		}
+		return l
+	}
+	road, lane := line(0, 10, true), line(0+3+walkM+1.5+1.5, 11.2, false)
+	markTerraces([]*roadLine{road, lane})
+	s := road.samples[10]
+	if s.terrace[1] == 0 || s.walk[1] || s.terraceWalk[1] != walkM {
+		t.Fatalf("the road's sample: terrace %.2f walk %v terraceWalk %.2f; want a terrace with its sidewalk's width, the sidewalk off", s.terrace[1], s.walk[1], s.terraceWalk[1])
+	}
+	if math.Abs(s.terrace[1]-(3+walkM)) > 1e-9 || math.Abs(s.terraceBack[1]-11.2) > 1e-9 || s.terraceBehind[1] <= s.terrace[1] {
+		t.Errorf("band %.2f back %.2f behind %.2f; want the sidewalk's edge %.2f, the lane's 11.2, an offset beyond the band", s.terrace[1], s.terraceBack[1], s.terraceBehind[1], 3+walkM)
+	}
+	if lane.samples[10].terrace[0] != 0 || lane.samples[10].terrace[1] != 0 {
+		t.Error("the lane, the higher road, got a terrace of its own")
+	}
+	level := line(0, 10, true)
+	markTerraces([]*roadLine{level, line(0+3+walkM+3, 10.1, false)})
+	if level.samples[10].terrace[1] != 0 {
+		t.Error("a road level with the one beside it got a terrace")
+	}
+}

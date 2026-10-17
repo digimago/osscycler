@@ -42,6 +42,9 @@ type patch struct {
 	walks   []walkChain
 	edges   []walkChain     // all its free edges (walks: those with sidewalks)
 	lanes   [][4][2]float64 // cycle lanes across it (lanes.go)
+	// noSkirt says where the patch's edge gets no skirt: over a car park
+	// or a paved area, which is the surface there (hideOwnWaysInLots).
+	noSkirt func(e, n float64) bool
 }
 
 // patchArm is a road at a junction: its line, and where along it the
@@ -256,6 +259,9 @@ func patchMesh(p patch, material int) gltf.Primitive {
 		l := math.Hypot(b[0]-a[0], b[1]-a[1])
 		if l == 0 || p.cutEdge(a, b) {
 			continue // a road goes on from here: no skirt
+		}
+		if p.noSkirt != nil && p.noSkirt((a[0]+b[0])/2, (a[1]+b[1])/2) {
+			continue // over a car park: its surface goes on
 		}
 		// Outward: the polygon runs counter-clockwise, so right of a→b.
 		nx, nz := (b[1]-a[1])/l, (b[0]-a[0])/l // east, south

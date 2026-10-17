@@ -330,7 +330,7 @@ func TestOwnWayHiddenInACarPark(t *testing.T) {
 		road.samples = append(road.samples, sample{d: n, e: 20, n: n, ele: 10, hw: 3})
 	}
 	sc := &scenery.Scenery{Parking: []scenery.Parking{{Outline: [][2]float64{{-10, 41}, {19, 41}, {19, 59}, {-10, 59}}}}}
-	hideOwnWaysInLots([]*roadLine{own, road}, sc)
+	hideOwnWaysInLots([]*roadLine{own, road}, nil, sc)
 	for _, s := range own.samples {
 		if in := s.n > 40 && s.n < 60; s.onPatch != in {
 			t.Errorf("own way at %.0f m: onPatch %v, want %v (inside the car park)", s.n, s.onPatch, in)

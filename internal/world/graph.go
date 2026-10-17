@@ -323,7 +323,7 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 		t.fine = append(t.fine, l.samples...)
 		t.loops = append(t.loops, l.loop)
 	}
-	hideOwnWaysInLots(lines, o.Scenery)
+	hideOwnWaysInLots(lines, patches, o.Scenery)
 	roads, decks := roadPrims(lines, patches, o.ChunkM, roadMats, nil)
 	for k, p := range pavedIslands(roads, ground, roadMats.surface[scenery.SurfaceAsphalt], o.ChunkM) {
 		roads[k] = append(roads[k], p)

@@ -395,7 +395,7 @@ func Build(c *course.Course, o Options) (*World, error) {
 		}
 	}
 	progress(0.1) // the network, junctions and path
-	hideOwnWaysInLots(lines, o.Scenery)
+	hideOwnWaysInLots(lines, patches, o.Scenery)
 	roads, decks := roadPrims(lines, patches, o.ChunkM, roadMats, verges)
 	for k, p := range pavedIslands(roads, ground, roadMats.surface[scenery.SurfaceAsphalt], o.ChunkM) {
 		roads[k] = append(roads[k], p)
@@ -895,7 +895,7 @@ type parkingLot struct {
 // the surface going on there (a road across the Hohneck col's apron,
 // 16.1 km of the Route des Américains, 5 cm above it as a car park lies
 // under the roads it meets, showed its skirt as a dark seam).
-func hideOwnWaysInLots(lines []*roadLine, sc *scenery.Scenery) {
+func hideOwnWaysInLots(lines []*roadLine, patches []patch, sc *scenery.Scenery) {
 	if sc == nil || len(sc.Parking) == 0 {
 		return
 	}
@@ -906,6 +906,9 @@ func hideOwnWaysInLots(lines []*roadLine, sc *scenery.Scenery) {
 			}
 		}
 		return false
+	}
+	for i := range patches {
+		patches[i].noSkirt = inLot // a junction's edge over a car park: no skirt either
 	}
 	for _, l := range lines {
 		ss := l.samples

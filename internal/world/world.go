@@ -395,6 +395,7 @@ func Build(c *course.Course, o Options) (*World, error) {
 		}
 	}
 	progress(0.1) // the network, junctions and path
+	hideOwnWaysInLots(lines, o.Scenery)
 	roads, decks := roadPrims(lines, patches, o.ChunkM, roadMats, verges)
 	for k, p := range pavedIslands(roads, ground, roadMats.surface[scenery.SurfaceAsphalt], o.ChunkM) {
 		roads[k] = append(roads[k], p)
@@ -884,6 +885,50 @@ type parkingLot struct {
 	extras  map[string]any
 	height  func(e, n float64) float64
 	outline [][2]float64
+}
+
+// hideOwnWaysInLots fits the roads to the car parks and paved areas
+// (scenery.Parking) they cross: the course's own ways (the route where it
+// rides on no map road) aren't drawn inside one, the car park being the
+// surface there (its samples count as a junction's, onPatch, which the
+// road mesh leaves out); and a road's edge lying on one gets no skirt,
+// the surface going on there (a road across the Hohneck col's apron,
+// 16.1 km of the Route des Américains, 5 cm above it as a car park lies
+// under the roads it meets, showed its skirt as a dark seam).
+func hideOwnWaysInLots(lines []*roadLine, sc *scenery.Scenery) {
+	if sc == nil || len(sc.Parking) == 0 {
+		return
+	}
+	inLot := func(e, n float64) bool {
+		for _, lot := range sc.Parking {
+			if inPoly(lot.Outline, e, n) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, l := range lines {
+		ss := l.samples
+		for i := range ss {
+			s := &ss[i]
+			if l.route && inLot(s.e, s.n) {
+				s.onPatch = true
+				continue
+			}
+			a, b := ss[max(0, i-1)], ss[min(len(ss)-1, i+1)]
+			de, dn := b.e-a.e, b.n-a.n
+			d := math.Hypot(de, dn)
+			if d == 0 {
+				continue
+			}
+			for si, sign := range []float64{-1, 1} {
+				off := sign * (s.hw + s.wide[si] + 0.2)
+				if !s.butt[si] && inLot(s.e+dn/d*off, s.n-de/d*off) {
+					s.butt[si] = true
+				}
+			}
+		}
+	}
 }
 
 // parkingLots are the car parks, laid on the terrain and meeting the

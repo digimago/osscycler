@@ -318,3 +318,33 @@ func TestParkingOutlineMeetsTheRoad(t *testing.T) {
 		t.Errorf("%d points, want the collinear ones along the road dropped", len(out))
 	}
 }
+
+// The course's own way isn't drawn where it crosses a car park or a paved
+// area: the car park is the surface there (an own way over the Hohneck
+// col's apron showed as a dark seam, 16.1 km of the Route des Américains).
+func TestOwnWayHiddenInACarPark(t *testing.T) {
+	own := &roadLine{route: true}
+	road := &roadLine{}
+	for n := 0.0; n <= 100; n += fineStep {
+		own.samples = append(own.samples, sample{d: n, e: 0, n: n, ele: 10, hw: 1.75})
+		road.samples = append(road.samples, sample{d: n, e: 20, n: n, ele: 10, hw: 3})
+	}
+	sc := &scenery.Scenery{Parking: []scenery.Parking{{Outline: [][2]float64{{-10, 41}, {19, 41}, {19, 59}, {-10, 59}}}}}
+	hideOwnWaysInLots([]*roadLine{own, road}, sc)
+	for _, s := range own.samples {
+		if in := s.n > 40 && s.n < 60; s.onPatch != in {
+			t.Errorf("own way at %.0f m: onPatch %v, want %v (inside the car park)", s.n, s.onPatch, in)
+		}
+	}
+	for _, s := range road.samples {
+		if s.onPatch {
+			t.Error("a map road's samples hidden in the car park")
+		}
+		// The road's left edge (e 17) lies in the car park from 41 to 59 m
+		// (its right edge, e 23, outside it):
+		// no skirt there, the surface goes on.
+		if in := s.n > 41 && s.n < 59; s.butt[0] != in || s.butt[1] {
+			t.Errorf("road at %.0f m: butt %v, want left %v and right false", s.n, s.butt, in)
+		}
+	}
+}

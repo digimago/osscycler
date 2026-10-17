@@ -129,6 +129,9 @@ func roadsOf(c *course.Course, d *Data) []*road {
 		default:
 			continue
 		}
+		if yes(el.Tags["area"]) {
+			continue // a paved area, not a road along its outline: a car park to the world (parking)
+		}
 		r := &road{id: el.ID, nodes: el.Nodes, name: el.Tags["name"], class: class, widthM: roadWidth(class, el.Tags), tags: el.Tags}
 		// Motorways never meet a ride on the level: they are fetched for
 		// the 3D world (viaducts, tunnels), never drawn as junctions.
@@ -541,16 +544,25 @@ func parkings(c *course.Course, d *Data, r []routePt, roads []*road, east, north
 	var entrances []Junction
 	for _, el := range d.Elements {
 		t := el.Tags
-		if t["amenity"] != "parking" {
+		// A paved area mapped as a highway (highway=* area=yes: a
+		// junction's apron, a turning area, the Hohneck col's apron at
+		// 16.1 km of the Route des Américains) is a car park to the world:
+		// a paved surface the land is laid round, not a road along its
+		// outline (drawn as one, its ring put snow poles in a cluster
+		// across the junction).
+		apron := t["highway"] != "" && yes(t["area"])
+		if t["amenity"] != "parking" && !apron {
 			continue
 		}
-		switch t["parking"] {
-		case "street_side", "lane", "on_street", "layby", "underground", "multi-storey", "rooftop", "sheds", "carports", "garage_boxes":
-			continue
-		}
-		switch t["access"] {
-		case "private", "no", "customers", "permit", "delivery", "residents":
-			continue
+		if !apron {
+			switch t["parking"] {
+			case "street_side", "lane", "on_street", "layby", "underground", "multi-storey", "rooftop", "sheds", "carports", "garage_boxes":
+				continue
+			}
+			switch t["access"] {
+			case "private", "no", "customers", "permit", "delivery", "residents":
+				continue
+			}
 		}
 		ring := el.Geometry
 		if el.Type == "relation" {
@@ -575,7 +587,7 @@ func parkings(c *course.Course, d *Data, r []routePt, roads []*road, east, north
 			cx, cy = cx+xs[i]/float64(len(xs)), cy+ys[i]/float64(len(xs))
 		}
 		area = math.Abs(area) / 2
-		if area < parkingMinM2 {
+		if area < parkingMinM2 && !apron {
 			continue
 		}
 		nearest := math.Inf(1)

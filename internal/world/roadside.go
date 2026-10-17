@@ -39,10 +39,12 @@ const (
 	fallNearM, fallFarM = 4.0, 8.0 // a barrier where it falls fallDrop over fallFarM from the edge
 	fallDrop            = 3.5
 	riseNearM           = 3.0
-	riseWall            = 2.2 // a wall where it rises this much within riseNearM of the edge
-	riseRock            = 3.6 // rock netted where it rises this much: too steep for loose soil
-	runMinSamples       = 5   // runs shorter than this many samples (10 m) left out
-	runGapSamples       = 3   // gaps this short between runs closed
+	riseWall            = 2.2  // a wall where it rises this much within riseNearM of the edge
+	riseRock            = 3.6  // rock netted where it rises this much: too steep for loose soil
+	runMinSamples       = 5    // runs shorter than this many samples (10 m) left out
+	runGapSamples       = 3    // gaps this short between runs closed
+	railGapM            = 30.0 // a barrier runs on over a gap this long where the fall eases
+	railLeastM          = 16.0 // and a barrier shorter than this isn't one
 
 	riseTown        = 1.0  // in town (or behind a sidewalk): a low wall where the land rises this much within riseNearM
 	townWallM       = 1.0  // and at most this high
@@ -162,6 +164,11 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 		var wy scenery.Way
 		if way >= 0 && way < len(ways) {
 			wy = ways[way]
+		}
+		// onSurface: a drawn road surface (another road's, a junction's
+		// apron, a car park) is at e, n: nothing stands there.
+		onSurface := func(e, n float64) bool {
+			return t.surfaces != nil && t.surfaces.dist(e, -n, 0.3) < 0.3
 		}
 		near := make([]bool, n)
 		anyNear := false
@@ -308,7 +315,7 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 		}
 		for si, sign := range []float64{-1, 1} {
 			s := &sides[si]
-			for _, r := range runs(s.rail) {
+			for _, r := range railRuns(s.rail, near, dist) {
 				guardRail(prim(items, t.fine[ln.from+r.from].e, t.fine[ln.from+r.from].n, mat), t, ln.from, r, dist, func(k int) (float64, float64) {
 					a := t.fine[ln.from+k]
 					return at(k, sign*(a.hw+a.wide[si]+railOffM))
@@ -387,6 +394,13 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 						continue
 					}
 					e, nn := at(k, sign*(a.hw+a.wide[si]+snowPoleOffM))
+					// Never on a drawn surface: another road's, a junction's
+					// apron, a car park (owner, 2026-10-17: poles standing in
+					// the road, a cluster of them across the apron where the
+					// summit road leaves the Route des Crêtes, 16.1 km).
+					if onSurface(e, nn) {
+						continue
+					}
 					snowPole(prim(items, e, nn, mat), e, a.ele, nn)
 				}
 			}
@@ -459,6 +473,9 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 				continue
 			}
 			e, nn := at(k, sign*(a.hw+a.wide[si]+snowPoleOffM))
+			if onSurface(e, nn) {
+				continue
+			}
 			bendPost(prim(items, e, nn, mat), e, a.ele, nn, dir[k])
 		}
 		if wy.Ref != "" {
@@ -475,6 +492,9 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 					continue
 				}
 				e, nn := at(k, a.hw+a.wide[1]+kmMarkerOffM)
+				if onSurface(e, nn) {
+					continue
+				}
 				kmMarker(prim(items, e, nn, mat), e, a.ele, nn, dir[k], cap)
 			}
 		}
@@ -526,6 +546,37 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 
 // runs are the stretches where on holds, gaps of up to runGapSamples
 // closed, shorter than runMinSamples left out.
+// railRuns is runs for a barrier: a barrier is one run along a slope, not
+// pieces with gaps where the fall eases for a few samples (owner,
+// 2026-10-17: short segments a few metres apart instead of one longer
+// one), so gaps up to railGapSamples are closed where the road is still
+// drawn there (near: not a junction's mouth), and pieces shorter than
+// railMinSamples are left out.
+func railRuns(on, near []bool, dist []float64) []sideRun {
+	closed := append([]bool(nil), on...)
+	for i := 0; i < len(on); i++ {
+		if !on[i] {
+			continue
+		}
+		j := i + 1
+		for j < len(on) && !on[j] && near[j] && dist[j]-dist[i] <= railGapM {
+			j++
+		}
+		if j < len(on) && on[j] {
+			for k := i + 1; k < j; k++ {
+				closed[k] = true
+			}
+		}
+	}
+	var out []sideRun
+	for _, r := range runs(closed) {
+		if dist[r.to]-dist[r.from] >= railLeastM {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
 func runs(on []bool) []sideRun {
 	var out []sideRun
 	for i := 0; i < len(on); {

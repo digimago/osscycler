@@ -121,3 +121,30 @@ func TestNoBarrierBesideACarPark(t *testing.T) {
 		t.Errorf("%d roadside vertices east of the road with a car park beside it, want no barrier there", n)
 	}
 }
+
+// A barrier is one run along a slope: gaps up to railGapM where the fall
+// eases are closed (while the road is drawn there), and pieces shorter
+// than railLeastM are left out (owner, 2026-10-17: short segments a few
+// metres apart instead of one longer one).
+func TestRailRunsAreContinuous(t *testing.T) {
+	n := 260 // samples 0.5 m apart: 130 m
+	on, near, dist := make([]bool, n), make([]bool, n), make([]float64, n)
+	for i := range n {
+		dist[i], near[i] = float64(i)*0.5, true
+		on[i] = i >= 20 && i < 60 || i >= 90 && i < 150 || i >= 230 && i < 236 // 20 m, a 15 m gap, 30 m, then 40 m on a 3 m piece
+	}
+	for i := 100; i < 104; i++ {
+		near[i] = false // a mouth inside the second run: stays as it is (on)
+	}
+	got := railRuns(on, near, dist)
+	if len(got) != 1 || got[0].from != 20 || got[0].to != 149 {
+		t.Fatalf("runs %v, want one from 20 to 149 (the 15 m gap closed, the 3 m piece dropped)", got)
+	}
+	// A gap at a junction's mouth (not near) is never closed.
+	for i := 60; i < 90; i++ {
+		near[i] = false
+	}
+	if got = railRuns(on, near, dist); len(got) != 2 {
+		t.Errorf("runs %v, want two with the mouth between them open", got)
+	}
+}

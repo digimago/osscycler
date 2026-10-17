@@ -263,3 +263,26 @@ func TestNoSidewalkOnADivideOrWhereWalkersMayNot(t *testing.T) {
 		t.Errorf("lone street sidewalks %v, want both", ws[2].Sidewalk)
 	}
 }
+
+// A paved area mapped as a highway (area=yes) is a car park to the world,
+// not a road along its outline (the Hohneck col's apron, 16.1 km of the
+// Route des Américains: drawn as a ring road, its snow poles stood in a
+// cluster across the junction).
+func TestPavedHighwayAreaIsACarPark(t *testing.T) {
+	c := straightCourse(t)
+	lat0, lon0 := c.Position(0)
+	dlat, dlon := 1/111195.0, 1/(111195.0*math.Cos(lat0*math.Pi/180))
+	ring := func(e0, n0, e1, n1 float64) []LatLon {
+		return []LatLon{{lat0 + n0*dlat, lon0 + e0*dlon}, {lat0 + n0*dlat, lon0 + e1*dlon}, {lat0 + n1*dlat, lon0 + e1*dlon}, {lat0 + n1*dlat, lon0 + e0*dlon}, {lat0 + n0*dlat, lon0 + e0*dlon}}
+	}
+	d := &Data{Elements: []Element{{Type: "way", ID: 7, Tags: map[string]string{"highway": "unclassified", "area": "yes", "surface": "asphalt"}, Nodes: []int64{1, 2, 3, 4, 1}, Geometry: ring(5, 100, 25, 120)}}}
+	sc := Build(c, d)
+	if len(sc.Parking) != 1 {
+		t.Fatalf("%d car parks, want the apron as one", len(sc.Parking))
+	}
+	for _, w := range sc.Ways {
+		if w.ID == 7 {
+			t.Error("the apron is a road way too")
+		}
+	}
+}

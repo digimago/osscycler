@@ -280,3 +280,41 @@ func TestJunctionTrianglesAreFat(t *testing.T) {
 		t.Errorf("thinnest corner %.1f° (ear clipping's %.1f°)", fa, ea)
 	}
 }
+
+// A car park's outline running just off a road's edge is taken onto the
+// road (parkingOntoRoads): a map outline a few centimetres outside the
+// drawn carriageway left a slit between the two surfaces too narrow for
+// the land to fill (the Route des Crêtes' car parks, 15.3-15.5 km of the
+// Route des Américains).
+func TestParkingOutlineMeetsTheRoad(t *testing.T) {
+	// A road 3.5 m half wide along n, its right edge at e 3.5, 10 m high.
+	road := gltf.Primitive{Material: 1}
+	for _, q := range [][3]float64{{-3.5, 10, 50}, {3.5, 10, 50}, {3.5, 10, -50}, {-3.5, 10, -50}} {
+		road.Positions = append(road.Positions, float32(q[0]), float32(q[1]), float32(q[2]))
+	}
+	road.Indices = []uint32{0, 1, 2, 0, 2, 3}
+	rs := newSurfaceIndex([]gltf.Primitive{road}, func(int) bool { return true }, 200)
+	// The car park: its west edge 0.2 m off the road's, from n -20 to 20.
+	outline := [][2]float64{{3.7, -20}, {13.7, -20}, {13.7, 20}, {3.7, 20}}
+	out := parkingOntoRoads(outline, rs)
+	west, far := 0, 0
+	for _, q := range out {
+		switch {
+		case q[0] < 5:
+			west++
+			if q[0] > 3.5 || q[0] < 3.1 {
+				t.Errorf("a west point at e %.2f, want it just in over the road's edge at 3.5", q[0])
+			}
+		case math.Abs(q[0]-13.7) < 1e-9:
+			far++
+		default:
+			t.Errorf("a point at %v, neither on the west edge nor the far one", q)
+		}
+	}
+	if west < 2 || far != 2 {
+		t.Errorf("%d west points and %d far ones; want the west edge on the road (its ends at least) and the far edge as it was", west, far)
+	}
+	if len(out) > 8 {
+		t.Errorf("%d points, want the collinear ones along the road dropped", len(out))
+	}
+}

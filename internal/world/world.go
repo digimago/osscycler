@@ -905,7 +905,8 @@ func parkingLots(t *terrain, sc *scenery.Scenery, m roadMaterials, roads map[[2]
 	height := func(e, n float64) float64 { return parkingHeight(s.at(e, n), e, n, rs) }
 	var out []parkingLot
 	for _, lot := range sc.Parking {
-		p := drapedIn(height, lot.Outline, m.surface[lot.Surface], 0, parkCellM, false)
+		outline := parkingOntoRoads(lot.Outline, rs)
+		p := drapedIn(height, outline, m.surface[lot.Surface], 0, parkCellM, false)
 		if len(p.Indices) == 0 {
 			continue
 		}
@@ -913,9 +914,116 @@ func parkingLots(t *terrain, sc *scenery.Scenery, m roadMaterials, roads map[[2]
 		if lot.Name != "" {
 			extras["name"] = lot.Name
 		}
-		out = append(out, parkingLot{mesh: p, cut: drapedIn(height, lot.Outline, p.Material, 0, 0, false), extras: extras, height: height, outline: lot.Outline})
+		out = append(out, parkingLot{mesh: p, cut: drapedIn(height, outline, p.Material, 0, 0, false), extras: extras, height: height, outline: outline})
 	}
 	return out
+}
+
+// A car park's outline running just off a road's edge is taken onto the
+// road: a map outline a few centimetres outside the drawn carriageway
+// left a slit between the two surfaces too narrow for the land to fill
+// (the rim stands at the outline, closing a step, not a gap): the Route
+// des Crêtes' car parks at 15.3-15.5 km of the Route des Américains,
+// 2.4 m² of slits along the road's edges.
+const (
+	parkSnapM     = 0.8  // an outline point this near a road surface moves onto it (twice the land's tuck: nearer, the land can't fill the gap)
+	parkLapM      = 0.15 // this far in over the road's edge (just under it)
+	parkChordM    = 0.05 // points within this of the line through their neighbours are dropped (the lap keeps the edge under the road)
+	parkSnapStepM = 0.5  // the outline's edges sampled this finely for it
+)
+
+// parkingOntoRoads is outline, its edges sampled every parkSnapStepM (a
+// map outline's corners are metres apart, the slit runs along its
+// edges), with each point off the roads (rs) but within parkSnapM of one,
+// along the outline's normal, moved parkLapM in over that road's edge.
+func parkingOntoRoads(outline [][2]float64, rs *landSurface) [][2]float64 {
+	if len(outline) < 3 {
+		return outline
+	}
+	// snap is v moved onto a road within parkSnapM along the normal
+	// (ne, nn), and whether it moved.
+	snap := func(v [2]float64, ne, nn float64) ([2]float64, bool) {
+		if _, on := rs.at(v[0], v[1]); on {
+			return v, false
+		}
+		for d := 0.05; d <= parkSnapM+1e-9; d += 0.05 {
+			for _, sgn := range [2]float64{1, -1} {
+				if _, ok := rs.at(v[0]+sgn*ne*d, v[1]+sgn*nn*d); ok {
+					return [2]float64{v[0] + sgn*ne*(d+parkLapM), v[1] + sgn*nn*(d+parkLapM)}, true
+				}
+			}
+		}
+		return v, false
+	}
+	n := len(outline)
+	var out [][2]float64
+	for i, a := range outline {
+		b := outline[(i+1)%n]
+		de, dn := b[0]-a[0], b[1]-a[1]
+		l := math.Hypot(de, dn)
+		if l == 0 {
+			continue
+		}
+		ne, nn := dn/l, -de/l
+		// The corner itself, by the normal of the edges either side.
+		p := outline[(i+n-1)%n]
+		pe, pn := a[0]-p[0], a[1]-p[1]
+		if pl := math.Hypot(pe, pn); pl > 0 {
+			ce, cn := ne+pn/pl, nn-pe/pl
+			if cl := math.Hypot(ce, cn); cl > 0 {
+				ce, cn = ce/cl, cn/cl
+			} else {
+				ce, cn = ne, nn
+			}
+			q, _ := snap(a, ce, cn)
+			out = append(out, q)
+		} else {
+			q, _ := snap(a, ne, nn)
+			out = append(out, q)
+		}
+		// Along the edge, only the samples that move (the rest would be
+		// collinear points, which only slow the ear clipping).
+		k := int(math.Ceil(l / parkSnapStepM))
+		for j := 1; j < k; j++ {
+			f := float64(j) / float64(k)
+			if q, moved := snap([2]float64{a[0] + f*de, a[1] + f*dn}, ne, nn); moved {
+				out = append(out, q)
+			}
+		}
+	}
+	// Points in line with their neighbours go (along a straight road's
+	// edge every sample moved onto it): the ear clipping is quadratic in
+	// the outline's points, and a car park ringed by them took minutes.
+	// Along a road's edge a point within parkChordM of the line through
+	// its neighbours goes only while that line stays on the road (dropped
+	// by distance alone, a chord across a bend left a slit again).
+	onRoad := func(p, r [2]float64) bool {
+		for _, f := range [3]float64{0.25, 0.5, 0.75} {
+			if _, ok := rs.at(p[0]+f*(r[0]-p[0]), p[1]+f*(r[1]-p[1])); !ok {
+				return false
+			}
+		}
+		return true
+	}
+	for {
+		n := len(out)
+		kept := out[:0]
+		dropped := false
+		for i, q := range out {
+			p, r := out[(i+n-1)%n], out[(i+1)%n]
+			if !dropped && n > 3 && math.Hypot(r[0]-p[0], r[1]-p[1]) < 20 {
+				if d := segDist(p, r, q[0], q[1]); d < 0.005 || d < parkChordM && onRoad(p, r) {
+					dropped = true
+					continue
+				}
+			}
+			kept = append(kept, q)
+		}
+		out = kept
+		if !dropped {
+			return out
+		}
+	}
 }
 
 // A car park meets the road it lies against at the road's height

@@ -71,22 +71,32 @@ func trimLinesInLots(ls []*roadLine, lots []scenery.Parking) []*roadLine {
 			continue
 		}
 		var piece []sample
-		flush := func() {
+		cutBefore := false // the piece starts at a lot
+		flush := func(cutAfter bool) {
 			if len(piece) >= 2 && (piece[len(piece)-1].d-piece[0].d >= minLineM || len(piece) == len(l.samples)) {
 				c := *l
 				c.samples = piece
+				// Its ends at a lot (owner, 2026-10-18, the Hohneck's
+				// summit car park at 17.52 km: the road stood 6-9 cm over
+				// the car park where it entered it, its end open, and from
+				// the car park one looked under the road).
+				c.samples[0].lotEnd = cutBefore
+				c.samples[len(c.samples)-1].lotEnd = cutAfter
 				out = append(out, &c)
 			}
 			piece = nil
 		}
 		for _, s := range l.samples {
 			if inLot(s.e, s.n) {
-				flush()
+				if len(piece) > 0 {
+					flush(true)
+				}
+				cutBefore = true
 				continue
 			}
 			piece = append(piece, s)
 		}
-		flush()
+		flush(false)
 	}
 	return out
 }

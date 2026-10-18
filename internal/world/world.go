@@ -239,8 +239,12 @@ type sample struct {
 	// French road's at a service road's mouth, as a dropped kerb); drop:
 	// how far its kerb is lowered there, 0 (full) to 1 (dropKerbM)
 	// (walksOnSpans).
-	walkOn     [2]bool
-	drop       [2]float64
+	walkOn [2]bool
+	drop   [2]float64
+	// lotEnd: the road stops here at a car park's edge (trimLinesInLots):
+	// its end gets a face down past the car park's surface, which lies a
+	// little under it.
+	lotEnd     bool
 	onPatch    bool // within a junction's span: the junction draws the surface
 	underPatch bool // a road not of the junction, lying on its patch
 	aloft      bool // on a bridge or viaduct, off the ground (cut terrain)

@@ -475,3 +475,51 @@ func TestCarParkSurfaceIsAGrid(t *testing.T) {
 		t.Errorf("%d vertices for %d triangles: not shared", n, len(p.Indices)/3)
 	}
 }
+
+// A road stopping at a car park's edge closes its end: a face across the
+// carriageway down past the car park's surface, a little under the road
+// there (owner, 2026-10-18, the Hohneck's summit car park at 17.52 km:
+// from the car park one looked under the road through the open end).
+// Its other end, in the open, gets none.
+func TestRoadEndAtACarParkIsClosed(t *testing.T) {
+	c := northCourse(t)
+	road := &roadLine{smooth: courseLine(c, nil)}
+	for n := 0.0; n <= 100; n += fineStep {
+		road.samples = append(road.samples, sample{d: n, e: 0, n: n, ele: 10, hw: 2})
+	}
+	lots := []scenery.Parking{{Outline: [][2]float64{{-5, 60}, {40, 60}, {40, 120}, {-5, 120}}}}
+	out := trimLinesInLots([]*roadLine{road}, lots)
+	if len(out) != 1 {
+		t.Fatalf("%d lines, want the road's outside piece", len(out))
+	}
+	ss := out[0].samples
+	if ss[0].lotEnd || !ss[len(ss)-1].lotEnd {
+		t.Fatalf("lot ends: start %v, end %v; want only the end at the car park", ss[0].lotEnd, ss[len(ss)-1].lotEnd)
+	}
+	m := addRoadMaterials(gltf.New("test"), &styleNL)
+	faces := map[string]int{}
+	for _, p := range roadMesh(ss, ss, 0, out[0].smooth, false, m, nil) {
+		if p.Material != m.surface[scenery.SurfaceAsphalt] {
+			continue
+		}
+		for i := 0; i+2 < len(p.Indices); i += 3 {
+			var v [3][3]float64
+			for k := range 3 {
+				j := p.Indices[i+k]
+				v[k] = [3]float64{float64(p.Positions[3*j]), float64(p.Positions[3*j+1]), float64(p.Positions[3*j+2])}
+			}
+			n := cross([3]float64{v[1][0] - v[0][0], v[1][1] - v[0][1], v[1][2] - v[0][2]}, [3]float64{v[2][0] - v[0][0], v[2][1] - v[0][1], v[2][2] - v[0][2]})
+			if l := math.Sqrt(dot3(n, n)); l > 0 && math.Abs(n[2])/l > 0.9 {
+				north := -(v[0][2] + v[1][2] + v[2][2]) / 3
+				if north > 50 {
+					faces["lot"]++
+				} else {
+					faces["open"]++
+				}
+			}
+		}
+	}
+	if faces["lot"] != 2 || faces["open"] != 0 {
+		t.Errorf("faces across the carriageway: %d at the car park, %d at the open end; want 2 and 0", faces["lot"], faces["open"])
+	}
+}

@@ -397,6 +397,32 @@ func roadMesh(seg, all []sample, from int, line *smoothLine, loop bool, m roadMa
 			tri(pr, v0, v2, v3, n)
 		}
 	}
+	// A road's end at a car park's edge: a face across the carriageway down
+	// past the car park's surface, which lies a little under the road
+	// there (trimLinesInLots).
+	for _, end := range [2]int{0, len(frames) - 1} {
+		g := from
+		if end > 0 {
+			g = from + len(seg) - 1
+		}
+		if len(frames) < 2 || !all[g].lotEnd || (end == 0) != (g == 0) || (end > 0) != (g == len(all)-1) {
+			continue
+		}
+		f := frames[end]
+		dir := 1.0
+		if end == 0 {
+			dir = -1
+		}
+		n := [3]float64{dir * f.rz, 0, -dir * f.rx}
+		p0 := f.parts[0]
+		pr := prim(p0.material)
+		v0 := vert(pr, f, p0.a, -skirtM, 0, n)
+		v1 := vert(pr, f, p0.a, 0, 1, n)
+		v2 := vert(pr, f, p0.b, 0, 1, n)
+		v3 := vert(pr, f, p0.b, -skirtM, 0, n)
+		tri(pr, v0, v1, v2, n)
+		tri(pr, v0, v2, v3, n)
+	}
 	out := make([]gltf.Primitive, 0, len(order)+1)
 	for _, mat := range order {
 		out = append(out, *prims[mat])

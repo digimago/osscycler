@@ -224,18 +224,31 @@ func TestFrenchLanesHaveNoGuessedSidewalks(t *testing.T) {
 	}
 }
 
-// Where only one road at a junction has a sidewalk, a French junction
-// draws none of its own (the road's goes on along its span to the other
-// road's mouth); elsewhere it goes halfway round.
-func TestJunctionWalkStopsAtTheCorner(t *testing.T) {
-	var p patch // no roads: the heights don't matter here, only whether it is drawn
+// Where only one road at a junction has a sidewalk, a Dutch junction's
+// sidewalk goes halfway round and stops; a French one runs the whole way
+// round the corner to the other road's edge (owner, 2026-10-18), unless
+// the road's own sidewalk runs on across the junction as a dropped kerb
+// (a service road's mouth): then the junction draws none of its own.
+func TestJunctionWalkRoundsTheCorner(t *testing.T) {
+	var p patch // no roads: the heights don't matter here, only what is drawn
 	w := walkChain{kerb: [][2]float64{{0, 0}, {3, 0}, {6, 0}, {7, 1}, {7, 4}}, fromA: true}
-	for _, corner := range []bool{false, true} {
+	reach := func(corner bool, drop bool) (drawn bool, far float64) {
+		p.dropWalks = drop
 		var walk, kerb gltf.Primitive
 		walkMesh(p, w, &walk, &kerb, corner)
-		if drawn := len(walk.Indices) > 0; drawn == corner {
-			t.Errorf("corner %v: the junction's own sidewalk drawn %v", corner, drawn)
+		for i := 0; i+2 < len(walk.Positions); i += 3 {
+			far = math.Max(far, math.Hypot(float64(walk.Positions[i]), float64(-walk.Positions[i+2])))
 		}
+		return len(walk.Indices) > 0, far
+	}
+	if drawn, far := reach(false, false); !drawn || far > 7.5 {
+		t.Errorf("Dutch: drawn %v, reaching %.1f m from the start; want about halfway round (under 7.5 m)", drawn, far)
+	}
+	if drawn, far := reach(true, false); !drawn || far < 7.5 {
+		t.Errorf("French: drawn %v, reaching %.1f m; want the whole way round to the other road (over 7.5 m)", drawn, far)
+	}
+	if drawn, _ := reach(true, true); drawn {
+		t.Error("French, the road's sidewalk running on across the mouth: the junction drew one of its own too")
 	}
 }
 

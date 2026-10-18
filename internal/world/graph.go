@@ -289,7 +289,7 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 	}
 	cutRoads(lines, patches)
 	if styleFor(o.Region).cornerWalk {
-		walksOnSpans(lines, patches)
+		walksOnSpans(lines, patches, ways)
 	}
 	if styleFor(o.Region).junctionLevelM > 0 {
 		markTerraces(lines, patches)

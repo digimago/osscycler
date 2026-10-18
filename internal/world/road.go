@@ -15,6 +15,7 @@ const (
 	laneM      = 1.5  // a cycle lane's width, inside the carriageway's edge
 	walkM      = 1.8  // a sidewalk's width, outside it
 	kerbM      = 0.12 // the kerb's height
+	dropKerbM  = 0.02 // a dropped kerb's, where a sidewalk runs on across a service road's mouth
 	walkFootM  = 0.25 // a sidewalk's outer face goes this far into the ground
 	skirtM     = 0.3  // a road's edge without a sidewalk goes this far into the ground
 	taperSteps = 5    // width changes are spread over this many fine steps each way
@@ -24,6 +25,7 @@ const (
 type roadMaterials struct {
 	surface    [5]int // by scenery.Surface
 	lane, walk int
+	walkDrop   int // a sidewalk running on across a junction as a dropped kerb (left to lie over its surface: not clipped off it)
 	kerb       int
 	ground     int     // the terrain's
 	island     int     // a roundabout's island: grass in its vertices, not land (the cut leaves it)
@@ -48,6 +50,10 @@ func addRoadMaterials(d *gltf.Doc, st *style) roadMaterials {
 	m.surface[scenery.SurfaceTrack] = mat("running track", 0xa5503e, 0.9) // the test oval's
 	m.lane = mat("cycle lane", st.cycleLane, 0.85)
 	m.walk = mat("sidewalk", 0x96928a, 0.9)
+	m.walkDrop = m.walk
+	if st.cornerWalk {
+		m.walkDrop = mat("sidewalk", 0x96928a, 0.9)
+	}
 	m.kerb = mat("kerb", 0xc8c6c0, 0.8)
 	m.island = d.AddMaterial(gltf.Material{Name: "island", Color: [4]float32{1, 1, 1, 1}, Roughness: 1})
 	m.paving = mat("roundabout centre", st.roundaboutCentre, 0.9)
@@ -124,16 +130,27 @@ func roadMesh(seg, all []sample, from int, line *smoothLine, loop bool, m roadMa
 		if s.lane[1] {
 			b -= laneM
 		}
+		// A sidewalk: not over a junction's span unless it runs on across
+		// it as a dropped kerb, its kerb lowered by drop (walksOnSpans).
+		walk := func(side int) (on bool, h float64, mat int) {
+			on, h, mat = s.walk[side] && (!s.onPatch || s.walkOn[side]), kerbM, m.walk
+			if s.drop[side] > 0 || s.onPatch && s.walkOn[side] {
+				h, mat = kerbM+s.drop[side]*(dropKerbM-kerbM), m.walkDrop
+			}
+			return
+		}
+		w0, h0, m0 := walk(0)
+		w1, h1, m1 := walk(1)
 		return [11]part{
 			{on: true, a: a, b: b, material: m.surface[s.surface]},
 			{on: s.lane[0], a: -s.hw, b: -s.hw + laneM, material: m.lane},
 			{on: s.lane[1], a: s.hw - laneM, b: s.hw, material: m.lane},
-			{on: s.walk[0], a: -s.hw - s.walkWidth(0), b: -s.hw, ya: kerbM, yb: kerbM, material: m.walk},
-			{on: s.walk[1], a: s.hw, b: s.hw + s.walkWidth(1), ya: kerbM, yb: kerbM, material: m.walk},
-			{on: s.walk[0], a: -s.hw, b: -s.hw, ya: 0, yb: kerbM, material: m.kerb, wall: true},
-			{on: s.walk[1], a: s.hw, b: s.hw, ya: 0, yb: kerbM, material: m.kerb, wall: true, wallLeft: true},
-			{on: s.walk[0], a: -s.hw - s.walkWidth(0), b: -s.hw - s.walkWidth(0), ya: -walkFootM, yb: kerbM, material: m.kerb, wall: true, wallLeft: true},
-			{on: s.walk[1], a: s.hw + s.walkWidth(1), b: s.hw + s.walkWidth(1), ya: -walkFootM, yb: kerbM, material: m.kerb, wall: true},
+			{on: w0, a: -s.hw - s.walkWidth(0), b: -s.hw, ya: h0, yb: h0, material: m0},
+			{on: w1, a: s.hw, b: s.hw + s.walkWidth(1), ya: h1, yb: h1, material: m1},
+			{on: w0, a: -s.hw, b: -s.hw, ya: 0, yb: h0, material: m.kerb, wall: true},
+			{on: w1, a: s.hw, b: s.hw, ya: 0, yb: h1, material: m.kerb, wall: true, wallLeft: true},
+			{on: w0, a: -s.hw - s.walkWidth(0), b: -s.hw - s.walkWidth(0), ya: -walkFootM, yb: h0, material: m.kerb, wall: true, wallLeft: true},
+			{on: w1, a: s.hw + s.walkWidth(1), b: s.hw + s.walkWidth(1), ya: -walkFootM, yb: h1, material: m.kerb, wall: true},
 			// Without a sidewalk, the edge goes on into the ground: the road
 			// sits in the landscape, not on it.
 			{on: !s.walk[0] && !s.butt[0], a: -s.hw - s.wide[0], b: -s.hw - s.wide[0], ya: -skirtM, yb: 0, material: m.surface[s.surface], wall: true, wallLeft: true},
@@ -276,13 +293,11 @@ func roadMesh(seg, all []sample, from int, line *smoothLine, loop bool, m roadMa
 			continue // the junction draws this surface: the road ends at its edge
 		}
 		for i := range f0.parts {
-			// A French road's sidewalk goes on along a junction's span
-			// (cut away later where the junction's surface covers it): it
-			// runs straight on to the side road's mouth (owner's photos of
-			// the Rue du Hohneck; stopped at the span's start, grass lay
-			// between it and the junction's slanting edge).
+			// A French road's sidewalk runs on over a junction's span only
+			// as a dropped kerb across a service road's mouth (the parts
+			// say, walksOnSpans); the carriageway is the junction's.
 			if inPatch && (i < 3 || i > 8) {
-				continue // the junction draws the carriageway
+				continue
 			}
 			p0, p1 := f0.parts[i], f1.parts[i]
 			// A sidewalk that starts or stops between two cross-sections

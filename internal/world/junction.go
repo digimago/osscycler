@@ -45,6 +45,10 @@ type patch struct {
 	// noSkirt says where the patch's edge gets no skirt: over a car park
 	// or a paved area, which is the surface there (hideOwnWaysInLots).
 	noSkirt func(e, n float64) bool
+	// dropWalks: a road's sidewalk runs on across this junction as a
+	// dropped kerb (a service road's mouth, walksOnSpans): the junction
+	// draws no sidewalk of its own where only that road has one.
+	dropWalks bool
 }
 
 // patchArm is a road at a junction: its line, and where along it the
@@ -149,9 +153,12 @@ func patchMeshes(p patch, m roadMaterials, v *verger) []gltf.Primitive {
 
 // walkMesh is a sidewalk a junction carries: on a kerb along its outline,
 // walkM wide, its ends where the roads' sidewalks end. Where only one road
-// has a sidewalk on that side, it goes halfway round and stops, or with
-// corner none: the road's own sidewalk goes on along the junction's span
-// to the other road's mouth (roadMesh).
+// has a sidewalk on that side, it goes halfway round and stops; with
+// corner (the French style) it runs the whole way, round the corner to the
+// other road's edge, and ends square there (owner, 2026-10-18, La
+// Bresse: drawn by the road along its span and clipped to the junction,
+// the slab ended in a diagonal cut with its faces showing), unless the
+// road's own sidewalk runs on across the junction (p.dropWalks).
 func walkMesh(p patch, w walkChain, walk, kerb *gltf.Primitive, corner bool) {
 	k := w.kerb
 	if len(k) < 2 {
@@ -161,8 +168,10 @@ func walkMesh(p patch, w walkChain, walk, kerb *gltf.Primitive, corner bool) {
 	total := at[len(k)-1]
 	from, to := 0.0, total
 	switch {
-	case corner && w.fromA != w.fromB:
-		return // the road's own sidewalk goes on along the span (roadMesh)
+	case corner && p.dropWalks && w.fromA != w.fromB:
+		return // the road's own sidewalk runs on across the mouth (roadMesh)
+	case corner:
+		// The whole way round, capped at both ends.
 	case w.fromA && !w.fromB:
 		to = total / 2
 	case !w.fromA && w.fromB:
@@ -305,14 +314,54 @@ func markPatches(fine []sample, ps []patch) {
 	}
 }
 
-// walksOnSpans keeps a road's sidewalk on along a junction's span (a
-// French road's goes on to the side road's mouth, roadMesh) only where
-// its middle lies outside every junction's outline: where the junction
-// covers it, it stops there, square (owner's photos of the Rue du
-// Hohneck: drawn on and cut away under the junction, it left slivers
-// along the junction's edge; stopped at the span's start, grass lay
-// where it should run on).
-func walksOnSpans(ls []*roadLine, ps []patch) {
+// walksOnSpans decides what a French road's sidewalk does at a junction
+// on its way (roadMesh draws it over a junction's span only where walkOn
+// says so). At a service road's mouth (every other road at the junction a
+// service road: a parking aisle, a driveway, a drive-through) it runs on
+// across as a dropped kerb (owner, 2026-10-18, La Bresse: the aisles and
+// driveways along the Rue Paul Claudel and the Rue du Hohneck), lowered
+// to dropKerbM where another road's carriageway or the junction's
+// outline covers its kerb line, ramped over the sample either side; at
+// any other side street it stops at the junction's edge, and the
+// junction's own sidewalk takes it round the corner (walkMesh).
+func walksOnSpans(ls []*roadLine, ps []patch, ws []scenery.Way) {
+	// A line of service ways only.
+	service := func(l *roadLine) bool {
+		if len(l.ways) == 0 {
+			return false
+		}
+		for _, k := range l.ways {
+			if k < 0 || k >= len(ws) || ws[k].Class != "service" {
+				return false
+			}
+		}
+		return true
+	}
+	// mouthOf is the junction whose span covers l at d, -1 for none;
+	// serviceMouth whether every other road at it is a service road.
+	mouthOf := func(l *roadLine, d float64) int {
+		for i := range ps {
+			for _, sp := range ps[i].spans {
+				if sp.l == l && d > sp.from+1e-6 && d < sp.to-1e-6 {
+					return i
+				}
+			}
+		}
+		return -1
+	}
+	serviceMouth := func(p *patch, self *roadLine) bool {
+		others := 0
+		for _, sp := range p.spans {
+			if sp.l == self {
+				continue
+			}
+			if !service(sp.l) {
+				return false
+			}
+			others++
+		}
+		return others > 0
+	}
 	type box struct{ e0, n0, e1, n1 float64 }
 	boxes := make([]box, len(ps))
 	for i, p := range ps {
@@ -390,9 +439,32 @@ func walksOnSpans(ls []*roadLine, ps []patch) {
 			}
 		}
 		for i := range ss {
+			if !ss[i].onPatch {
+				continue
+			}
+			pi := mouthOf(l, ss[i].d)
+			if pi < 0 || !serviceMouth(&ps[pi], l) {
+				continue
+			}
 			for side := range 2 {
-				if cov[side][i] && (i == 0 || cov[side][i-1]) && (i+1 == len(ss) || cov[side][i+1]) {
-					ss[i].walk[side] = false
+				if ss[i].walk[side] {
+					ss[i].walkOn[side] = true
+					ps[pi].dropWalks = true
+				}
+			}
+		}
+		for i := range ss {
+			for side := range 2 {
+				if !cov[side][i] || !ss[i].walkOn[side] {
+					continue
+				}
+				// The kerb lowered over the mouth, ramping down over the
+				// sample before and up over the one after.
+				ss[i].drop[side] = 1
+				for _, j := range []int{i - 1, i + 1} {
+					if j >= 0 && j < len(ss) && !cov[side][j] && ss[j].walk[side] {
+						ss[j].drop[side] = math.Max(ss[j].drop[side], 0.5)
+					}
 				}
 			}
 		}
@@ -972,6 +1044,7 @@ func sampleBetween(l *roadLine, d float64) sample {
 	s := a
 	s.d, s.e, s.n, s.ele = d, lerp(a.e, b.e), lerp(a.n, b.n), lerp(a.ele, b.ele)
 	s.hw, s.edge, s.flat = lerp(a.hw, b.hw), lerp(a.edge, b.edge), lerp(a.flat, b.flat)
+	s.drop = [2]float64{lerp(a.drop[0], b.drop[0]), lerp(a.drop[1], b.drop[1])}
 	return s
 }
 

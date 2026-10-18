@@ -250,3 +250,97 @@ func TestGablesTurnToTheView(t *testing.T) {
 		t.Error("a Dutch house turned its ridge")
 	}
 }
+
+// A mountain farm of attached sections (an L) is split into rectangles,
+// each with its own low gable roof whose ridge runs down its middle, not
+// one roof over the whole (owner, 2026-10-18: the Ferme Auberge
+// Breitzhousen, several farm buildings joined).
+func TestFarmIsSplitIntoGabledSections(t *testing.T) {
+	// An L: 40 m long, 12 m deep, a 12 by 20 m wing at its west end.
+	pts := [][2]float64{{-60, 400}, {-20, 400}, {-20, 412}, {-48, 412}, {-48, 432}, {-60, 432}}
+	secs := farmSections(pts)
+	area := 0.0
+	for _, r := range secs {
+		area += math.Abs(polyArea(r))
+	}
+	if len(secs) < 2 || math.Abs(area-math.Abs(polyArea(pts))) > 5 {
+		t.Fatalf("%d sections covering %.0f m², want at least two covering the outline's %.0f", len(secs), area, math.Abs(polyArea(pts)))
+	}
+	c := northCourse(t)
+	tr := testTerrain(c, Options{Elevation: func(lat, lon float64) (float64, bool) { return 10, true }})
+	s := &surface{t: tr, lists: map[[2]int]chunkLists{}}
+	farm := scenery.Footprint{ID: 3, Kind: scenery.KindHouse, WallM: 5, RoofM: 4, Outline: pts}
+	var p gltf.Primitive
+	buildingMesh(&p, s, &styleFR, farm, nil, nil)
+	top := math.Inf(-1)
+	for k := 1; k < len(p.Positions); k += 3 {
+		top = math.Max(top, float64(p.Positions[k]))
+	}
+	// The widest section is 12 m: its ridge 6·tan(22°) = 2.4 m over the
+	// 3.5 m walls.
+	if want := 10 + farmWallM + 6*math.Tan(farmPitchDeg*math.Pi/180); top > want+0.3 {
+		t.Errorf("the farm's highest point at %.2f m, want low roofs up to about %.2f", top, want)
+	}
+}
+
+// In a style with mountain farms a big pitched building out of town is a
+// farm: walls farmWallM, a shallow gable (farmPitchDeg); the Dutch style
+// keeps its walls (owner, 2026-10-18: the Ferme Auberge Breitzhousen).
+func TestMountainFarmIsLowUnderABigRoof(t *testing.T) {
+	c := northCourse(t)
+	tr := testTerrain(c, Options{Elevation: func(lat, lon float64) (float64, bool) { return 10, true }})
+	s := &surface{t: tr, lists: map[[2]int]chunkLists{}}
+	farm := scenery.Footprint{ID: 4, Kind: scenery.KindHouse, WallM: 6, RoofM: 3,
+		Outline: [][2]float64{{-60, 400}, {-20, 400}, {-20, 412}, {-60, 412}}}
+	height := func(st *style) (eaveAt, top float64) {
+		var p gltf.Primitive
+		buildingMesh(&p, s, st, farm, nil, nil)
+		top = math.Inf(-1)
+		for k := 1; k < len(p.Positions); k += 3 {
+			top = math.Max(top, float64(p.Positions[k]))
+		}
+		// The wall's top along the south wall's middle.
+		eaveAt = math.Inf(-1)
+		for k := 0; k < len(p.Positions); k += 3 {
+			if n := -float64(p.Positions[k+2]); math.Abs(n-400) < 0.01 {
+				eaveAt = math.Max(eaveAt, float64(p.Positions[k+1]))
+			}
+		}
+		return
+	}
+	ridge := 10 + farmWallM + 6*math.Tan(farmPitchDeg*math.Pi/180)
+	if e, top := height(&styleFR); math.Abs(e-(10+farmWallM)) > 0.01 || math.Abs(top-ridge) > 0.01 {
+		t.Errorf("French farm: eave %.2f m, ridge %.2f m; want %.2f and %.2f", e, top, 10+farmWallM, ridge)
+	}
+	if e, top := height(&styleNL); math.Abs(e-16) > 0.01 || math.Abs(top-19) > 0.01 {
+		t.Errorf("Dutch: eave %.2f m, ridge %.2f m; want 16 and 19 as tagged", e, top)
+	}
+}
+
+// A mountain farm on a slope is dug into it: its road-side wall is its
+// height over the low ground, not a storey over the high (owner,
+// 2026-10-18: the Ferme Auberge Breitzhousen's road side stood 8.5 m).
+func TestMountainFarmOnASlopeIsDugIn(t *testing.T) {
+	c := northCourse(t)
+	kx := 111195 * math.Cos(52*math.Pi/180)
+	// The ground rises 6 m over the farm's 12 m depth (north).
+	tr := testTerrain(c, Options{Elevation: func(lat, lon float64) (float64, bool) {
+		n := (lat - 52) * 111195
+		_ = kx
+		return 10 + 0.5*math.Max(0, math.Min(12, n-400)), true
+	}})
+	s := &surface{t: tr, lists: map[[2]int]chunkLists{}}
+	farm := scenery.Footprint{ID: 5, Kind: scenery.KindHouse, WallM: farmWallM, RoofM: 4.7, FromLowest: true,
+		Outline: [][2]float64{{-60, 400}, {-20, 400}, {-20, 412}, {-60, 412}}}
+	var p gltf.Primitive
+	buildingMesh(&p, s, &styleFR, farm, nil, nil)
+	eave := math.Inf(-1)
+	for k := 0; k < len(p.Positions); k += 3 {
+		if n := -float64(p.Positions[k+2]); math.Abs(n-400) < 0.01 {
+			eave = math.Max(eave, float64(p.Positions[k+1]))
+		}
+	}
+	if low := s.at(-40, 400); eave-low > farmWallM+2.1 {
+		t.Errorf("the downhill wall is %.1f m high, want about the farm's walls (%.1f m) on a slope dug into", eave-low, farmWallM)
+	}
+}

@@ -2,6 +2,7 @@ package world
 
 import (
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -48,6 +49,29 @@ func buildingMesh(p *gltf.Primitive, s *surface, st *style, f scenery.Footprint,
 	if n < 3 {
 		return
 	}
+	// A big pitched building out in the country, in a style with mountain
+	// farms, is a farm: attached sections (house, byres, barns), each a
+	// rectangle with its own low gable roof, low walls dug into the slope
+	// (owner, 2026-10-18: the Ferme Auberge Breitzhousen at 20.72 km of
+	// the Hohneck loop, several farm buildings joined under shallow metal
+	// roofs, stood as a block of flats, then as one tall pillow of a
+	// roof).
+	if st.mountainFarms && f.RoofM > 0 && f.Kind == scenery.KindHouse && polyArea(pts) >= farmMinM2 && s != nil && s.t != nil && s.t.cover != nil {
+		var cx, cy float64
+		for _, q := range pts {
+			cx, cy = cx+q[0]/float64(n), cy+q[1]/float64(n)
+		}
+		if l, _ := s.t.cover.at(cx, cy); l != scenery.LandBuilt {
+			for _, r := range farmSections(pts) {
+				sec := f
+				sec.Outline, sec.Kind, sec.WallM = r, scenery.KindBarn, farmWallM
+				rr, _, _ := minRect(r)
+				sec.RoofM = math.Max(1.2, math.Min(4, rr.short/2*math.Tan(farmPitchDeg*math.Pi/180)))
+				farmSection(p, s, st, sec, toRoad, covered)
+			}
+			return
+		}
+	}
 	// A gabled house stands on the rectangle its roof is built on: walls
 	// and gables share their edges in one plane (owner, 2026-10-16: a seam
 	// showed between the floors and the gable where the outline left the
@@ -70,6 +94,7 @@ func buildingMesh(p *gltf.Primitive, s *surface, st *style, f scenery.Footprint,
 	if f.FromLowest {
 		eave = math.Max(lo+f.WallM, hi+2.2) // a storey at least on the uphill side
 	}
+
 	rng := splitmix(uint64(f.ID))
 	wall, roof := colours(st, f, rng)
 
@@ -328,9 +353,14 @@ const (
 )
 
 const (
-	gableSquare = 2.2  // a house no longer than this times its width may turn its gable to the view (owner, 2026-10-16: Swiss-type chalets of several flats turn their wide gable to the valley)
-	gableSlope  = 0.06 // on ground falling this steeply across it
-	gableReachM = 15.0 // measured this far either side of its middle
+	farmMinM2    = 250.0 // a pitched building this big out of town is a farm, in a style with mountain farms
+	farmWallM    = 3.5   // its walls
+	farmBuryM    = 1.5   // and its back this far into the slope at most
+	farmPitchDeg = 22.0  // its sections' roofs (shallow, metal)
+	farmSliceM   = 0.75  // its outline's sections: steps under this are smoothed over
+	gableSquare  = 2.2   // a house no longer than this times its width may turn its gable to the view (owner, 2026-10-16: Swiss-type chalets of several flats turn their wide gable to the valley)
+	gableSlope   = 0.06  // on ground falling this steeply across it
+	gableReachM  = 15.0  // measured this far either side of its middle
 )
 
 // shadeHouse is c a little lighter or darker, by the house's seed.
@@ -465,4 +495,109 @@ func splitmix(x uint64) uint64 {
 	x = (x ^ x>>30) * 0xbf58476d1ce4e5b9
 	x = (x ^ x>>27) * 0x94d049bb133111eb
 	return x ^ x>>31
+}
+
+// farmSection is one section of a farm: a gabled box whose walls are
+// farmWallM over the low ground, dug into the slope behind up to
+// farmBuryM (a "storey over the uphill side" made a farm's road side
+// 8.5 m on a 6 m slope).
+func farmSection(p *gltf.Primitive, s *surface, st *style, f scenery.Footprint, toRoad func(e, n float64) (float64, float64, bool), covered func(e, n float64) bool) {
+	lo, hi := math.Inf(1), math.Inf(-1)
+	for _, q := range f.Outline {
+		g := s.at(q[0], q[1])
+		lo, hi = math.Min(lo, g), math.Max(hi, g)
+	}
+	// Walls measured from the high ground (FromLowest off): set them so
+	// the eave is max(lo + farmWallM, hi - farmBuryM).
+	eave := math.Max(lo+farmWallM, hi-farmBuryM)
+	f.FromLowest = false
+	f.WallM = eave - hi
+	buildingMesh(p, s, st, f, toRoad, covered)
+}
+
+// farmSections splits a farm's outline into rectangles along its main
+// axis: the outline cut into strips at each corner, each strip's spans
+// across, strips with the same spans (within farmSliceM) joined.
+func farmSections(pts [][2]float64) [][][2]float64 {
+	_, ax, ay := minRect(pts)
+	bx, by := -ay, ax
+	uv := make([][2]float64, len(pts))
+	for i, q := range pts {
+		uv[i] = [2]float64{q[0]*ax + q[1]*ay, q[0]*bx + q[1]*by}
+	}
+	var cuts []float64
+	for _, q := range uv {
+		cuts = append(cuts, q[0])
+	}
+	sort.Float64s(cuts)
+	var us []float64
+	for _, u := range cuts {
+		if len(us) == 0 || u-us[len(us)-1] > farmSliceM {
+			us = append(us, u)
+		} else {
+			us[len(us)-1] = math.Max(us[len(us)-1], u)
+		}
+	}
+	type span struct{ v0, v1 float64 }
+	spansAt := func(u float64) []span {
+		var vs []float64
+		for i, a := range uv {
+			b := uv[(i+1)%len(uv)]
+			if (a[0] <= u) != (b[0] <= u) {
+				f := (u - a[0]) / (b[0] - a[0])
+				vs = append(vs, a[1]+f*(b[1]-a[1]))
+			}
+		}
+		sort.Float64s(vs)
+		var out []span
+		for k := 0; k+1 < len(vs); k += 2 {
+			out = append(out, span{vs[k], vs[k+1]})
+		}
+		return out
+	}
+	type open struct {
+		u0 float64
+		sp span
+	}
+	var opens []open
+	var rects [][4]float64
+	flush := func(o open, u1 float64) {
+		if u1-o.u0 >= 2 && o.sp.v1-o.sp.v0 >= 2 {
+			rects = append(rects, [4]float64{o.u0, u1, o.sp.v0, o.sp.v1})
+		}
+	}
+	for k := 0; k+1 < len(us); k++ {
+		u0, u1 := us[k], us[k+1]
+		spans := spansAt((u0 + u1) / 2)
+		var next []open
+		used := make([]bool, len(opens))
+		for _, sp := range spans {
+			joined := false
+			for j, o := range opens {
+				if !used[j] && math.Abs(o.sp.v0-sp.v0) < farmSliceM && math.Abs(o.sp.v1-sp.v1) < farmSliceM {
+					used[j], joined = true, true
+					next = append(next, o)
+					break
+				}
+			}
+			if !joined {
+				next = append(next, open{u0, sp})
+			}
+		}
+		for j, o := range opens {
+			if !used[j] {
+				flush(o, u0)
+			}
+		}
+		opens = next
+	}
+	for _, o := range opens {
+		flush(o, us[len(us)-1])
+	}
+	out := make([][][2]float64, 0, len(rects))
+	for _, r := range rects {
+		c := func(u, v float64) [2]float64 { return [2]float64{u*ax + v*bx, u*ay + v*by} }
+		out = append(out, [][2]float64{c(r[0], r[2]), c(r[1], r[2]), c(r[1], r[3]), c(r[0], r[3])})
+	}
+	return out
 }

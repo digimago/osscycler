@@ -183,6 +183,43 @@ func walkMesh(p patch, w walkChain, walk, kerb *gltf.Primitive, corner bool) {
 	}
 	// At the ends, a road's end: the junction's height is the road's there.
 	y := func(i int) float64 { return p.height(k[i][0], k[i][1]) }
+	if p.rb != nil && len(p.cuts) > 0 {
+		// A roundabout's sidewalk lies on its plane, which stands off a
+		// climbing approach's height at the ring's edge: it eases from the
+		// road it joins at each end over rbWalkEaseM along its kerb
+		// (owner, 2026-10-18, La Bresse at 0.51 km: the roundabout's
+		// sidewalk began 12 cm over the road's, a block lying on it).
+		off := func(q [2]float64) float64 {
+			best, bd := 0.0, math.Inf(1)
+			for _, c := range p.cuts {
+				de, dn := c.p1[0]-c.p0[0], c.p1[1]-c.p0[1]
+				f := 0.0
+				if l2 := de*de + dn*dn; l2 > 0 {
+					f = math.Max(0, math.Min(1, ((q[0]-c.p0[0])*de+(q[1]-c.p0[1])*dn)/l2))
+				}
+				ce, cn := c.p0[0]+f*de, c.p0[1]+f*dn
+				if d := math.Hypot(q[0]-ce, q[1]-cn); d < bd {
+					best, bd = c.ele-p.rb.height(ce, cn), d
+				}
+			}
+			if bd > rbWalkEaseM {
+				return 0
+			}
+			return best
+		}
+		d0, d1 := off(k[0]), off(k[len(k)-1])
+		plain := y
+		y = func(i int) float64 {
+			h := plain(i)
+			if a := at[i]; a < rbWalkEaseM {
+				h += d0 * (1 - a/rbWalkEaseM)
+			}
+			if a := at[len(k)-1] - at[i]; a < rbWalkEaseM {
+				h += d1 * (1 - a/rbWalkEaseM)
+			}
+			return h
+		}
+	}
 	vert := func(q *gltf.Primitive, x, h, z float64, n [3]float64) uint32 {
 		q.Positions = append(q.Positions, float32(x), float32(h), float32(-z))
 		q.Normals = append(q.Normals, float32(n[0]), float32(n[1]), float32(n[2]))
@@ -328,6 +365,10 @@ func markPatches(fine []sample, ps []patch) {
 // outline covers its kerb line, ramped over the sample either side; at
 // any other side street it stops at the junction's edge, and the
 // junction's own sidewalk takes it round the corner (walkMesh).
+// rbWalkEaseM: a roundabout's sidewalk eases from the road's height at
+// each end over this length along its kerb.
+const rbWalkEaseM = 6.0
+
 // dropRampM: a dropped kerb ramps down to a service road's mouth over
 // this length either side; runOnM: it runs on this far past the
 // junction's span while the other road still covers the sidewalk.

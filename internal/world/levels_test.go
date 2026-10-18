@@ -482,3 +482,39 @@ func TestJoinAlongsideStopsAtALevelApart(t *testing.T) {
 		t.Errorf("the main road reaches %.2f m over towards the road a level above it", wideApart)
 	}
 }
+
+// A roundabout's sidewalk meets the road's it joins at the road's height,
+// though the roundabout's plane stands higher there (owner, 2026-10-18,
+// La Bresse at 0.51 km: the roundabout's sidewalk began 12 cm over the
+// road's, a block lying on it), and lies on the plane further round.
+func TestRoundaboutWalkMeetsTheRoad(t *testing.T) {
+	// A road ending at the cut x = 0..6 along n = 0 at 10 m; the plane
+	// 10.12 m everywhere. The kerb runs from beside the cut round to 20 m.
+	p := patch{
+		rb:   &roundabout{plane: [3]float64{10.12, 0, 0}},
+		cuts: []patchCut{{p0: [2]float64{0, 0}, p1: [2]float64{6, 0}, ele: 10}},
+	}
+	var kerb [][2]float64
+	for x := 6.2; x <= 26; x += 2 {
+		kerb = append(kerb, [2]float64{x, 0})
+	}
+	w := walkChain{kerb: kerb, fromA: true, fromB: true}
+	var walk, kb gltf.Primitive
+	walkMesh(p, w, &walk, &kb, false)
+	first, far := math.Inf(1), 0.0
+	for i := 0; i+2 < len(walk.Positions); i += 3 {
+		x, y := float64(walk.Positions[i]), float64(walk.Positions[i+1])
+		if x < 6.5 {
+			first = math.Min(first, y)
+		}
+		if x > 15 && x < 17 {
+			far = y
+		}
+	}
+	if math.Abs(first-(10+kerbM)) > 0.02 {
+		t.Errorf("the sidewalk begins at %.3f m beside the road's end, want the road's sidewalk, %.3f", first, 10+kerbM)
+	}
+	if math.Abs(far-(10.12+kerbM)) > 0.02 {
+		t.Errorf("the sidewalk 10 m round is at %.3f m, want on the plane, %.3f", far, 10.12+kerbM)
+	}
+}

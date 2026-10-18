@@ -321,6 +321,8 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 		}
 	}
 	markDecks(lines, c.Distance, styleFor(o.Region).junctionLevelM > 0)
+	// After markDecks: a deck stays open beneath.
+	deepSkirts(lines)
 	hideOwnWaysInLots(lines, patches, o.Scenery) // before t.fine: the roadside reads those samples
 	for k, l := range lines {
 		for i := range l.samples {

@@ -252,7 +252,10 @@ type sample struct {
 	// lotEnd: the road stops here at a car park's edge (trimLinesInLots):
 	// its end gets a face down past the car park's surface, which lies a
 	// little under it.
-	lotEnd     bool
+	lotEnd bool
+	// skirt: how far the edge on that side goes down where a lower road
+	// lies just beyond it (0: skirtM; deepSkirts).
+	skirt      [2]float64
 	onPatch    bool // within a junction's span: the junction draws the surface
 	underPatch bool // a road not of the junction, lying on its patch
 	aloft      bool // on a bridge or viaduct, off the ground (cut terrain)
@@ -393,6 +396,8 @@ func Build(c *course.Course, o Options) (*World, error) {
 		t.markAloft(lines)
 	}
 	markDecks(lines, c.Distance, styleFor(o.Region).junctionLevelM > 0)
+	// After markDecks: a deck stays open beneath.
+	deepSkirts(lines)
 	hideOwnWaysInLots(lines, patches, o.Scenery) // before t.fine: the roadside reads those samples
 	for k, l := range lines {
 		for i := range l.samples {

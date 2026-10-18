@@ -2533,3 +2533,82 @@ const joinEaseSamples = 5
 // joinTaperM: where roads alongside part, the reach over to the other
 // narrows this much a sample (2 m).
 const joinTaperM = 0.3
+
+// deepSkirtMaxM: an edge's skirt goes down at most this far to a lower
+// road beside it (higher is a retaining wall's); never under a deck.
+const deepSkirtMaxM = 3.0
+
+// deepSkirts sets each road edge's skirt down past a lower road lying
+// just beyond it (within 1 m of the edge): two roads a level apart, side
+// by side, met edge to edge with only the higher one's 0.3 m skirt
+// between them, and one looked into the gap under it (owner,
+// 2026-10-18, 19.05 km of the Hohneck loop: the Chemin de Schmargult
+// dropping away beside the Route des Crêtes, a slit under the shoulder).
+func deepSkirts(ls []*roadLine) {
+	type ref struct{ l, i int }
+	const cellM = 10.0
+	grid := map[[2]int][]ref{}
+	key := func(e, n float64) [2]int { return [2]int{int(math.Floor(e / cellM)), int(math.Floor(n / cellM))} }
+	for li, l := range ls {
+		for i := range l.samples {
+			grid[key(l.samples[i].e, l.samples[i].n)] = append(grid[key(l.samples[i].e, l.samples[i].n)], ref{li, i})
+		}
+	}
+	// lowest is the lowest road surface (other than line self) at e, n,
+	// and whether there is one.
+	lowest := func(self int, e, n float64) (float64, bool) {
+		k := key(e, n)
+		best, found := math.Inf(1), false
+		for gx := k[0] - 1; gx <= k[0]+1; gx++ {
+			for gy := k[1] - 1; gy <= k[1]+1; gy++ {
+				for _, r := range grid[[2]int{gx, gy}] {
+					ss := ls[r.l].samples
+					if r.l == self || r.i+1 >= len(ss) || ss[r.i].again {
+						continue
+					}
+					a, b := ss[r.i], ss[r.i+1]
+					de, dn := b.e-a.e, b.n-a.n
+					l2 := de*de + dn*dn
+					if l2 == 0 {
+						continue
+					}
+					f := math.Max(0, math.Min(1, ((e-a.e)*de+(n-a.n)*dn)/l2))
+					if math.Hypot(e-a.e-f*de, n-a.n-f*dn) <= a.hw+f*(b.hw-a.hw)+math.Max(a.wide[0], a.wide[1]) {
+						if h := a.ele + f*(b.ele-a.ele); h < best {
+							best, found = h, true
+						}
+					}
+				}
+			}
+		}
+		return best, found
+	}
+	for li, l := range ls {
+		ss := l.samples
+		for i := range ss {
+			s := &ss[i]
+			if s.aloft || s.again {
+				continue // a deck stays open beneath (the N348 over the cycle tunnel, 26.78 km of the Posbank Loop)
+			}
+			a, b := ss[max(0, i-1)], ss[min(len(ss)-1, i+1)]
+			de, dn := b.e-a.e, b.n-a.n
+			d := math.Hypot(de, dn)
+			if d == 0 {
+				continue
+			}
+			rx, rn := dn/d, -de/d
+			for side, sign := range []float64{-1, 1} {
+				if s.walk[side] || s.butt[side] {
+					continue
+				}
+				edge := s.hw + s.wide[side]
+				for _, off := range []float64{0.3, 1} {
+					e, n := s.e+sign*rx*(edge+off), s.n+sign*rn*(edge+off)
+					if h, ok := lowest(li, e, n); ok && s.ele-h > skirtM-0.1 {
+						s.skirt[side] = math.Max(s.skirt[side], math.Min(deepSkirtMaxM, s.ele-h+0.15))
+					}
+				}
+			}
+		}
+	}
+}

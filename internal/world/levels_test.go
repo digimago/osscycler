@@ -558,3 +558,27 @@ func TestFilletDoesNotDoubleBack(t *testing.T) {
 		}
 	}
 }
+
+// Two roads side by side, the second dropping away beside the first: the
+// first's edge face reaches down past the lower road's surface, so no
+// slit opens under it (owner, 2026-10-18, 19.05 km of the Hohneck loop).
+func TestEdgeSkirtReachesTheLowerRoad(t *testing.T) {
+	high, low := &roadLine{}, &roadLine{}
+	for i := 0; i <= 20; i++ {
+		d := float64(i) * fineStep
+		high.samples = append(high.samples, sample{d: d, e: 0, n: d, ele: 10, hw: 3})
+		low.samples = append(low.samples, sample{d: d, e: 5.2, n: d, ele: 10 - 0.04*d, hw: 2}) // edges 0.2 m apart
+	}
+	deepSkirts([]*roadLine{high, low})
+	s := high.samples[15] // 30 m on: the low road 1.2 m lower
+	drop := s.ele - low.samples[15].ele
+	if s.skirt[1] < drop {
+		t.Errorf("the high road's right skirt reaches %.2f m down, the lower road %.2f m below", s.skirt[1], drop)
+	}
+	if high.samples[0].skirt[1] > skirtM {
+		t.Errorf("at the start, both level, the skirt is %.2f m, want the usual", high.samples[0].skirt[1])
+	}
+	if s.skirt[0] > 0 {
+		t.Errorf("the left skirt, nothing beside it, is %.2f m deep, want the usual", s.skirt[0])
+	}
+}

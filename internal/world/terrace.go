@@ -353,6 +353,22 @@ func terracePrims(lines []*roadLine, m roadMaterials, chunkM float64) map[[2]int
 					tquad(&kerb, k0, k1, s1, s0, wallNormal(k0, k1, s0, 1))
 					continue
 				}
+				// The asphalt behind the wall ends in a face down past the
+				// lower road (owner, 2026-10-18, 19.05 km of the Hohneck
+				// loop: it stood over the mouth's surface with an open edge,
+				// a slit of green under it).
+				if a.terraceBehind[si] > 0 {
+					f := band + terraceCopeM
+					e := math.Max(f+terraceAsphaltM, a.terraceBehind[si]+terraceLapM)
+					y := a.terraceBack[si] - 0.01
+					yn := math.Min(y, top[k-r.from]-terraceParapetM)
+					lo := math.Min(base, a.ele) - walkFootM
+					a0, b0 := pt(k, f, lo), pt(k, e, lo)
+					a1, b1 := pt(k, f, yn), pt(k, e, y)
+					ne := wallNormal(a0, b0, a1, 1)
+					tquad(&paved, a0, b0, b1, a1, ne)
+					tquad(&paved, b0, a0, a1, b1, [3]float64{-ne[0], -ne[1], -ne[2]})
+				}
 				if a.terraceWalk[si] > 0 {
 					a0, b0 := pt(k, inner, base-walkFootM), pt(k, band+terraceCopeM, base-walkFootM)
 					a1, b1 := pt(k, inner, base), pt(k, band+terraceCopeM, base)

@@ -582,3 +582,57 @@ func TestEdgeSkirtReachesTheLowerRoad(t *testing.T) {
 		t.Errorf("the left skirt, nothing beside it, is %.2f m deep, want the usual", s.skirt[0])
 	}
 }
+
+// The asphalt behind a terrace's wall ends at a mouth in a face down past
+// the lower road (owner, 2026-10-18, 19.05 km of the Hohneck loop: it
+// stood over the mouth's surface with an open edge, a slit of green under
+// it).
+func TestTerraceFillerEndIsClosed(t *testing.T) {
+	line := func(e0, n0, n1, ele float64, walk bool) *roadLine {
+		l := &roadLine{}
+		for n := n0; n <= n1+1e-9; n += fineStep {
+			s := sample{d: n - n0, e: e0, n: n, ele: ele, hw: 3, edge: 3}
+			s.walk[1] = walk
+			l.samples = append(l.samples, s)
+		}
+		return l
+	}
+	band := 3 + walkM
+	road, lane := line(0, 0, 60, 10, true), line(band+1.5+1.5, 10, 34, 11.2, false)
+	cross := &roadLine{}
+	for e := 3.0; e <= 12; e += fineStep {
+		cross.samples = append(cross.samples, sample{d: e - 3, e: e, n: 32, ele: 10, hw: 2, edge: 2})
+	}
+	markTerraces([]*roadLine{road, lane, cross}, nil)
+	end := -1
+	for k := range road.samples {
+		if road.samples[k].terraceMouth[1] {
+			road.samples[k].walk[1] = false
+		}
+		if road.samples[k].terrace[1] > 0 {
+			end = k
+		}
+	}
+	if end < 0 || !road.samples[end+1].terraceMouth[1] {
+		t.Fatal("no terrace ending at the crossing road's mouth")
+	}
+	far := band + terraceCopeM + terraceAsphaltM
+	m := roadMaterials{surface: [5]int{1, 1, 1, 1, 1}, walk: 2, kerb: 3}
+	closed := false
+	for _, pp := range terracePrims([]*roadLine{road, lane, cross}, m, 250) {
+		for _, p := range pp {
+			if p.Material != 1 {
+				continue
+			}
+			for v := 0; v+2 < len(p.Positions); v += 3 {
+				e, y, n := float64(p.Positions[v]), float64(p.Positions[v+1]), -float64(p.Positions[v+2])
+				if e >= far-0.05 && math.Abs(n-road.samples[end].n) < 0.05 && y < 10-0.1 {
+					closed = true
+				}
+			}
+		}
+	}
+	if !closed {
+		t.Error("the asphalt behind the wall ends over the mouth with an open edge: no face down past the lower road")
+	}
+}

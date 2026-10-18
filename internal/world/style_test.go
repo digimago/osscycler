@@ -446,8 +446,8 @@ func TestTreesKeepToTheCanopy(t *testing.T) {
 		var hs []float64
 		for _, p := range plants(tr, s, lm, tr.chunks(), nil, nil, nil, newRouteGrid(tr.coarse, 400)) {
 			sp := kindSpecies(p.kind)
-			if sp < 0 || !allSpecies[sp].fir {
-				continue
+			if sp < 0 || allSpecies[sp].pollard {
+				continue // every tree, broadleaved too (owner, 2026-10-18: the beeches too tall as well)
 			}
 			hs = append(hs, allSpecies[sp].h*float64(p.s)) // young trees too
 		}
@@ -457,10 +457,12 @@ func TestTreesKeepToTheCanopy(t *testing.T) {
 		}
 		return hs[len(hs)-1], hs[len(hs)/2], len(hs)
 	}
-	if tall, med, n := heights(1250); n < 100 || tall > 21 || med < 8 || med > 18 {
-		t.Errorf("conifers on the crest: %d, tallest %.0f m, median %.0f m; want many, at most 21 m, median 8-18 m", n, tall, med)
+	// The canopy a ceiling (owner, 2026-10-18: the tallest had stood 1.44
+	// times it, 19 m spruce in a 14 m crest canopy).
+	if tall, med, n := heights(1250); n < 100 || tall > 14.01 || med < 6 || med > 14 {
+		t.Errorf("trees on the crest: %d, tallest %.1f m, median %.1f m; want many, at most the 14 m canopy, median 6-14 m", n, tall, med)
 	}
-	if tall, med, n := heights(500); n < 100 || tall < 36 || med < 18 {
-		t.Errorf("conifers in the valley: %d, tallest %.0f m, median %.0f m; want many, over 36 m, median over 18 m", n, tall, med)
+	if tall, med, n := heights(500); n < 100 || tall > 30.01 || tall < 26 || med < 15 {
+		t.Errorf("trees in the valley: %d, tallest %.1f m, median %.1f m; want many, up to the 30 m canopy, median over 15 m", n, tall, med)
 	}
 }

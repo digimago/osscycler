@@ -190,10 +190,22 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 	// the sea the lower of it and the sea's counts, not both (owner,
 	// 2026-10-13: the two multiplied made the dunes' trees a quarter of
 	// their height).
+	// canopyCap keeps a tree of species sp at e, n under its altitude
+	// band's canopy: a ceiling, not an average (the size's spread and the
+	// stand's age had put the tallest at 1.44 times it; owner, 2026-10-18,
+	// 19.0 km of the Hohneck loop: spruce at 19 m and beech at 18 m in a
+	// 14 m crest canopy).
+	canopyCap := func(sp int, e, n, size float64) float64 {
+		if b := sty.band(s.stand(e, n)); b != nil && b.canopyM > 0 {
+			return math.Min(size, b.canopyM/allSpecies[sp].h)
+		}
+		return size
+	}
 	add := func(kind int, e, n float64, h uint64, scale, poor float64) {
 		size := plantSize(h, scale)
-		if kindSpecies(kind) >= 0 {
+		if sp := kindSpecies(kind); sp >= 0 {
 			size *= math.Min(poor, seaAt(e, n))
+			size = canopyCap(sp, e, n, size)
 		} else {
 			size *= poor
 		}
@@ -211,7 +223,7 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 		if k < 0 || kind != treeKind(sp, form, false) {
 			return kind // never pruned, or drawn far off
 		}
-		size := plantSize(h, scale)
+		size := canopyCap(sp, e, n, plantSize(h, scale))
 		i := roadNear(e, n, allSpecies[sp].crownReach()*size, -1)
 		if i < 0 || !belowClearance(allSpecies[sp], form, size, s.stand(e, n), t.fine[i].ele) {
 			return kind

@@ -45,6 +45,8 @@ const (
 	runGapSamples       = 3    // gaps this short between runs closed
 	railGapM            = 30.0 // a barrier runs on over a gap this long where the fall eases
 	railLeastM          = 16.0 // and a barrier shorter than this isn't one
+	wallGapM            = 20.0 // a retaining wall runs on over a gap this long (wallRuns)
+	wallLeastM          = 16.0 // and one shorter than this isn't one
 
 	riseTown        = 1.0  // in town (or behind a sidewalk): a low wall where the land rises this much within riseNearM
 	townWallM       = 1.0  // and at most this high
@@ -230,12 +232,14 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 		// rock where it rises.
 		type sideInfo struct {
 			rail, wall, rock, town []bool
-			h                      []float64 // a wall's height
+			blocked                []bool    // no wall can stand here (a mouth, another road)
+			h, rise                []float64 // a wall's height; the land's rise beside the road
 		}
 		var sides [2]sideInfo
 		for si, sign := range []float64{-1, 1} {
 			s := &sides[si]
 			s.rail, s.wall, s.rock, s.town, s.h = make([]bool, n), make([]bool, n), make([]bool, n), make([]bool, n), make([]float64, n)
+			s.blocked, s.rise = make([]bool, n), make([]float64, n)
 			for k := range n {
 				a := t.fine[ln.from+k]
 				if !near[k] || a.open[si] {
@@ -289,6 +293,10 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 				if ok1 && ok2 && zc-z2 > fallDrop && zc-z1 > fallDrop*0.4 && !a.walk[si] && !paved(e1, n1) && !paved(e2, n2) {
 					s.rail[k] = true
 				}
+				if ok3 {
+					s.rise[k] = z3 - zc
+				}
+				s.blocked[k] = !wallClear
 				switch {
 				case !wallClear:
 				case town && ok3 && z3-zc > riseWall:
@@ -321,7 +329,7 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 					return at(k, sign*(a.hw+a.wide[si]+railOffM))
 				})
 			}
-			for _, r := range runs(s.wall) {
+			for _, r := range wallRuns(s.wall, s.town, s.blocked, near, dist, s.h, s.rise, s.rock) {
 				rock, town := 0, 0
 				for k := r.from; k <= r.to; k++ {
 					if s.rock[k] {
@@ -573,6 +581,42 @@ func railRuns(on, near []bool, dist []float64) []sideRun {
 		if dist[r.to]-dist[r.from] >= railLeastM {
 			out = append(out, r)
 		}
+	}
+	return out
+}
+
+// wallRuns are a side's retaining walls (owner, 2026-10-18, the Route des
+// Américains at 7.1-7.4 and 11.15 km: walls in short pieces, each eased
+// down at both ends, stood as stone wedges in a row): out in the hills a
+// wall runs on over a gap up to wallGapM where nothing blocks it (a mouth,
+// another road), its height carried across between its ends, no lower
+// than the land's rise there; a wall shorter than wallLeastM isn't one.
+// In town (garden walls, square-ended) the runs stay as found.
+func wallRuns(on, town, blocked, near []bool, dist, h, rise []float64, rock []bool) []sideRun {
+	closed := append([]bool(nil), on...)
+	for i := 0; i < len(on); i++ {
+		if !on[i] || town[i] {
+			continue
+		}
+		j := i + 1
+		for j < len(on) && !on[j] && !blocked[j] && near[j] && dist[j]-dist[i] <= wallGapM {
+			j++
+		}
+		if j < len(on) && on[j] && j > i+1 && !town[j] {
+			for k := i + 1; k < j; k++ {
+				f := (dist[k] - dist[i]) / (dist[j] - dist[i])
+				closed[k] = true
+				h[k] = math.Max(h[i]+f*(h[j]-h[i]), math.Min(3.6, math.Max(0.6, rise[k]+0.4)))
+				rock[k] = rock[i] && rock[j]
+			}
+		}
+	}
+	var out []sideRun
+	for _, r := range runs(closed) {
+		if !town[r.from] && dist[r.to]-dist[r.from] < wallLeastM {
+			continue
+		}
+		out = append(out, r)
 	}
 	return out
 }

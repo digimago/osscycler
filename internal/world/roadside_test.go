@@ -220,3 +220,51 @@ func TestWallsFaceTheRoad(t *testing.T) {
 		}
 	}
 }
+
+// Out in the hills a retaining wall runs on over a short gap in the bank
+// and a stub of wall is left out (owner, 2026-10-18, the Route des
+// Américains: walls in short pieces stood as stone wedges in a row).
+func TestWallsRunOnOverShortGaps(t *testing.T) {
+	c := northCourse(t)
+	kx := 111195 * math.Cos(52*math.Pi/180)
+	// West of the road the land rises 1 in 1 from 3 m out between 200 and
+	// 300 m north and 315 and 420 m (a 15 m dip between), and for 10 m at
+	// 700 m.
+	elev := func(lat, lon float64) (float64, bool) {
+		x, y := (lon-5)*kx, (lat-52)*111195
+		bank := y > 200 && y < 300 || y > 315 && y < 420 || y > 700 && y < 710
+		if x < -3 && bank {
+			return 10 + (-x - 3), true
+		}
+		return 10, true
+	}
+	tr := testTerrain(c, Options{Region: RegionFR, Elevation: elev})
+	w := &World{doc: gltf.New("test")}
+	if err := w.addRoadside(tr, nil, nil, nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	walled := map[int]bool{} // metres north with wall
+	for _, p := range w.prims {
+		if name := w.doc.MaterialName(p.Material); name != "stone wall" && name != "rock" {
+			continue
+		}
+		for v := 0; v+2 < len(p.Positions); v += 3 {
+			walled[int(-p.Positions[v+2])] = true
+		}
+	}
+	gap := 0
+	for n := 300; n <= 315; n++ {
+		if walled[n] {
+			gap++
+		}
+	}
+	if gap < 7 { // vertices every 2 m: 8 at most
+		t.Errorf("the wall has vertices at %d of the 16 metres of the dip at 300-315 m, want it to run on", gap)
+	}
+	for n := 690; n <= 720; n++ {
+		if walled[n] {
+			t.Errorf("a stub of wall at %d m: a 10 m bank gets none", n)
+			break
+		}
+	}
+}

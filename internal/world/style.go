@@ -49,6 +49,7 @@ type style struct {
 	rbIslandMinR, rbApronM float64
 	markings               bool    // white centre and edge lines
 	snowPoleAboveM         float64 // snow poles along roads above this height (0: none)
+	farM                   float64 // distant terrain out to this from the route (far.go; 0: none)
 	cycleLane              uint32  // a cycle lane's surface
 	roundaboutCentre       uint32  // a flat roundabout's paved centre
 	// bands: by height above the datum, the trees that grow there
@@ -233,6 +234,7 @@ var styleFR = style{
 	rbApronM:         1.5,
 	markings:         true,
 	snowPoleAboveM:   800,      // the jalons along the D430 and the passes
+	farM:             5000,     // the mountains' views (far.go)
 	cycleLane:        0x4c4d50, // bandes cyclables: asphalt, marked by a line
 	roundaboutCentre: 0x9c6052, // reddish setts, as the aprons round La Bresse's roundabouts (owner's shots)
 	// Heights by altitude (owner, 2026-10-18, the Route des Crêtes at
@@ -311,3 +313,7 @@ func (o *Options) regionScenery() {
 		o.Scenery = &sc
 	}
 }
+
+// FarM is how far the distant terrain reaches in region's style (0: none):
+// the world's builder loads a coarse ground model that far for it.
+func FarM(region string) float64 { return styleFor(region).farM }

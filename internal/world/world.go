@@ -73,6 +73,11 @@ type Options struct {
 	// Region is the country's style (RegionNL, RegionFR; style.go): what
 	// grows, what houses, gardens and roads look like. "" is the Dutch.
 	Region string
+	// FarElevation is a coarse ground model (farCellM) out to FarM from
+	// the route, in the same datum as Elevation, for the distant terrain
+	// (far.go); nil or FarM 0: none.
+	FarElevation func(lat, lon float64) (float64, bool)
+	FarM         float64
 	// SeaDistance is how far a point is from the sea, in metres (+Inf far
 	// inland): trees grow lower towards it. Nil: no coast known.
 	SeaDistance func(lat, lon float64) float64
@@ -137,6 +142,9 @@ type Manifest struct {
 		LandCover string `json:"land_cover"`
 		// WaterChunks counts the chunks with a water node.
 		WaterChunks int `json:"water_chunks"`
+		// FarM: distant terrain out to this from the route (nodes "far",
+		// far.go), for the renderer's haze and view distance; 0: none.
+		FarM float64 `json:"far_m,omitempty"`
 	} `json:"terrain"`
 	Road struct {
 		// WidthM is the road's width where the map doesn't have it.

@@ -444,6 +444,14 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 			return nil, err
 		}
 	}
+	if o.FarElevation != nil && o.FarM > 0 {
+		farMat := w.doc.AddMaterial(gltf.Material{Name: "far land", Color: [4]float32{1, 1, 1, 1}, Roughness: 1})
+		if cells, err := w.addFarTerrain(&t, keys, farMat); err != nil {
+			return nil, err
+		} else if cells > 0 {
+			w.Manifest.Terrain.FarM = o.FarM
+		}
+	}
 	for _, k := range chunkOrder(sheets) {
 		waterChunks++
 		if err := w.add(fmt.Sprintf("water exact %d %d", k[0], k[1]),

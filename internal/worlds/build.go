@@ -24,12 +24,12 @@ import (
 
 // BuilderVersion goes up when a change to the builder should rebuild the
 // worlds riders have (a fix they'd ride into, not every commit).
-const BuilderVersion = 53
+const BuilderVersion = 54
 
 // GraphVersion is BuilderVersion for the graph builder (world.EngineGraph),
 // which goes its own way: it goes up when that builder changes what it
 // builds.
-const GraphVersion = 61
+const GraphVersion = 62
 
 // Builder builds worlds.
 type Builder struct {
@@ -193,6 +193,29 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 				o.TerrainSource = fmt.Sprintf("%s, %g m", g.source, cell)
 				o.Attribution = append(o.Attribution, g.attribution)
 				o.Region = g.region
+			}
+		}
+		// The distant terrain's coarse ground model, where the region's
+		// style has one (mountains): the same source at 50 m, out to its
+		// reach. Missing it is no reason to stop; the world just ends at
+		// its corridor.
+		if far := world.FarM(o.Region); err == nil && far > 0 {
+			fsrc := src
+			fsrc.CellM, fsrc.Progress = 50, nil
+			for _, g := range grounds {
+				if g.region != o.Region || b.Ground != "auto" && b.Ground != g.name {
+					continue
+				}
+				fm, ferr := g.load(ctx, fsrc, pts, far+fsrc.CellM)
+				switch {
+				case ferr == nil:
+					o.FarElevation, o.FarM = fm.Elevation, far
+				case errors.Is(ferr, dem.ErrNotCached) && b.Complete:
+					return Result{}, fmt.Errorf("%w: distant ground model: %v", ErrIncomplete, ferr)
+				default:
+					log.Warn("no distant terrain", "course", c.ID, "err", ferr)
+				}
+				break
 			}
 		}
 		switch {

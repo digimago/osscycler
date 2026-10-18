@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"sort"
 	"testing"
 
 	"github.com/digimago/osscycler/internal/course"
@@ -157,12 +158,15 @@ func TestFrenchTreesFollowTheHeight(t *testing.T) {
 	}
 	high, meadow, tallest := species(1300)
 	for name, n := range high {
-		if name != "mountain beech" && name != "spruce" && name != "rowan" {
+		// Beech kept to the crest's canopy, wind-shorn beech, rowan, the
+		// odd spruce (owner, 2026-10-18: the woods along the Route des
+		// Crêtes are a 12-15 m beech canopy).
+		if name != "beech" && name != "mountain beech" && name != "spruce" && name != "rowan" {
 			t.Errorf("a wood at 1300 m has %d %s", n, name)
 		}
 	}
-	if high["mountain beech"] == 0 {
-		t.Errorf("a wood at 1300 m: %v, want mountain beech", high)
+	if high["mountain beech"] == 0 || high["beech"] == 0 {
+		t.Errorf("a wood at 1300 m: %v, want beech and mountain beech", high)
 	}
 	if len(meadow) == 0 || tallest > 4.5 {
 		t.Errorf("the crest's pasture: %v, the tallest %.1f m; want a few bushy trees under 4.5 m", meadow, tallest)
@@ -353,5 +357,110 @@ func TestResampleRing(t *testing.T) {
 		if d := math.Hypot(q[0]-p[0], q[1]-p[1]); d > 2.01 {
 			t.Errorf("points %d and %d %.2f m apart", i, i+1, d)
 		}
+	}
+}
+
+// A mountain forest the map tags as one kind has stands of the other
+// (owner, 2026-10-18: the forêt domaniale on the Route des Américains is
+// tagged needleleaved and is patches of fir and spruce among beech from
+// above); a Dutch forest stays pure, as tagged.
+func TestPureForestHasStandsOfTheOtherKind(t *testing.T) {
+	c := northCourse(t)
+	kx := 111195 * math.Cos(52*math.Pi/180)
+	ring := func(x0, y0, x1, y1 float64) []scenery.LatLon {
+		p := func(x, y float64) scenery.LatLon { return scenery.LatLon{Lat: 52 + y/111195, Lon: 5 + x/kx} }
+		return []scenery.LatLon{p(x0, y0), p(x1, y0), p(x1, y1), p(x0, y1), p(x0, y0)}
+	}
+	lm := scenery.NewLandMap(c, &scenery.Data{Elements: []scenery.Element{
+		{Type: "way", ID: 1, Tags: map[string]string{"landuse": "forest", "leaf_type": "needleleaved"}, Geometry: ring(-300, -100, 300, 1100)},
+	}})
+	share := func(region string) (broad float64, patches int) {
+		tr := testTerrain(c, Options{Land: lm, Region: region})
+		s := &surface{t: tr, lists: map[[2]int]chunkLists{}}
+		var nb, nc int
+		cells := map[[2]int][2]int{} // broadleaved, coniferous grown trees per 50 m cell
+		for _, p := range plants(tr, s, lm, tr.chunks(), nil, nil, nil, newRouteGrid(tr.coarse, 400)) {
+			sp := kindSpecies(p.kind)
+			if sp < 0 || float64(p.s) < 0.6 { // grown trees only
+				continue
+			}
+			k := [2]int{int(math.Floor(float64(p.x) / 50)), int(math.Floor(float64(p.z) / 50))}
+			c := cells[k]
+			if allSpecies[sp].fir || allSpecies[sp].pine {
+				nc++
+				c[1]++
+			} else {
+				nb++
+				c[0]++
+			}
+			cells[k] = c
+		}
+		// Patches: cells that are nearly all one kind.
+		pure, all := 0, 0
+		for _, c := range cells {
+			if c[0]+c[1] < 6 {
+				continue
+			}
+			all++
+			if f := float64(c[0]) / float64(c[0]+c[1]); f < 0.15 || f > 0.85 {
+				pure++
+			}
+		}
+		return float64(nb) / float64(nb+nc), 100 * pure / all
+	}
+	if b, _ := share(RegionNL); b > 0.12 {
+		t.Errorf("Dutch needleleaved forest: %.0f %% broadleaved trees, want under 12 %%", 100*b)
+	}
+	if b, pure := share(RegionFR); b < 0.2 || b > 0.45 || pure < 60 {
+		// 0.7 of the stands conifer: 20-45 % of the trees broadleaved, in
+		// patches (most 50 m cells nearly all one kind, not a pepper mix).
+		t.Errorf("French needleleaved forest: %.0f %% broadleaved trees, %d %% of 50 m cells one kind; want 20-45 %% in patches (over 60 %%)", 100*b, pure)
+	}
+}
+
+// Trees are kept to their altitude band's canopy (owner, 2026-10-18: on
+// the Route des Crêtes at 1200 m spruce stood 25-37 m over beech that is
+// a 12-15 m canopy there with the odd spruce a few metres above it).
+func TestTreesKeepToTheCanopy(t *testing.T) {
+	c := northCourse(t)
+	kx := 111195 * math.Cos(52*math.Pi/180)
+	ring := func(x0, y0, x1, y1 float64) []scenery.LatLon {
+		p := func(x, y float64) scenery.LatLon { return scenery.LatLon{Lat: 52 + y/111195, Lon: 5 + x/kx} }
+		return []scenery.LatLon{p(x0, y0), p(x1, y0), p(x1, y1), p(x0, y1), p(x0, y0)}
+	}
+	lm := scenery.NewLandMap(c, &scenery.Data{Elements: []scenery.Element{
+		{Type: "way", ID: 1, Tags: map[string]string{"landuse": "forest", "leaf_type": "mixed"}, Geometry: ring(-300, -100, 300, 1100)},
+	}})
+	heights := func(z float64) (tallest, median float64, n int) {
+		// The test terrain's ground is the course's profile: a course at z.
+		var pts []course.Point
+		for i := range 101 {
+			pts = append(pts, course.Point{Lat: 52 + float64(i)*10/111195, Lon: 5, Ele: z})
+		}
+		c, err := course.New("north", "North", pts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tr := testTerrain(c, Options{Land: lm, Region: RegionFR})
+		s := &surface{t: tr, lists: map[[2]int]chunkLists{}}
+		var hs []float64
+		for _, p := range plants(tr, s, lm, tr.chunks(), nil, nil, nil, newRouteGrid(tr.coarse, 400)) {
+			sp := kindSpecies(p.kind)
+			if sp < 0 || !allSpecies[sp].fir {
+				continue
+			}
+			hs = append(hs, allSpecies[sp].h*float64(p.s)) // young trees too
+		}
+		sort.Float64s(hs)
+		if len(hs) == 0 {
+			return 0, 0, 0
+		}
+		return hs[len(hs)-1], hs[len(hs)/2], len(hs)
+	}
+	if tall, med, n := heights(1250); n < 100 || tall > 21 || med < 8 || med > 18 {
+		t.Errorf("conifers on the crest: %d, tallest %.0f m, median %.0f m; want many, at most 21 m, median 8-18 m", n, tall, med)
+	}
+	if tall, med, n := heights(500); n < 100 || tall < 36 || med < 18 {
+		t.Errorf("conifers in the valley: %d, tallest %.0f m, median %.0f m; want many, over 36 m, median over 18 m", n, tall, med)
 	}
 }

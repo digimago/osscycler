@@ -61,10 +61,20 @@ type style struct {
 type altitudeBand struct {
 	below   float64 // m above the datum: this band is below it (and above the band before)
 	species map[scenery.Land]speciesMix
-	size    float64 // the trees' height factor (wind and cold keep them low)
+	// canopyM: the tallest a grown tree gets in this band (wind, cold
+	// and a short season keep them low); a species taller by nature is
+	// kept to it, a lower one grows as it is. 0: no limit.
+	canopyM float64
 	// openSize: solitary trees on meadows and open land grow this much
-	// smaller again (0: as size); above the treeline they are bushes.
+	// smaller (0: as they are); above the treeline they are bushes.
 	openSize float64
+	// pureShare: a forest the map tags needleleaved or broadleaved is
+	// that kind in this share of its stands and the other kind in the
+	// rest (owner, 2026-10-18: a 454 ha forêt domaniale on the Route des
+	// Américains is tagged needleleaved, and from above it is patches of
+	// dark fir and spruce among light beech; the tag names the majority
+	// of a mountain forest, not a plantation). 0 or 1: pure, as tagged.
+	pureShare float64
 }
 
 // landColour is the terrain's colour for land l: the style's own where
@@ -225,9 +235,15 @@ var styleFR = style{
 	snowPoleAboveM:   800,      // the jalons along the D430 and the passes
 	cycleLane:        0x4c4d50, // bandes cyclables: asphalt, marked by a line
 	roundaboutCentre: 0x9c6052, // reddish setts, as the aprons round La Bresse's roundabouts (owner's shots)
+	// Heights by altitude (owner, 2026-10-18, the Route des Crêtes at
+	// 1200 m: spruce 25-37 m towered over the beech; in the owner's
+	// shot the woods there are a dense beech canopy of 12-15 m with the
+	// odd spruce a few metres above it, and the trees had been up to
+	// 44 m at 1100 m): the valley's spruce and fir 30 m, 26 m in the
+	// montane woods, 20 m under the crest, 14 m along it.
 	bands: []altitudeBand{
-		{below: 600, size: 1},
-		{below: 1050, size: 1, species: map[scenery.Land]speciesMix{
+		{below: 600, canopyM: 30, pureShare: 0.75},
+		{below: 1050, canopyM: 26, pureShare: 0.7, species: map[scenery.Land]speciesMix{
 			scenery.LandForest: {
 				broad:   map[string]float64{"beech": 70, "maple": 20, "ash": 5, "rowan": 5},
 				conifer: map[string]float64{"spruce": 60, "silver fir": 40},
@@ -235,7 +251,7 @@ var styleFR = style{
 			scenery.LandMeadow: {broad: map[string]float64{"maple": 40, "ash": 30, "beech": 20, "rowan": 10}},
 			scenery.LandNone:   {broad: map[string]float64{"maple": 40, "ash": 30, "beech": 20, "rowan": 10}},
 		}},
-		{below: 1150, size: 0.8, species: map[scenery.Land]speciesMix{
+		{below: 1150, canopyM: 20, pureShare: 0.7, species: map[scenery.Land]speciesMix{
 			scenery.LandForest: {
 				broad:   map[string]float64{"beech": 45, "mountain beech": 30, "rowan": 15, "maple": 10},
 				conifer: map[string]float64{"spruce": 75, "silver fir": 25},
@@ -243,12 +259,13 @@ var styleFR = style{
 			scenery.LandMeadow: {broad: map[string]float64{"mountain beech": 60, "rowan": 25, "maple": 15}},
 			scenery.LandNone:   {broad: map[string]float64{"mountain beech": 60, "rowan": 25, "maple": 15}},
 		}},
-		// The crest: wind-shorn beech (hêtraie d'altitude) at the woods'
-		// edge; on the open pasture a few beech and rowan, 1.5-3 m
-		// bushes.
-		{size: 0.85, openSize: 0.4, species: map[scenery.Land]speciesMix{
+		// The crest: woods of beech kept to the canopy, wind-shorn beech
+		// (hêtraie d'altitude) among them and at their edge, nearly pure
+		// as tagged (the spruce stands up here are plantations); on the
+		// open pasture a few beech and rowan, 1.5-3 m bushes.
+		{canopyM: 14, openSize: 0.4, pureShare: 0.9, species: map[scenery.Land]speciesMix{
 			scenery.LandForest: {
-				broad:   map[string]float64{"mountain beech": 85, "rowan": 15},
+				broad:   map[string]float64{"beech": 50, "mountain beech": 35, "rowan": 15},
 				conifer: map[string]float64{"spruce": 100},
 			},
 			scenery.LandMeadow: {broad: map[string]float64{"mountain beech": 70, "rowan": 30}},

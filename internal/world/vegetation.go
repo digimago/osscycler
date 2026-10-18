@@ -232,7 +232,17 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 				if !ok {
 					continue
 				}
+				// z: the ground's height, for a style with altitude bands.
+				z := 0.0
+				if len(sty.bands) > 0 {
+					z = s.stand(e, n)
+				}
 				if l == scenery.LandForest {
+					if b := sty.band(z); b != nil && b.pureShare > 0 && b.pureShare < 1 && (leaf == "needleleaved" || leaf == "broadleaved") && standLeaf(e, n) >= b.pureShare {
+						// A stand of the other kind in a forest tagged as
+						// one kind (altitudeBand.pureShare).
+						leaf = map[string]string{"needleleaved": "broadleaved", "broadleaved": "needleleaved"}[leaf]
+					}
 					switch leaf {
 					case "needleleaved":
 						rule[catConifer], rule[catBroad] = pureTreeM2, pureOtherM2
@@ -270,8 +280,11 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 					// firs, whose crown had counted as nothing, spread
 					// their lowest tier over a forest path at head
 					// height).
-					mix, _ := sty.speciesFor(scenery.LandForest, s.stand(e, n))
+					mix, _ := sty.speciesFor(scenery.LandForest, z)
 					sp, scale := youngTree(splitmix(h+13), leaf, mix, sty.pioneer)
+					if b := sty.band(z); b != nil && b.canopyM > 0 && sp >= 0 && allSpecies[sp].h > b.canopyM {
+						scale *= b.canopyM / allSpecies[sp].h // young relative to what grows here
+					}
 					if clearOf(e, n, math.Max(clearRoadM, allSpecies[sp].crownReach()*plantSize(splitmix(h+1), scale))) && !inArea(e, n) {
 						add(treeKind(sp, formOpen, dist > treeNearM), e, n, splitmix(h+1), scale, 1)
 					}
@@ -336,22 +349,21 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 						sp = pickSpecies(table, unit(hb>>16))
 					default:
 						// By its height in a style with altitude bands: the
-						// trees of that band, as tall as it lets them grow.
-						z := 0.0
-						if len(sty.bands) > 0 {
-							z = s.stand(e, n)
-							b := sty.band(z)
-							scale *= b.size
-							if b.openSize > 0 && (l == scenery.LandMeadow || l == scenery.LandNone) {
-								scale *= b.openSize
-							}
-						}
+						// trees of that band, kept to its canopy.
 						mix, _ := sty.speciesFor(mixLand, z)
 						table := mix.broad
 						if kind == catConifer && mix.conifer != nil || table == nil {
 							table = mix.conifer
 						}
 						sp = pickSpecies(table, unit(hb>>16))
+						if b := sty.band(z); b != nil && sp >= 0 {
+							if b.canopyM > 0 && allSpecies[sp].h > b.canopyM {
+								scale *= b.canopyM / allSpecies[sp].h
+							}
+							if b.openSize > 0 && (l == scenery.LandMeadow || l == scenery.LandNone) {
+								scale *= b.openSize
+							}
+						}
 					}
 					if sp < 0 {
 						continue

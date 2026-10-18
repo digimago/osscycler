@@ -343,3 +343,125 @@ func delaunayFlip(pts [][2]float64, tris [][3]int) [][3]int {
 	}
 	return out
 }
+
+// gridDraped is a flat area laid on a surface (height at east, north),
+// lift above it: its outline triangulated and each triangle cut along a
+// fixed grid of cell, the pieces sharing their vertices by position
+// (owner, 2026-10-18, the car parks along the Route des Crêtes at 19.7 km:
+// split alike into n × n pieces, n set by the longest edge in the whole
+// outline, a sliver along the road became a fan of slivers with none of
+// its vertices shared, each sampling its own heights and normals, and the
+// gravel rippled with light and dark bands on the slope).
+func gridDraped(height func(e, n float64) float64, outline [][2]float64, material int, lift, cell float64) gltf.Primitive {
+	p := gltf.Primitive{Material: material}
+	idx := map[[2]int64]uint32{}
+	vtx := func(q [2]float64) uint32 {
+		k := [2]int64{int64(math.Round(q[0] * 1000)), int64(math.Round(q[1] * 1000))}
+		if v, ok := idx[k]; ok {
+			return v
+		}
+		e, no := float64(k[0])/1000, float64(k[1])/1000
+		p.Positions = append(p.Positions, float32(e), float32(height(e, no)+lift), float32(-no))
+		p.Normals = append(p.Normals, 0, 1, 0)
+		p.UVs = append(p.UVs, float32(e/5), float32(no/5))
+		v := uint32(len(p.Positions)/3 - 1)
+		idx[k] = v
+		return v
+	}
+	// clip keeps the part of poly where s·(q - o) >= 0 along axis ax.
+	clip := func(poly [][2]float64, ax int, at, s float64) [][2]float64 {
+		var out [][2]float64
+		for i, a := range poly {
+			b := poly[(i+1)%len(poly)]
+			da, db := s*(a[ax]-at), s*(b[ax]-at)
+			if da >= 0 {
+				out = append(out, a)
+			}
+			if da*db < 0 {
+				f := da / (da - db)
+				q := [2]float64{a[0] + f*(b[0]-a[0]), a[1] + f*(b[1]-a[1])}
+				q[ax] = at // exactly on the grid line: neighbours share it
+				out = append(out, q)
+			}
+		}
+		return out
+	}
+	up := [3]float64{0, 1, 0}
+	fan := func(pc [][2]float64) {
+		var vs []uint32
+		for _, q := range pc {
+			v := vtx(q)
+			if len(vs) == 0 || vs[len(vs)-1] != v {
+				vs = append(vs, v)
+			}
+		}
+		if len(vs) > 1 && vs[0] == vs[len(vs)-1] {
+			vs = vs[:len(vs)-1]
+		}
+		if len(vs) < 3 {
+			return
+		}
+		ring := make([][2]float64, len(vs))
+		for i, v := range vs {
+			ring[i] = pc2(p, v)
+		}
+		for _, t := range earClip(ring) {
+			a, b, c := ring[t[0]], ring[t[1]], ring[t[2]]
+			if math.Abs((b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0])) < 1e-6 {
+				continue
+			}
+			tri(&p, vs[t[0]], vs[t[1]], vs[t[2]], up)
+		}
+	}
+	// The cells the outline's edges pass through: cut there; every other
+	// cell within its box is whole, inside or out.
+	edge := map[[2]int]bool{}
+	lo := [2]float64{math.Inf(1), math.Inf(1)}
+	hi := [2]float64{math.Inf(-1), math.Inf(-1)}
+	for i, a := range outline {
+		b := outline[(i+1)%len(outline)]
+		lo = [2]float64{math.Min(lo[0], a[0]), math.Min(lo[1], a[1])}
+		hi = [2]float64{math.Max(hi[0], a[0]), math.Max(hi[1], a[1])}
+		steps := int(math.Ceil(math.Hypot(b[0]-a[0], b[1]-a[1])/(cell/4))) + 1
+		for k := 0; k <= steps; k++ {
+			f := float64(k) / float64(steps)
+			e, n := a[0]+f*(b[0]-a[0]), a[1]+f*(b[1]-a[1])
+			gx, gn := int(math.Floor(e/cell)), int(math.Floor(n/cell))
+			for dx := -1; dx <= 1; dx++ { // a point on a grid line touches both
+				for dn := -1; dn <= 1; dn++ {
+					x0, n0 := float64(gx+dx)*cell, float64(gn+dn)*cell
+					if e >= x0-1e-9 && e <= x0+cell+1e-9 && n >= n0-1e-9 && n <= n0+cell+1e-9 {
+						edge[[2]int{gx + dx, gn + dn}] = true
+					}
+				}
+			}
+		}
+	}
+	for gx := int(math.Floor(lo[0] / cell)); float64(gx)*cell < hi[0]; gx++ {
+		for gn := int(math.Floor(lo[1] / cell)); float64(gn)*cell < hi[1]; gn++ {
+			x0, n0 := float64(gx)*cell, float64(gn)*cell
+			sq := [][2]float64{{x0, n0}, {x0 + cell, n0}, {x0 + cell, n0 + cell}, {x0, n0 + cell}}
+			if !edge[[2]int{gx, gn}] {
+				if inPoly(outline, x0+cell/2, n0+cell/2) {
+					fan(sq)
+				}
+				continue
+			}
+			// The outline clipped to the cell (the cell is convex).
+			pc := clip(outline, 0, x0, 1)
+			pc = clip(pc, 0, x0+cell, -1)
+			pc = clip(pc, 1, n0, 1)
+			pc = clip(pc, 1, n0+cell, -1)
+			if len(pc) >= 3 {
+				fan(pc)
+			}
+		}
+	}
+	smoothNormals(&p)
+	return p
+}
+
+// pc2 is vertex v's east, north.
+func pc2(p gltf.Primitive, v uint32) [2]float64 {
+	return [2]float64{float64(p.Positions[3*v]), -float64(p.Positions[3*v+2])}
+}

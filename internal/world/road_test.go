@@ -420,3 +420,58 @@ func TestApronKeepsItsRoads(t *testing.T) {
 		t.Errorf("the road through an apron was trimmed: %d lines", len(out))
 	}
 }
+
+// A car park's surface is cut along a grid with shared vertices: a long
+// strip beside a road on a slope comes out smooth, each vertex one height
+// and one normal, and no fan of slivers (owner, 2026-10-18, the car parks
+// beside the Route des Crêtes at 19.7 km rippled with light and dark
+// bands).
+func TestCarParkSurfaceIsAGrid(t *testing.T) {
+	// A strip 6 m wide and 300 m long, its long sides sampled every
+	// half metre with a wobble (as parkingOntoRoads leaves them), on a 9 %
+	// slope across a 2 m swell.
+	var outline [][2]float64
+	for x := 0.0; x <= 300; x += 0.5 {
+		outline = append(outline, [2]float64{x, 0.02 * math.Sin(x)})
+	}
+	for x := 300.0; x >= 0; x -= 0.5 {
+		outline = append(outline, [2]float64{x, 6 + 0.02*math.Cos(x)})
+	}
+	height := func(e, n float64) float64 { return 0.09*e + 2*math.Sin(e/40) }
+	p := gridDraped(height, outline, 0, 0, 1)
+	area, worst := 0.0, 0.0
+	slivers := 0
+	for i := 0; i+2 < len(p.Indices); i += 3 {
+		var v [3][2]float64
+		for k := range 3 {
+			v[k] = pc2(p, p.Indices[i+k])
+		}
+		a := math.Abs((v[1][0]-v[0][0])*(v[2][1]-v[0][1])-(v[1][1]-v[0][1])*(v[2][0]-v[0][0])) / 2
+		area += a
+		long := 0.0
+		for k := range 3 {
+			long = math.Max(long, math.Hypot(v[(k+1)%3][0]-v[k][0], v[(k+1)%3][1]-v[k][1]))
+		}
+		worst = math.Max(worst, long)
+		// Away from the outline (cells cut by it may leave a thin strip
+		// along a grid line, in the surface's own plane).
+		cn := (v[0][1] + v[1][1] + v[2][1]) / 3
+		if 2*a/long < 0.05 && long > 0.5 && cn > 1 && cn < 5 {
+			slivers++
+		}
+	}
+	if math.Abs(area-1800) > 5 {
+		t.Errorf("the surface covers %.0f m², want the outline's 1800", area)
+	}
+	if worst > 1.5 {
+		t.Errorf("a triangle %.2f m long, want the grid's cells (under 1.5 m)", worst)
+	}
+	if slivers > 0 {
+		t.Errorf("%d slivers over half a metre long inside the car park, want none", slivers)
+	}
+	// Vertices shared: one per grid point (~2,100) and per outline point
+	// (~1,200), not three per triangle.
+	if n := len(p.Positions) / 3; n > 4000 {
+		t.Errorf("%d vertices for %d triangles: not shared", n, len(p.Indices)/3)
+	}
+}

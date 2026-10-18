@@ -969,7 +969,7 @@ func parkingLots(t *terrain, sc *scenery.Scenery, m roadMaterials, roads map[[2]
 	var out []parkingLot
 	for _, lot := range sc.Parking {
 		outline := parkingOntoRoads(lot.Outline, rs)
-		p := drapedIn(height, outline, m.surface[lot.Surface], 0, parkCellM, false)
+		p := gridDraped(height, outline, m.surface[lot.Surface], 0, parkCellM)
 		if len(p.Indices) == 0 {
 			continue
 		}

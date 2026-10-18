@@ -55,6 +55,8 @@ public partial class Main : Node3D
     float _look; // radians to the right of the way ahead
     string _worldsDir = "";
     Camera3D _camera = null!;
+    Godot.Environment _env = null!;
+    float _hazeDensity = 0.0002f, _depthDensity;
     Hud.HudView _hud = null!;
     Head.Controller _head = null!;
     Vector3 _gaze;
@@ -155,7 +157,10 @@ public partial class Main : Node3D
         _bloom = Grass.Bloom(seed % 1000); // the seed's day of the year
         var weather = Weather.From(seed);
         _weather = weather;
-        AddChild(Sky(weather));
+        var sky = Sky(weather);
+        _env = sky.Environment;
+        _depthDensity = _env.FogDensity;
+        AddChild(sky);
         _sun = Sun();
         AddChild(_sun);
         PlaceSun(48);
@@ -170,6 +175,9 @@ public partial class Main : Node3D
             Current = true,
         };
         _relief = (float)Math.Max(0.1, args.Number("relief", 1));
+        // For checks: the haze over distant terrain, its end as a share of
+        // the terrain's reach and its curve.
+        _hazeDensity = (float)args.Number("haze", 0.0002);
         if (args.Get("ghost", "") != "")
             _ghostAhead = args.Number("ghost", 10);
         _look = Mathf.DegToRad((float)args.Number("look", 0));
@@ -363,6 +371,7 @@ public partial class Main : Node3D
         }
         _world = w;
         AddChild(w.Scene);
+        Reach(w.Manifest.Terrain.FarM);
         if (w.Manifest.Origin.Lat != 0 || w.Manifest.Origin.Lon != 0)
             PlaceSun(w.Manifest.Origin.Lat);
         // Grass beside the scene, not in it: the scene is scaled by the
@@ -1006,6 +1015,30 @@ public partial class Main : Node3D
         float s = RenderScale.Of(GetWindow().Size.Y);
         vp.Scaling3DMode = s < 1 ? Viewport.Scaling3DModeEnum.Fsr : Viewport.Scaling3DModeEnum.Bilinear;
         vp.Scaling3DScale = s;
+    }
+
+    // Reach sets how far the view goes for a world: one with distant
+    // terrain (far_m) is seen out to it, the haze thinning so its hills
+    // show and swallowing them only near its end; one without ends at its
+    // corridor, which the haze hides as before.
+    void Reach(double farM)
+    {
+        if (farM > 0)
+        {
+            // Haze as the air makes it: thinning the view evenly with
+            // distance (exponential), so the near hills keep their colour
+            // and the far ones fade into the sky.
+            _camera.Far = (float)farM + 1500;
+            _env.FogMode = Godot.Environment.FogModeEnum.Exponential;
+            _env.FogDensity = _hazeDensity;
+            return;
+        }
+        _camera.Far = 4000;
+        _env.FogMode = Godot.Environment.FogModeEnum.Depth;
+        _env.FogDensity = _depthDensity;
+        _env.FogDepthBegin = _weather.HazeFrom;
+        _env.FogDepthEnd = _weather.HazeTo;
+        _env.FogDepthCurve = 1.6f;
     }
 
     // Sky is a daylight sky, its haze by distance: clear up close (the

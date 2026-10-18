@@ -55,6 +55,9 @@ public sealed class Manifest
     {
         [JsonPropertyName("cell_m")] public double CellM { get; set; }
         [JsonPropertyName("chunk_m")] public double ChunkM { get; set; }
+        // Distant terrain out to this from the route (0: the world ends
+        // at its corridor, which the haze hides).
+        [JsonPropertyName("far_m")] public double FarM { get; set; }
     }
 
     // The ground map near the route (osscycler-world's ground.bin): what

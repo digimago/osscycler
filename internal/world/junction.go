@@ -328,6 +328,14 @@ func markPatches(fine []sample, ps []patch) {
 // outline covers its kerb line, ramped over the sample either side; at
 // any other side street it stops at the junction's edge, and the
 // junction's own sidewalk takes it round the corner (walkMesh).
+// dropRampM: a dropped kerb ramps down to a service road's mouth over
+// this length either side; runOnM: it runs on this far past the
+// junction's span while the other road still covers the sidewalk.
+const (
+	dropRampM = 1.5
+	runOnM    = 12.0
+)
+
 func walksOnSpans(ls []*roadLine, ps []patch, ws []scenery.Way) {
 	// A line of service ways only.
 	service := func(l *roadLine) bool {
@@ -374,6 +382,47 @@ func walksOnSpans(ls []*roadLine, ps []patch, ws []scenery.Way) {
 			b = box{math.Min(b.e0, q[0]), math.Min(b.n0, q[1]), math.Max(b.e1, q[0]), math.Max(b.n1, q[1])}
 		}
 		boxes[i] = b
+	}
+	// Samples every half metre through each service mouth's span and the
+	// stretch either side the dropped kerb may run on and ramp over: at
+	// the roads' 2 m a ramp had no sample to land on.
+	for _, l := range ls {
+		var add []float64
+		for pi := range ps {
+			if ps[pi].overlay {
+				continue
+			}
+			for _, sp := range ps[pi].spans {
+				if sp.l != l || !serviceMouth(&ps[pi], l) {
+					continue
+				}
+				for d := sp.from - dropRampM - 0.5; d <= sp.to+runOnM+dropRampM; d += 0.5 {
+					add = append(add, d)
+				}
+			}
+		}
+		if len(add) == 0 {
+			continue
+		}
+		for _, d := range add {
+			insertSample(l, d)
+		}
+		// Inserted samples copy their neighbour's flags: within a span or
+		// not, again from the spans.
+		for i := range l.samples {
+			sm := &l.samples[i]
+			sm.onPatch = false
+			for pi := range ps {
+				if ps[pi].overlay {
+					continue
+				}
+				for _, sp := range ps[pi].spans {
+					if sp.l == l && sm.d > sp.from+1e-6 && sm.d < sp.to-1e-6 {
+						sm.onPatch = true
+					}
+				}
+			}
+		}
 	}
 	// Other roads' carriageways, by 10 m cell: a side road's past its cut
 	// covers the band too (the sidewalk had lain across its mouth).
@@ -427,7 +476,7 @@ func walksOnSpans(ls []*roadLine, ps []patch, ws []scenery.Way) {
 		}
 		for i := range ss {
 			s := ss[i]
-			if !s.onPatch || !s.walk[0] && !s.walk[1] {
+			if !s.walk[0] && !s.walk[1] {
 				continue
 			}
 			a, b := ss[max(0, i-1)], ss[min(len(ss)-1, i+1)]
@@ -438,8 +487,14 @@ func walksOnSpans(ls []*roadLine, ps []patch, ws []scenery.Way) {
 			}
 			rx, rn := dn/d, -de/d // right of the way
 			for side, sign := range []float64{-1, 1} {
-				off := s.hw + 0.15
-				cov[side][i] = s.walk[side] && covered(li, s.e+sign*rx*off, s.n+sign*rn*off)
+				// At the kerb line and the slab's outer edge: a road
+				// leaving at a shallow angle covers the outer edge last.
+				if !s.walk[side] {
+					continue
+				}
+				for _, off := range []float64{s.hw + 0.15, s.hw + s.walkWidth(side) - 0.15} {
+					cov[side][i] = cov[side][i] || covered(li, s.e+sign*rx*off, s.n+sign*rn*off)
+				}
 			}
 		}
 		for i := range ss {
@@ -457,17 +512,43 @@ func walksOnSpans(ls []*roadLine, ps []patch, ws []scenery.Way) {
 				}
 			}
 		}
+		// Near a mouth the dropped kerb runs on while another road still
+		// covers the kerb line: a drive leaving at a shallow angle lies
+		// under the sidewalk for metres past the junction's span (owner,
+		// 2026-10-18, 1.55 km of the Route des Américains: the slab sat on
+		// the drive's asphalt there, clipped into slivers and a spike).
+		nearMouth := func(i, side int) bool {
+			for _, dir := range []int{-1, 1} {
+				for j := i; j >= 0 && j < len(ss) && math.Abs(ss[j].d-ss[i].d) <= runOnM; j += dir {
+					if ss[j].walkOn[side] {
+						return true
+					}
+					if !cov[side][j] && j != i {
+						break // a stretch of full kerb between: not this mouth's
+					}
+				}
+			}
+			return false
+		}
 		for i := range ss {
 			for side := range 2 {
-				if !cov[side][i] || !ss[i].walkOn[side] {
+				if !cov[side][i] || !ss[i].walkOn[side] && !nearMouth(i, side) {
 					continue
 				}
-				// The kerb lowered over the mouth, ramping down over the
-				// sample before and up over the one after.
+				// Over the mouth no slab (the other road's asphalt is the
+				// surface there: a dropped slab lay under a climbing drive's
+				// and flickered or vanished); either side the kerb ramps
+				// down to it over dropRampM, by distance (samples crowd to
+				// half a metre at a junction's cut: a ramp of one sample was
+				// a step with a face across, 1.55 km).
 				ss[i].drop[side] = 1
-				for _, j := range []int{i - 1, i + 1} {
-					if j >= 0 && j < len(ss) && !cov[side][j] && ss[j].walk[side] {
-						ss[j].drop[side] = math.Max(ss[j].drop[side], 0.5)
+				for _, dir := range []int{-1, 1} {
+					for j := i + dir; j >= 0 && j < len(ss) && !cov[side][j] && ss[j].walk[side]; j += dir {
+						gap := math.Abs(ss[j].d - ss[i].d)
+						if gap >= dropRampM {
+							break
+						}
+						ss[j].drop[side] = math.Max(ss[j].drop[side], math.Min(0.99, 1-gap/dropRampM))
 					}
 				}
 			}

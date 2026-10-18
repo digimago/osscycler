@@ -133,7 +133,7 @@ func roadMesh(seg, all []sample, from int, line *smoothLine, loop bool, m roadMa
 		// A sidewalk: not over a junction's span unless it runs on across
 		// it as a dropped kerb, its kerb lowered by drop (walksOnSpans).
 		walk := func(side int) (on bool, h float64, mat int) {
-			on, h, mat = s.walk[side] && (!s.onPatch || s.walkOn[side]), kerbM, m.walk
+			on, h, mat = s.walk[side] && (!s.onPatch || s.walkOn[side]) && s.drop[side] < 1, kerbM, m.walk
 			if s.drop[side] > 0 || s.onPatch && s.walkOn[side] {
 				h, mat = kerbM+s.drop[side]*(dropKerbM-kerbM), m.walkDrop
 			}
@@ -387,10 +387,11 @@ func roadMesh(seg, all []sample, from int, line *smoothLine, loop bool, m roadMa
 			}
 			n := [3]float64{dir * f.rz, 0, -dir * f.rx}
 			inner, outer := f.parts[5+side].a, f.parts[7+side].a
+			top := f.parts[3+side].ya // a dropped kerb's end is low
 			pr := prim(m.kerb)
 			v0 := vert(pr, f, inner, 0, 0, n)
-			v1 := vert(pr, f, inner, kerbM, 1, n)
-			v2 := vert(pr, f, outer, kerbM, 1, n)
+			v1 := vert(pr, f, inner, top, 1, n)
+			v2 := vert(pr, f, outer, top, 1, n)
 			v3 := vert(pr, f, outer, -walkFootM, 0, n)
 			tri(pr, v0, v1, v2, n)
 			tri(pr, v0, v2, v3, n)

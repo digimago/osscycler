@@ -56,7 +56,7 @@ public partial class Main : Node3D
     string _worldsDir = "";
     Camera3D _camera = null!;
     Godot.Environment _env = null!;
-    float _hazeDensity = 0.0002f, _depthDensity;
+    float _hazeDensity = 0.0004f, _depthDensity;
     Hud.HudView _hud = null!;
     Head.Controller _head = null!;
     Vector3 _gaze;
@@ -177,7 +177,7 @@ public partial class Main : Node3D
         _relief = (float)Math.Max(0.1, args.Number("relief", 1));
         // For checks: the haze over distant terrain, its end as a share of
         // the terrain's reach and its curve.
-        _hazeDensity = (float)args.Number("haze", 0.0002);
+        _hazeDensity = (float)args.Number("haze", 0.0004);
         if (args.Get("ghost", "") != "")
             _ghostAhead = args.Number("ghost", 10);
         _look = Mathf.DegToRad((float)args.Number("look", 0));

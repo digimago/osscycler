@@ -68,7 +68,32 @@ func (p patch) height(e, n float64) float64 {
 		}
 	}
 	if p.rb != nil {
-		return p.rb.height(e, n)
+		// On its plane, eased to each road it meets within rbEaseM of
+		// where it ends (owner, 2026-10-18, La Bresse: the plane through
+		// the approaches stood 12-18 cm over a climbing approach at the
+		// ring's edge, at 0.10 km the roundabout's edge a raised piece
+		// beside the splitter island, at 0.51 km its sidewalk a block on
+		// the road's).
+		h := p.rb.height(e, n)
+		var dh, w float64
+		for _, c := range p.cuts {
+			de, dn := c.p1[0]-c.p0[0], c.p1[1]-c.p0[1]
+			f := 0.0
+			if l2 := de*de + dn*dn; l2 > 0 {
+				f = math.Max(0, math.Min(1, ((e-c.p0[0])*de+(n-c.p0[1])*dn)/l2))
+			}
+			ce, cn := c.p0[0]+f*de, c.p0[1]+f*dn
+			d := math.Hypot(e-ce, n-cn)
+			if d >= rbEaseM {
+				continue
+			}
+			k := 1 - d/rbEaseM
+			k *= k * (3 - 2*k) // smoothstep: no crease where the easing ends
+			if k > w {
+				dh, w = c.ele-p.rb.height(ce, cn), k
+			}
+		}
+		return h + dh*w
 	}
 	var sum, wsum float64
 	for _, sp := range p.spans {
@@ -183,43 +208,7 @@ func walkMesh(p patch, w walkChain, walk, kerb *gltf.Primitive, corner bool) {
 	}
 	// At the ends, a road's end: the junction's height is the road's there.
 	y := func(i int) float64 { return p.height(k[i][0], k[i][1]) }
-	if p.rb != nil && len(p.cuts) > 0 {
-		// A roundabout's sidewalk lies on its plane, which stands off a
-		// climbing approach's height at the ring's edge: it eases from the
-		// road it joins at each end over rbWalkEaseM along its kerb
-		// (owner, 2026-10-18, La Bresse at 0.51 km: the roundabout's
-		// sidewalk began 12 cm over the road's, a block lying on it).
-		off := func(q [2]float64) float64 {
-			best, bd := 0.0, math.Inf(1)
-			for _, c := range p.cuts {
-				de, dn := c.p1[0]-c.p0[0], c.p1[1]-c.p0[1]
-				f := 0.0
-				if l2 := de*de + dn*dn; l2 > 0 {
-					f = math.Max(0, math.Min(1, ((q[0]-c.p0[0])*de+(q[1]-c.p0[1])*dn)/l2))
-				}
-				ce, cn := c.p0[0]+f*de, c.p0[1]+f*dn
-				if d := math.Hypot(q[0]-ce, q[1]-cn); d < bd {
-					best, bd = c.ele-p.rb.height(ce, cn), d
-				}
-			}
-			if bd > rbWalkEaseM {
-				return 0
-			}
-			return best
-		}
-		d0, d1 := off(k[0]), off(k[len(k)-1])
-		plain := y
-		y = func(i int) float64 {
-			h := plain(i)
-			if a := at[i]; a < rbWalkEaseM {
-				h += d0 * (1 - a/rbWalkEaseM)
-			}
-			if a := at[len(k)-1] - at[i]; a < rbWalkEaseM {
-				h += d1 * (1 - a/rbWalkEaseM)
-			}
-			return h
-		}
-	}
+
 	vert := func(q *gltf.Primitive, x, h, z float64, n [3]float64) uint32 {
 		q.Positions = append(q.Positions, float32(x), float32(h), float32(-z))
 		q.Normals = append(q.Normals, float32(n[0]), float32(n[1]), float32(n[2]))
@@ -365,9 +354,9 @@ func markPatches(fine []sample, ps []patch) {
 // outline covers its kerb line, ramped over the sample either side; at
 // any other side street it stops at the junction's edge, and the
 // junction's own sidewalk takes it round the corner (walkMesh).
-// rbWalkEaseM: a roundabout's sidewalk eases from the road's height at
-// each end over this length along its kerb.
-const rbWalkEaseM = 6.0
+// rbEaseM: a roundabout's surface eases from its plane to a road it
+// meets within this of where the road ends at it.
+const rbEaseM = 8.0
 
 // dropRampM: a dropped kerb ramps down to a service road's mouth over
 // this length either side; runOnM: it runs on this far past the
@@ -1464,16 +1453,31 @@ func fillet(p [][2]float64) [][2]float64 {
 			out = append(out, q)
 		}
 	}
+	// The arc starts on the edge's first segment's line; where the edge
+	// curves, a kept point can lie past the arc's start, and the outline
+	// went out to it and back (owner, 2026-10-18, La Bresse at 0.10 km: a
+	// triangle of asphalt jutting into the verge). Such points go.
+	ahead := func(prev, q, next [2]float64) bool {
+		return (next[0]-q[0])*(q[0]-prev[0])+(next[1]-q[1])*(q[1]-prev[1]) > 0
+	}
+	for len(out) > 1 && !ahead(out[len(out)-2], out[len(out)-1], t1) {
+		out = out[:len(out)-1]
+	}
 	for k := 0; k <= steps; k++ {
 		ang := a1 + sweep*float64(k)/float64(steps)
 		out = append(out, [2]float64{o[0] + r*math.Cos(ang), o[1] + r*math.Sin(ang)})
 	}
+	var bside [][2]float64
 	for _, q := range p[1 : m-1] {
 		if (q[0]-c[0])*ub[0]+(q[1]-c[1])*ub[1] > t+0.1 && math.Abs((q[0]-c[0])*ub[1]-(q[1]-c[1])*ub[0]) < 1 {
-			out = append(out, q)
+			bside = append(bside, q)
 		}
 	}
-	return append(out, p[m-1])
+	bside = append(bside, p[m-1])
+	for len(bside) > 1 && !ahead(t2, bside[0], bside[1]) {
+		bside = bside[1:]
+	}
+	return append(out, bside...)
 }
 
 // walkOnRoad says whether a junction's sidewalk would lie on one of its own

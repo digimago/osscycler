@@ -518,3 +518,43 @@ func TestRoundaboutWalkMeetsTheRoad(t *testing.T) {
 		t.Errorf("the sidewalk 10 m round is at %.3f m, want on the plane, %.3f", far, 10.12+kerbM)
 	}
 }
+
+// A roundabout's surface eases from its plane to a road it meets: its
+// edge 2 m from where the road ends stands near the road's height, not
+// the plane's (owner, 2026-10-18, La Bresse at 0.10 km: a raised piece of
+// the roundabout beside the splitter island, 12-18 cm over the roads).
+func TestRoundaboutEdgeMeetsTheRoad(t *testing.T) {
+	p := patch{
+		rb:   &roundabout{plane: [3]float64{10.15, 0, 0}},
+		cuts: []patchCut{{p0: [2]float64{0, 0}, p1: [2]float64{6, 0}, ele: 10}},
+	}
+	if h := p.height(8, 0); h > 10.03 {
+		t.Errorf("2 m from the road's end the roundabout is at %.3f m, want near the road's 10 (under 10.03)", h)
+	}
+	if h := p.height(30, 0); math.Abs(h-10.15) > 1e-9 {
+		t.Errorf("far from any road the roundabout is at %.3f m, want its plane's 10.15", h)
+	}
+}
+
+// A rounded junction corner never doubles back where the road's edge
+// curves (owner, 2026-10-18, La Bresse at 0.10 km: a triangle of asphalt
+// jutting into the verge): along the outline every step moves on. The
+// chain is that corner's, from its road's end along its curving edge to
+// the next road's edge, relative to its first point.
+func TestFilletDoesNotDoubleBack(t *testing.T) {
+	raw := [][2]float64{{-9127.335, 643.433}, {-9127.180, 643.746}, {-9126.725, 644.038}, {-9126.244, 644.305}, {-9125.760, 644.561}, {-9125.275, 644.806}, {-9124.788, 645.039}, {-9124.806, 645.585}, {-9118.833, 651.222}, {-9117.089, 652.202}, {-9115.346, 653.182}, {-9114.038, 653.917}}
+	var chain [][2]float64
+	for _, q := range raw {
+		chain = append(chain, [2]float64{q[0] - raw[0][0], q[1] - raw[0][1]})
+	}
+	out := fillet(chain)
+	if len(out) <= len(chain)-2 {
+		t.Fatalf("the corner wasn't rounded: %v", out)
+	}
+	for i := 1; i+1 < len(out); i++ {
+		a, b, c := out[i-1], out[i], out[i+1]
+		if (b[0]-a[0])*(c[0]-b[0])+(b[1]-a[1])*(c[1]-b[1]) < 0 {
+			t.Errorf("the outline doubles back at %.2f, %.2f (from %.2f, %.2f to %.2f, %.2f)", b[0], b[1], a[0], a[1], c[0], c[1])
+		}
+	}
+}

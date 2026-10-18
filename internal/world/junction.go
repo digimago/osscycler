@@ -168,8 +168,12 @@ func walkMesh(p patch, w walkChain, walk, kerb *gltf.Primitive, corner bool) {
 	total := at[len(k)-1]
 	from, to := 0.0, total
 	switch {
-	case corner && p.dropWalks && w.fromA != w.fromB:
-		return // the road's own sidewalk runs on across the mouth (roadMesh)
+	case corner && p.dropWalks:
+		// The road's own sidewalks run on across the mouth on both sides
+		// (roadMesh): drawn here too, the far one lay twice at one height
+		// and flickered (owner, 2026-10-18, across from La Bresse's
+		// driveways).
+		return
 	case corner:
 		// The whole way round, capped at both ends.
 	case w.fromA && !w.fromB:

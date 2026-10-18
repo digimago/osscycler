@@ -124,6 +124,19 @@ func TestServiceMouthHasADroppedKerb(t *testing.T) {
 	if over > 0 {
 		t.Errorf("%d sidewalk triangles of the ordinary slab lie over a carriageway, where the clipper would cut them", over)
 	}
+	// Across from the mouth the road's sidewalk runs on alone: no second
+	// slab at its height (it flickered).
+	var north int
+	for _, mat := range []int{m.walk, m.walkDrop} {
+		tris(by, mat, func(v [3][3]float64) {
+			if x, _, z := centroid(v); z < -3.2 && z > -4.6 && math.Abs(x-mouthX) < 1 {
+				north++
+			}
+		})
+	}
+	if north != 2 {
+		t.Errorf("%d slab triangles across from the mouth's middle, want the road's quad alone (2)", north)
+	}
 }
 
 // overCarriageway tells whether x, z (glTF) lies over the junction's

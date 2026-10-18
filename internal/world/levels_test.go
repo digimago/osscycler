@@ -250,6 +250,11 @@ func TestJunctionWalkRoundsTheCorner(t *testing.T) {
 	if drawn, _ := reach(true, true); drawn {
 		t.Error("French, the road's sidewalk running on across the mouth: the junction drew one of its own too")
 	}
+	// Across from the mouth (both ends a road's sidewalk) likewise.
+	w.fromB = true
+	if drawn, _ := reach(true, true); drawn {
+		t.Error("French, across from a service mouth: the junction drew a sidewalk over the road's own")
+	}
 }
 
 // A lane 1.2 m above a road, its edge 1.5 m behind the road's sidewalk,

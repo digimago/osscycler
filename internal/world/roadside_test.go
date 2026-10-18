@@ -148,3 +148,75 @@ func TestRailRunsAreContinuous(t *testing.T) {
 		t.Errorf("runs %v, want two with the mouth between them open", got)
 	}
 }
+
+// Retaining walls and netted rock face the road on either side of it,
+// whatever way the map's line runs (owner, 2026-10-18, the Route des
+// Américains at 7.5 km: the rock's faces were wound inside out on one
+// side, so the renderer culled them and the netting hung over grass; the
+// walls on that side showed their dark backs). Every steep triangle's
+// winding faces the road, and so does its coping face up.
+func TestWallsFaceTheRoad(t *testing.T) {
+	c := northCourse(t)
+	kx := 111195 * math.Cos(52*math.Pi/180)
+	// Both sides rise: 1 in 1 from 3 m out between 200 and 450 m north
+	// (a wall), 2 in 1 between 550 and 800 m (rock).
+	elev := func(lat, lon float64) (float64, bool) {
+		x, y := (lon-5)*kx, (lat-52)*111195
+		d := math.Abs(x) - 3
+		switch {
+		case d <= 0:
+			return 10, true
+		case y > 200 && y < 450:
+			return 10 + d, true
+		case y > 550 && y < 800:
+			return 10 + 2*d, true
+		}
+		return 10, true
+	}
+	tr := testTerrain(c, Options{Region: RegionFR, Elevation: elev})
+	w := &World{doc: gltf.New("test")}
+	if err := w.addRoadside(tr, nil, nil, nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	count := map[string][3]int{} // material: steep triangles facing the road, facing away, tops facing down
+	for _, p := range w.prims {
+		name := w.doc.MaterialName(p.Material)
+		if name != "rock" && name != "stone wall" {
+			continue
+		}
+		pos := func(i uint32) [3]float64 {
+			return [3]float64{float64(p.Positions[3*i]), float64(p.Positions[3*i+1]), float64(p.Positions[3*i+2])}
+		}
+		for i := 0; i+2 < len(p.Indices); i += 3 {
+			a, b, c := pos(p.Indices[i]), pos(p.Indices[i+1]), pos(p.Indices[i+2])
+			n := cross([3]float64{b[0] - a[0], b[1] - a[1], b[2] - a[2]}, [3]float64{c[0] - a[0], c[1] - a[1], c[2] - a[2]})
+			l := math.Sqrt(dot3(n, n))
+			if l == 0 {
+				continue
+			}
+			n = scale3(n, 1/l)
+			cx := (a[0] + b[0] + c[0]) / 3
+			cnt := count[name]
+			switch {
+			case math.Abs(n[1]) > 0.7:
+				if n[1] < 0 {
+					cnt[2]++
+				}
+			case n[0]*cx < 0: // towards x = 0, the road
+				cnt[0]++
+			default:
+				cnt[1]++
+			}
+			count[name] = cnt
+		}
+	}
+	for _, name := range []string{"rock", "stone wall"} {
+		cnt := count[name]
+		if cnt[0] < 50 {
+			t.Errorf("%s: %d steep triangles facing the road, want many", name, cnt[0])
+		}
+		if cnt[1] > 0 || cnt[2] > 0 {
+			t.Errorf("%s: %d steep triangles face away from the road, %d tops face down; want none", name, cnt[1], cnt[2])
+		}
+	}
+}

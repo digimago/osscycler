@@ -691,8 +691,16 @@ func retaining(p, fill *gltf.Primitive, land func(e, n float64) float64, clear f
 			if ri == 0 {
 				a0, a1 = foot(k), foot(k+1)
 			}
-			nrm := wallNormal(a0, a1, b0, sign)
-			quad(p, a0, a1, b1, b0, nrm, c)
+			// The face looks at the road (owner, 2026-10-18: wound along
+			// the line, it looked away on one side, and the renderer
+			// culled it: netting over grass at 7.5 km on the Route des
+			// Américains, the walls there showing their backs).
+			re, rn := pos(k, 0)
+			we, wn := pos(k, wallOffM)
+			// Towards the road and up in equal measure: a face leaning
+			// back looks out and up, a ledge in the rock up.
+			dx, dz := re-we, -(rn - wn)
+			quadFacing(p, a0, a1, b1, b0, [3]float64{dx, math.Hypot(dx, dz), dz}, c)
 		}
 		if !rock {
 			// The coping: a top 0.4 m deep, back into the slope.
@@ -810,8 +818,34 @@ func backfill(p *gltf.Primitive, land func(e, n float64) float64, clear func(e, 
 	}
 }
 
-// wallNormal is the normal of the face a, b (along), c (up), facing the
-// road (side sign: the face looks the other way).
+// quadFacing draws the quad a, b, c, d as two triangles, each with its
+// own normal turned the way toward points (a twisted quad's halves can
+// face different ways; one normal for both left a sliver looking down).
+func quadFacing(p *gltf.Primitive, a, b, c, d, toward [3]float64, col [3]float32) {
+	for _, t := range [2][3][3]float64{{a, b, c}, {a, c, d}} {
+		n := facing(t[0], t[1], t[2], toward)
+		base := uint32(len(p.Positions) / 3)
+		for _, q := range t {
+			p.Positions = append(p.Positions, float32(q[0]), float32(q[1]), float32(q[2]))
+			p.Normals = append(p.Normals, float32(n[0]), float32(n[1]), float32(n[2]))
+			p.Colors = append(p.Colors, col[0], col[1], col[2])
+		}
+		tri(p, base, base+1, base+2, n)
+	}
+}
+
+// facing is the normal of the face a, b, c turned to look the way
+// toward points (tri winds the triangles to the normal it is given).
+func facing(a, b, c, toward [3]float64) [3]float64 {
+	n := wallNormal(a, b, c, 1)
+	if dot3(n, toward) < 0 {
+		return [3]float64{-n[0], -n[1], -n[2]}
+	}
+	return n
+}
+
+// wallNormal is the geometric normal of the face a, b (along), c (up):
+// to the right of a to b. sign is unused (facing turns a face).
 func wallNormal(a, b, c [3]float64, sign float64) [3]float64 {
 	u := [3]float64{b[0] - a[0], b[1] - a[1], b[2] - a[2]}
 	v := [3]float64{c[0] - a[0], c[1] - a[1], c[2] - a[2]}

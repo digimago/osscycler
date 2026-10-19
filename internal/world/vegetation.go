@@ -26,6 +26,8 @@ const (
 	pruneClearM    = 4.5 // a pruned tree's branches clear the road by this much (a road's clearance)
 	clearHouseM    = 1.5 // and from a building's walls
 	avenueStepM    = 9.0 // trees along open roads, this far apart
+	avenueFromM    = 2.0 // between these off the road's edge
+	avenueToM      = 3.5
 	avenueStretchM = 150 // and of one species for this far
 )
 
@@ -424,21 +426,15 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 					wside = 1 - side
 				}
 				h := splitmix(splitmix(key) ^ uint64(int64(k))<<1 ^ uint64(wside))
-				off := edge + 2 + 1.5*unit(h)
+				off := edge + avenueFromM + (avenueToM-avenueFromM)*unit(h)
 				e, n := pe+sign*dn/l*off, pn-sign*de/l*off
-				if lnd, _ := landAt(e, n); lnd != scenery.LandNone && lnd != scenery.LandMeadow && !scenery.Arable(lnd) {
-					continue
-				}
-				if unit(h>>32) > 0.45 || onRoad(e, n) || inArea(e, n) {
+				allowed, townNear := avenueAllowed(sty, landAt, e, n)
+				if !allowed || unit(h>>32) > 0.45 || onRoad(e, n) || inArea(e, n) {
 					continue
 				}
 				// One species along a stretch of road, as avenues are planted;
 				// poplars too along minor country roads, more by water.
 				hs := splitmix(splitmix(key) ^ uint64(int64(k*avenueStepM/avenueStretchM)))
-				townNear := landNear(landAt, e, n, townNearM, scenery.LandBuilt, 4)
-				if sty.townAvenuesOnly && !townNear {
-					continue
-				}
 				mix := sty.avenue
 				if a.way >= 0 && a.way < len(ways) && countryRoad[ways[a.way].Class] {
 					mix = sty.countryAvenue
@@ -1041,4 +1037,15 @@ func landNear(landAt func(e, n float64) (scenery.Land, string), e, n, r float64,
 		}
 	}
 	return false
+}
+
+// avenueAllowed tells whether an avenue tree may stand at e, n by the
+// land there (open land, not in a town where the style keeps avenues to
+// towns), and whether a town is near.
+func avenueAllowed(sty *style, landAt func(e, n float64) (scenery.Land, string), e, n float64) (ok, townNear bool) {
+	if lnd, _ := landAt(e, n); lnd != scenery.LandNone && lnd != scenery.LandMeadow && !scenery.Arable(lnd) {
+		return false, false
+	}
+	townNear = landNear(landAt, e, n, townNearM, scenery.LandBuilt, 4)
+	return !sty.townAvenuesOnly || townNear, townNear
 }

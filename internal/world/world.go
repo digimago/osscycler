@@ -605,7 +605,7 @@ func Build(c *course.Course, o Options) (*World, error) {
 	}
 	// The fences: the course's own (the test tracks' field entrances) and
 	// the meadows' along the roads.
-	fences := append(append([]scenery.Fence{}, o.Fences...), meadowFences(&t, o.Land, o.Buildings, parks)...)
+	fences := append(append([]scenery.Fence{}, o.Fences...), meadowFences(&t, o.Land, ways, o.Buildings, parks)...)
 	// The roadside first: a pasture's fence keeps clear of its walls.
 	if err := w.addRoadside(&t, ways, o.Buildings, parks, ground); err != nil {
 		return nil, err

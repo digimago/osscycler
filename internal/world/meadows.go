@@ -15,6 +15,8 @@ import (
 // guessed, as the front-garden hedges are.
 const (
 	meadowFenceOffM = 1.2  // off the road's edge (its sidewalk's): the verge before it
+	meadowTreeM     = 1.0  // and this far behind an avenue's trees
+	meadowEaseM     = 10.0 // easing out to them and back over this
 	meadowDeepM     = 4.0  // the land this far beyond the fence is the meadow
 	meadowMinM      = 15.0 // shorter stretches are left out
 	meadowGateM     = 40.0 // a stretch this long has a gate
@@ -32,7 +34,7 @@ const (
 // meadowFences are the fences along the roads where a meadow lies beside
 // them: land, the buildings and the areas kept clear (car parks, lawns,
 // field entrances) as for the plants.
-func meadowFences(t *terrain, land *scenery.LandMap, fps []scenery.Footprint, parks []scenery.Parking) []scenery.Fence {
+func meadowFences(t *terrain, land *scenery.LandMap, ways []scenery.Way, fps []scenery.Footprint, parks []scenery.Parking) []scenery.Fence {
 	if land == nil || len(t.fine) < 2 {
 		return nil
 	}
@@ -47,8 +49,51 @@ func meadowFences(t *terrain, land *scenery.LandMap, fps []scenery.Footprint, pa
 		got, _ := sp.landAt(e, n)
 		return got == l
 	}
+	// Where avenue trees may stand along a road the fence goes behind
+	// them, out of the meadow (owner, 2026-10-19: trees stand in the verge
+	// outside the meadow's fence, as a meadow with trees in it can't be
+	// mown; they had stood beyond the fence, at 2-3.5 m against its
+	// 1.2 m, on the polder ride and the figure 8). Behind the whole
+	// stretch, its gaps too, so the fence runs straight; eased back over
+	// meadowEaseM where the avenue ends.
+	wp := newWayPlaces(ways, t.fine)
+	sty := styleFor(t.o.Region)
+	behind := func(i, side int) bool {
+		a, b := t.fine[i], t.fine[i+1]
+		if a.line != b.line || a.way != b.way {
+			return false
+		}
+		de, dn := b.e-a.e, b.n-a.n
+		l := math.Hypot(de, dn)
+		if l == 0 {
+			return false
+		}
+		_, sa, _, ok := wp.at(a, de, dn)
+		_, sb, _, okb := wp.at(b, de, dn)
+		if !ok || !okb || sa == sb {
+			return false
+		}
+		sign := []float64{-1, 1}[side]
+		off := a.edge + (avenueFromM+avenueToM)/2
+		ok, _ = avenueAllowed(sty, sp.landAt, a.e+sign*dn/l*off, a.n-sign*de/l*off)
+		return ok
+	}
 	var out []scenery.Fence
 	for side, sign := range []float64{-1, 1} {
+		// How far out the fence stands past the meadowFenceOffM verge,
+		// 0..1 of the way behind the avenue.
+		out1 := make([]float64, len(t.fine))
+		for i := 0; i+1 < len(t.fine); i++ {
+			if !behind(i, side) {
+				continue
+			}
+			for j := i; j >= 0 && t.fine[j].line == t.fine[i].line && t.fine[i].d-t.fine[j].d < meadowEaseM; j-- {
+				out1[j] = math.Max(out1[j], 1-(t.fine[i].d-t.fine[j].d)/meadowEaseM)
+			}
+			for j := i + 1; j < len(t.fine) && t.fine[j].line == t.fine[i].line && t.fine[j].d-t.fine[i].d < meadowEaseM; j++ {
+				out1[j] = math.Max(out1[j], 1-(t.fine[j].d-t.fine[i].d)/meadowEaseM)
+			}
+		}
 		var run [][2]float64
 		flush := func() {
 			if len(run) > 1 && polyLength(run) >= meadowMinM {
@@ -74,6 +119,9 @@ func meadowFences(t *terrain, land *scenery.LandMap, fps []scenery.Footprint, pa
 				edge += a.walkWidth(side)
 			}
 			off := edge + meadowFenceOffM
+			if w := out1[i]; w > 0 {
+				off += w * math.Max(0, a.edge+avenueToM+meadowTreeM-off)
+			}
 			e, n := a.e+rx*off, a.n+rn*off
 			ok := is(e+rx*meadowDeepM, n+rn*meadowDeepM, scenery.LandMeadow) && is(e+rx, n+rn, scenery.LandMeadow)
 			// No ditch along the road on this side (the fence it is), no

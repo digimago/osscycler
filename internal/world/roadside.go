@@ -41,6 +41,7 @@ const (
 	riseNearM           = 3.0
 	riseWall            = 2.2  // a wall where it rises this much within riseNearM of the edge
 	riseRock            = 3.6  // rock netted where it rises this much: too steep for loose soil
+	riseOpenWall        = 4.0  // in open land (pasture, fields, heath) a grass bank up to this rise
 	runMinSamples       = 5    // runs shorter than this many samples (10 m) left out
 	runGapSamples       = 3    // gaps this short between runs closed
 	railGapM            = 30.0 // a barrier runs on over a gap this long where the fall eases
@@ -314,7 +315,13 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 					// shows grass sloping to the lane).
 					s.wall[k], s.town[k] = true, true
 					s.h[k] = math.Min(townWallM, 0.3+0.4*(z3-zc))
-				case !town && ok3 && z3-zc > riseWall:
+				case !town && ok3 && z3-zc > riseWall && (z3-zc > riseOpenWall || !openLand(t, e3, n3)):
+					// In open land a bank is grass up to riseOpenWall
+					// (owner's Street View shots, 2026-10-18, of the
+					// Route des Crêtes at 19.07 and 20.00 km: grass banks
+					// of 2-3 m above the pastures, and grass between it
+					// and the Chemin de Schmargult below, where walls
+					// stood); in the woods it is held by a wall.
 					s.wall[k] = true
 					s.rock[k] = z3-zc > riseRock
 					s.h[k] = math.Min(3.6, z3-zc+0.4)
@@ -1094,6 +1101,19 @@ func overRoad(t *terrain, q [4][3]float64) bool {
 		if h, ok := t.surfaces.highest(p[0], p[2], 0); ok && h < p[1]-0.02 {
 			return true
 		}
+	}
+	return false
+}
+
+// openLand tells whether e, n lies in open land, pasture, fields or
+// heath, where a bank by the road is grass.
+func openLand(t *terrain, e, n float64) bool {
+	if t.cover == nil {
+		return false
+	}
+	switch l, _ := t.cover.at(e, n); l {
+	case scenery.LandMeadow, scenery.LandFarmland, scenery.LandHeath, scenery.LandPloughed, scenery.LandMaize, scenery.LandWheat, scenery.LandPotatoes:
+		return true
 	}
 	return false
 }

@@ -381,3 +381,55 @@ func TestFenceKeepsClearOfWalls(t *testing.T) {
 		t.Errorf("a fence clear of the wall was changed: %+v", got)
 	}
 }
+
+// In open land a bank of a few metres is grass, not a wall, up to
+// riseOpenWall (owner's Street View shots, 2026-10-18, of the Route des
+// Crêtes at 19.07 and 20.00 km: grass banks of 2-3 m above the pastures,
+// where walls stood); in the woods the same bank is held by a wall.
+func TestBanksInOpenLandAreGrass(t *testing.T) {
+	c := northCourse(t)
+	kx := 111195 * math.Cos(52*math.Pi/180)
+	// West of the road the land rises 1.3 in 1 from 3 m out between 200
+	// and 400 m north (3.3 m within 3 m of the edge): pasture there, woods
+	// between 500 and 700 m with the same bank.
+	elev := func(lat, lon float64) (float64, bool) {
+		x, y := (lon-5)*kx, (lat-52)*111195
+		if x < -3 && (y > 200 && y < 400 || y > 500 && y < 700) {
+			return 10 + 1.3*(-x-3), true
+		}
+		return 10, true
+	}
+	ring := func(x0, y0, x1, y1 float64) []scenery.LatLon {
+		p := func(x, y float64) scenery.LatLon { return scenery.LatLon{Lat: 52 + y/111195, Lon: 5 + x/kx} }
+		return []scenery.LatLon{p(x0, y0), p(x1, y0), p(x1, y1), p(x0, y1), p(x0, y0)}
+	}
+	lm := scenery.NewLandMap(c, &scenery.Data{Elements: []scenery.Element{
+		{Type: "way", ID: 1, Tags: map[string]string{"landuse": "meadow"}, Geometry: ring(-300, 150, 0, 450)},
+		{Type: "way", ID: 2, Tags: map[string]string{"landuse": "forest"}, Geometry: ring(-300, 450, 0, 750)},
+	}})
+	tr := testTerrain(c, Options{Region: RegionFR, Elevation: elev, Land: lm})
+	w := &World{doc: gltf.New("test")}
+	if err := w.addRoadside(tr, nil, nil, nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	pasture, woods := 0, 0
+	for _, p := range w.prims {
+		if name := w.doc.MaterialName(p.Material); name != "stone wall" && name != "rock" {
+			continue
+		}
+		for v := 0; v+2 < len(p.Positions); v += 3 {
+			switch n := -float64(p.Positions[v+2]); {
+			case n > 200 && n < 400:
+				pasture++
+			case n > 500 && n < 700:
+				woods++
+			}
+		}
+	}
+	if pasture > 0 {
+		t.Errorf("%d wall vertices along the pasture's 3.3 m bank, want a grass bank", pasture)
+	}
+	if woods == 0 {
+		t.Error("no wall along the same bank in the woods")
+	}
+}

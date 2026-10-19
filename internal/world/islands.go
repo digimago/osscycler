@@ -22,16 +22,25 @@ const (
 // road surfaces in roads (those of material ground excepted: verges), and
 // returns a mesh of material mat covering each chunk's.
 func pavedIslands(roads map[[2]int][]gltf.Primitive, ground, mat int, chunkM float64) map[[2]int]gltf.Primitive {
+	return pavedIslandsGrown(roads, ground, mat, chunkM, false)
+}
+
+// pavedIslandsGrown is pavedIslands; with grow, each island reaches a cell
+// further under the surfaces round it and lies under the lowest of them,
+// so a sliver narrower than a cell at its edge is covered too (between a
+// road and a car park 5 cm lower, a strip of land showed at a triangle's
+// tip).
+func pavedIslandsGrown(roads map[[2]int][]gltf.Primitive, ground, mat int, chunkM float64, grow bool) map[[2]int]gltf.Primitive {
 	out := map[[2]int]gltf.Primitive{}
 	for _, k := range chunkOrder(roads) {
-		if p, ok := chunkIslands(roads[k], k, ground, mat, chunkM); ok {
+		if p, ok := chunkIslands(roads[k], k, ground, mat, chunkM, grow); ok {
 			out[k] = p
 		}
 	}
 	return out
 }
 
-func chunkIslands(ps []gltf.Primitive, key [2]int, ground, mat int, chunkM float64) (gltf.Primitive, bool) {
+func chunkIslands(ps []gltf.Primitive, key [2]int, ground, mat int, chunkM float64, grow bool) (gltf.Primitive, bool) {
 	side := int(math.Round(chunkM / islandCellM))
 	x0, z0 := float64(key[0])*chunkM, -float64(key[1]+1)*chunkM // glTF x east, z south
 	h := make([]float64, side*side)
@@ -88,6 +97,7 @@ func chunkIslands(ps []gltf.Primitive, key [2]int, ground, mat int, chunkM float
 		open := false
 		var rim float64
 		rimN := 0
+		rimLo := math.Inf(1)
 		for q := 0; q < len(comp); q++ {
 			c := comp[q]
 			i, j := c%side, c/side
@@ -103,6 +113,7 @@ func chunkIslands(ps []gltf.Primitive, key [2]int, ground, mat int, chunkM float
 				if !math.IsNaN(h[n]) {
 					rim += h[n]
 					rimN++
+					rimLo = math.Min(rimLo, h[n])
 					continue
 				}
 				if !seen[n] {
@@ -118,6 +129,27 @@ func chunkIslands(ps []gltf.Primitive, key [2]int, ground, mat int, chunkM float
 			continue
 		}
 		y := float32(rim/float64(rimN) - islandBelowM)
+		if grow {
+			y = float32(rimLo - islandBelowM)
+			in := map[int]bool{}
+			for _, c := range comp {
+				in[c] = true
+			}
+			n := len(comp)
+			for q := 0; q < n; q++ {
+				i, j := comp[q]%side, comp[q]/side
+				for dj := -1; dj <= 1; dj++ {
+					for di := -1; di <= 1; di++ {
+						ni, nj := i+di, j+dj
+						if ni < 0 || nj < 0 || ni >= side || nj >= side || in[nj*side+ni] {
+							continue
+						}
+						in[nj*side+ni] = true
+						comp = append(comp, nj*side+ni)
+					}
+				}
+			}
+		}
 		for _, c := range comp {
 			i, j := c%side, c/side
 			// A cell and a little more, so neighbouring cells and the roads

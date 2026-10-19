@@ -29,7 +29,7 @@ const BuilderVersion = 59
 // GraphVersion is BuilderVersion for the graph builder (world.EngineGraph),
 // which goes its own way: it goes up when that builder changes what it
 // builds.
-const GraphVersion = 67
+const GraphVersion = 68
 
 // Builder builds worlds.
 type Builder struct {

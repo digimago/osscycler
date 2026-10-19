@@ -378,6 +378,26 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 		// its outline's few big triangles stood up to 12 cm off it.
 		under = append(under, l.mesh)
 	}
+	// Land shut in between roads and a car park is paved as between roads
+	// (owner, 2026-10-18, 19.51 km of the Hohneck loop: a green triangle
+	// between the road's edge and the car park's outline).
+	if len(lots) > 0 {
+		var lotMeshes []gltf.Primitive
+		for _, l := range lots {
+			lotMeshes = append(lotMeshes, l.mesh)
+		}
+		with := map[[2]int][]gltf.Primitive{}
+		for _, k := range chunkOrder(roads) {
+			with[k] = append(append([]gltf.Primitive(nil), roads[k]...), lotMeshes...)
+		}
+		isl := pavedIslandsGrown(with, ground, roadMats.surface[scenery.SurfaceAsphalt], o.ChunkM, true)
+		for _, k := range chunkOrder(roads) {
+			if p, ok := isl[k]; ok {
+				roads[k] = append(roads[k], p)
+				under = append(under, p)
+			}
+		}
+	}
 	pathOverLots(px, py, pz, lots)
 	// What plants and grass keep off: the roads and car parks (not the
 	// water: its reeds grow along its edge).

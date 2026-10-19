@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/digimago/osscycler/internal/gltf"
+	"github.com/digimago/osscycler/internal/scenery"
 )
 
 // Along a French mountain road the ground model decides the roadside
@@ -318,5 +319,65 @@ func TestWallFitsTheBankBehind(t *testing.T) {
 	}
 	if endTop > 10+wallLeastH+wallEndSlope*1.5 {
 		t.Errorf("within a metre of its ends the wall stands %.2f m high, want it coming down to its ends", endTop-10)
+	}
+}
+
+// No grass grows in a retaining wall's footprint: on the land under the
+// masonry it stood out through the face (owner, 2026-10-18, 20.00 km of
+// the Hohneck loop).
+func TestNoGrassInAWall(t *testing.T) {
+	c := northCourse(t)
+	kx := 111195 * math.Cos(52*math.Pi/180)
+	elev := func(lat, lon float64) (float64, bool) {
+		x, y := (lon-5)*kx, (lat-52)*111195
+		if x < -3 && y > 200 && y < 400 {
+			return 10 + math.Min(-x-3, 2.5), true
+		}
+		return 10, true
+	}
+	tr := testTerrain(c, Options{Region: RegionFR, Elevation: elev})
+	w := &World{doc: gltf.New("test")}
+	if err := w.addRoadside(tr, nil, nil, nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	if len(tr.walls) == 0 {
+		t.Fatal("no wall footprints recorded")
+	}
+	sp := newSpots(tr, nil, nil, nil)
+	in := 0
+	for _, wall := range tr.walls {
+		var e, n float64
+		for _, q := range wall {
+			e, n = e+q[0]/4, n+q[1]/4
+		}
+		if sp.clearance(e, n, 25) > 0 {
+			in++
+		}
+	}
+	if in > 0 {
+		t.Errorf("%d of %d wall pieces have room for grass in their middle, want none", in, len(tr.walls))
+	}
+}
+
+// A pasture's fence is cut where it would run through a retaining wall
+// (owner, 2026-10-18, 20.00 km of the Hohneck loop: its wire ran along
+// the masonry).
+func TestFenceKeepsClearOfWalls(t *testing.T) {
+	wall := [][2]float64{{-0.5, 10}, {0.5, 10}, {0.5, 20}, {-0.5, 20}}
+	f := scenery.Fence{Line: [][2]float64{{0, 0}, {0, 40}}, Wire: true, GateFromM: 25, GateToM: 29}
+	out := fencesClearOfWalls([]scenery.Fence{f}, [][][2]float64{wall})
+	if len(out) != 2 {
+		t.Fatalf("the fence comes out in %d pieces, want 2 either side of the wall", len(out))
+	}
+	for _, g := range out {
+		for _, q := range g.Line {
+			if q[1] > 10-fenceWallM && q[1] < 20+fenceWallM {
+				t.Errorf("a fence point at %.1f m stands within %.1f m of the wall at 10-20 m", q[1], fenceWallM)
+			}
+		}
+	}
+	other := scenery.Fence{Line: [][2]float64{{5, 0}, {5, 40}}, Wire: true, GateFromM: 25, GateToM: 29}
+	if got := fencesClearOfWalls([]scenery.Fence{other}, [][][2]float64{wall}); len(got) != 1 || got[0].GateToM != 29 {
+		t.Errorf("a fence clear of the wall was changed: %+v", got)
 	}
 }

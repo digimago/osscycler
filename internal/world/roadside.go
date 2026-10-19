@@ -794,6 +794,16 @@ func retaining(p, fill *gltf.Primitive, land func(e, n float64) float64, clear f
 		}
 	}
 	for k := r.from; k < r.to; k++ {
+		// Its footprint, which the grass keeps off (owner, 2026-10-18,
+		// 20.00 km of the Hohneck loop: grass grew on the land under the
+		// wall and stood out through its face).
+		{
+			e0, n0 := pos(k, wallOffM-0.05)
+			e1, n1 := pos(k+1, wallOffM-0.05)
+			e2, n2 := pos(k+1, wallOffM+h[k+1-r.from]*batter+0.45)
+			e3, n3 := pos(k, wallOffM+h[k-r.from]*batter+0.45)
+			t.walls = append(t.walls, [][2]float64{{e0, n0}, {e1, n1}, {e2, n2}, {e3, n3}})
+		}
 		for ri := 0; ri+1 < len(rows); ri++ {
 			c := stone
 			if rock {

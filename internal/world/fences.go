@@ -304,3 +304,79 @@ func cross(a, b [3]float64) [3]float64 {
 func dot3(a, b [3]float64) float64 { return a[0]*b[0] + a[1]*b[1] + a[2]*b[2] }
 
 func scale3(a [3]float64, k float64) [3]float64 { return [3]float64{a[0] * k, a[1] * k, a[2] * k} }
+
+// fenceWallM: a pasture's fence keeps this far from a retaining wall.
+const fenceWallM = 0.6
+
+// fencesClearOfWalls is fences with the pastures' wire fences cut where
+// they come within fenceWallM of a retaining wall's footprint (owner,
+// 2026-10-18, 20.00 km of the Hohneck loop: placed 1.2 m off the road's
+// edge, a fence ran through the wall standing 1 m off it, its wire along
+// the masonry). A fence that is cut loses its gate.
+func fencesClearOfWalls(fences []scenery.Fence, walls [][][2]float64) []scenery.Fence {
+	if len(walls) == 0 {
+		return fences
+	}
+	type box struct{ lo, hi [2]float64 }
+	boxes := make([]box, len(walls))
+	for i, w := range walls {
+		b := box{[2]float64{math.Inf(1), math.Inf(1)}, [2]float64{math.Inf(-1), math.Inf(-1)}}
+		for _, q := range w {
+			b.lo[0], b.lo[1] = math.Min(b.lo[0], q[0]-fenceWallM), math.Min(b.lo[1], q[1]-fenceWallM)
+			b.hi[0], b.hi[1] = math.Max(b.hi[0], q[0]+fenceWallM), math.Max(b.hi[1], q[1]+fenceWallM)
+		}
+		boxes[i] = b
+	}
+	nearWall := func(q [2]float64) bool {
+		for i, w := range walls {
+			b := boxes[i]
+			if q[0] < b.lo[0] || q[0] > b.hi[0] || q[1] < b.lo[1] || q[1] > b.hi[1] {
+				continue
+			}
+			if inPoly(w, q[0], q[1]) || polyEdgeDist(w, q[0], q[1]) < fenceWallM {
+				return true
+			}
+		}
+		return false
+	}
+	var out []scenery.Fence
+	for _, f := range fences {
+		if !f.Wire {
+			out = append(out, f)
+			continue
+		}
+		// Points every metre along the line, so a short wall cuts it too.
+		var pts [][2]float64
+		for i := 0; i+1 < len(f.Line); i++ {
+			a, b := f.Line[i], f.Line[i+1]
+			n := max(1, int(math.Ceil(math.Hypot(b[0]-a[0], b[1]-a[1]))))
+			for j := 0; j < n; j++ {
+				u := float64(j) / float64(n)
+				pts = append(pts, [2]float64{a[0] + u*(b[0]-a[0]), a[1] + u*(b[1]-a[1])})
+			}
+		}
+		pts = append(pts, f.Line[len(f.Line)-1])
+		cut := false
+		var piece [][2]float64
+		flush := func() {
+			if len(piece) >= 2 {
+				out = append(out, scenery.Fence{Line: piece, Wire: true})
+			}
+			piece = nil
+		}
+		for _, q := range pts {
+			if nearWall(q) {
+				cut = true
+				flush()
+				continue
+			}
+			piece = append(piece, q)
+		}
+		if !cut {
+			out = append(out, f)
+			continue
+		}
+		flush()
+	}
+	return out
+}

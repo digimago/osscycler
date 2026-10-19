@@ -965,8 +965,28 @@ func newSpots(t *terrain, land *scenery.LandMap, fps []scenery.Footprint, parks 
 		}
 		return false
 	}
+	// Retaining walls by 20 m cell: only the grass keeps off them.
+	walls := map[[2]int][][][2]float64{}
+	for _, w := range t.walls {
+		lo, hi := [2]float64{math.Inf(1), math.Inf(1)}, [2]float64{math.Inf(-1), math.Inf(-1)}
+		for _, q := range w {
+			lo[0], lo[1], hi[0], hi[1] = math.Min(lo[0], q[0]), math.Min(lo[1], q[1]), math.Max(hi[0], q[0]), math.Max(hi[1], q[1])
+		}
+		const pad = 3.0 // what grows needs a metre or two
+		for gx := int(math.Floor((lo[0] - pad) / 20)); gx <= int(math.Floor((hi[0]+pad)/20)); gx++ {
+			for gy := int(math.Floor((lo[1] - pad) / 20)); gy <= int(math.Floor((hi[1]+pad)/20)); gy++ {
+				walls[[2]int{gx, gy}] = append(walls[[2]int{gx, gy}], w)
+			}
+		}
+	}
 	sp.clearance = func(e, n, max float64) float64 {
 		best := max
+		for _, w := range walls[[2]int{int(math.Floor(e / 20)), int(math.Floor(n / 20))}] {
+			if inPoly(w, e, n) {
+				return 0
+			}
+			best = math.Min(best, polyEdgeDist(w, e, n))
+		}
 		if t.surfaces != nil {
 			// Any road surface, junctions and roundabouts too; near ones
 			// only (what grows needs a metre or two).

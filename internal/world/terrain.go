@@ -12,6 +12,10 @@ import (
 
 // terrain shapes the ground in square chunks along the route.
 type terrain struct {
+	// walls are the retaining walls' footprints (e, n), from the face's
+	// foot to the coping's back: no grass grows there (the ground map's
+	// clearance).
+	walls [][][2]float64
 	// exact are the water areas drawn from their own outline (waters.go):
 	// the cells leave their water out.
 	exact        map[int]bool

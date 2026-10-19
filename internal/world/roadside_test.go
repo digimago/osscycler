@@ -268,3 +268,55 @@ func TestWallsRunOnOverShortGaps(t *testing.T) {
 		}
 	}
 }
+
+// A retaining wall stands no higher than the land it holds up, and comes
+// down towards its ends (owner, 2026-10-18, 19.07 km of the Hohneck loop:
+// walls stood out of the terrain like buttresses, a 2.6 m wall ending
+// square, its fill a ridge over the bank behind).
+func TestWallFitsTheBankBehind(t *testing.T) {
+	c := northCourse(t)
+	kx := 111195 * math.Cos(52*math.Pi/180)
+	// West of the road, between 200 and 400 m north, a bank rising 1 in 1
+	// from 3 m out to a level bench 2.5 m up.
+	elev := func(lat, lon float64) (float64, bool) {
+		x, y := (lon-5)*kx, (lat-52)*111195
+		if x < -3 && y > 200 && y < 400 {
+			return 10 + math.Min(-x-3, 2.5), true
+		}
+		return 10, true
+	}
+	tr := testTerrain(c, Options{Region: RegionFR, Elevation: elev})
+	w := &World{doc: gltf.New("test")}
+	if err := w.addRoadside(tr, nil, nil, nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	type vtx struct{ n, y float64 }
+	var vs []vtx
+	lo, hi := math.Inf(1), math.Inf(-1)
+	for _, p := range w.prims {
+		if name := w.doc.MaterialName(p.Material); name != "stone wall" && name != "rock" {
+			continue
+		}
+		for v := 0; v+2 < len(p.Positions); v += 3 {
+			q := vtx{-float64(p.Positions[v+2]), float64(p.Positions[v+1])}
+			vs = append(vs, q)
+			lo, hi = math.Min(lo, q.n), math.Max(hi, q.n)
+		}
+	}
+	if len(vs) == 0 {
+		t.Fatal("no wall along the bank")
+	}
+	top, endTop := 0.0, 0.0
+	for _, q := range vs {
+		top = math.Max(top, q.y)
+		if math.Min(q.n-lo, hi-q.n) < 1 {
+			endTop = math.Max(endTop, q.y)
+		}
+	}
+	if top > 12.5+wallOverM+0.01 {
+		t.Errorf("the wall's top stands at %.2f m, over the bench behind it at 12.50", top)
+	}
+	if endTop > 10+wallLeastH+wallEndSlope*1.5 {
+		t.Errorf("within a metre of its ends the wall stands %.2f m high, want it coming down to its ends", endTop-10)
+	}
+}

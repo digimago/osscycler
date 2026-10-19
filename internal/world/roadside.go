@@ -358,8 +358,39 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 					if c > 0 {
 						h[k-r.from] = sum / float64(c)
 					}
-					if end := min(k-r.from, r.to-k); end < 3 && !square {
-						h[k-r.from] *= (float64(end) + 1) / 4
+					// Down towards its ends at wallEndSlope, as a wing wall
+					// winds down into the bank (owner, 2026-10-18, 19.07 km
+					// of the Hohneck loop: over three samples a 2.6 m wall
+					// ended square, standing out of the bank like a buttress).
+					if !square {
+						end := math.Min(dist[k]-dist[r.from], dist[r.to]-dist[k])
+						h[k-r.from] = math.Min(h[k-r.from], wallLeastH+wallEndSlope*end)
+					}
+				}
+				// Never over what it holds up: its top at most wallOverM
+				// over the ground model behind it, or level with the first
+				// road surface there (owner, 2026-10-18, 19.07 km of the
+				// Hohneck loop: the wall along the Chemin de Schmargult,
+				// below the Route des Crêtes, stood over the main road's
+				// edge with a wedge of fill down to it; walls stood out of
+				// the terrain like buttresses where the land behind didn't
+				// rise to them).
+				for k := r.from; k <= r.to; k++ {
+					a := t.fine[ln.from+k]
+					if limit, ok := wallLimit(a.ele, func(d float64) (float64, bool, bool) {
+						e, n := at(k, sign*(sideEdge(a, si)+d))
+						if t.surfaces != nil {
+							if hs, ok := t.surfaces.highest(e, -n, 0.3); ok && hs > a.ele+0.1 {
+								return hs, true, true
+							}
+						}
+						z, ok := model(e, n)
+						if !ok {
+							z = land(e, n)
+						}
+						return z, false, true
+					}); ok {
+						h[k-r.from] = math.Min(h[k-r.from], limit)
 					}
 				}
 				isRock := 2*rock > r.to-r.from+1
@@ -372,7 +403,13 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 				clear := func(e, n float64) bool { // no other road within 1.5 m (a hairpin's next leg)
 					return sp.roadNear(e, n, 1.5, line) < 0 && (t.surfaces == nil || t.surfaces.dist(e, -n, 1.5) >= 1.5)
 				}
-				retaining(p, f, land, clear, landColour, t, ln.from, r, h, sign, isRock, square, func(k int, off float64) (float64, float64) {
+				roadTop := func(e, n float64) (float64, bool) {
+					if t.surfaces == nil {
+						return 0, false
+					}
+					return t.surfaces.highest(e, -n, 0.1)
+				}
+				retaining(p, f, land, clear, roadTop, landColour, t, ln.from, r, h, sign, isRock, square, func(k int, off float64) (float64, float64) {
 					a := t.fine[ln.from+k]
 					return at(k, sign*(sideEdge(a, si)+off))
 				})
@@ -683,9 +720,40 @@ func guardRail(p *gltf.Primitive, t *terrain, from int, r sideRun, dist []float6
 	}
 }
 
+// wallOverM: a wall's top stands at most this much over the ground behind
+// it; wallLeastH: and is at least this high (at its ends too).
+const (
+	wallOverM    = 0.15
+	wallLeastH   = 0.3
+	wallEndSlope = 0.6 // and comes down this much a metre towards an end
+)
+
+// wallLimit is the most a wall at a road of height ele may stand, from
+// behind(d), what lies d metres past the road's edge: its height, whether
+// it is a road surface, and whether anything is known there. Probed from
+// the wall's line out to 4.5 m past the edge; a road surface behind ends
+// the probe, the wall's top level with it.
+func wallLimit(ele float64, behind func(d float64) (z float64, road, ok bool)) (float64, bool) {
+	top, found := math.Inf(-1), false
+	for d := wallOffM + 0.5; d <= 4.5+1e-9; d += 0.5 {
+		z, road, ok := behind(d)
+		if !ok {
+			continue
+		}
+		if road {
+			return math.Max(wallLeastH, z-ele), true
+		}
+		top, found = math.Max(top, z), true
+	}
+	if !found {
+		return 0, false
+	}
+	return math.Max(wallLeastH, top+wallOverM-ele), true
+}
+
 // retaining is a wall of dressed stone leaning back into the slope
 // (or rock under netting) along run, h its height at each sample.
-func retaining(p, fill *gltf.Primitive, land func(e, n float64) float64, clear func(e, n float64) bool, landColour func(e, n float64) [3]float32, t *terrain, from int, r sideRun, h []float64, sign float64, rock, square bool, pos func(k int, off float64) (float64, float64)) {
+func retaining(p, fill *gltf.Primitive, land func(e, n float64) float64, clear func(e, n float64) bool, roadTop func(e, n float64) (float64, bool), landColour func(e, n float64) [3]float32, t *terrain, from int, r sideRun, h []float64, sign float64, rock, square bool, pos func(k int, off float64) (float64, float64)) {
 	stone, coping := srgbLinear(0x6c665c), srgbLinear(0x5c5850)
 	rockC := srgbLinear(0x5e5a54)
 	batter := 0.18 // the face leans back this much per metre up
@@ -770,14 +838,14 @@ func retaining(p, fill *gltf.Primitive, land func(e, n float64) float64, clear f
 			quad(p, b, a, d, c, [3]float64{-nrm[0], -nrm[1], -nrm[2]}, stone)
 		}
 	}
-	backfill(fill, land, clear, landColour, t, from, r, h, batter, rock, square, pos)
+	backfill(fill, land, clear, roadTop, landColour, t, from, r, h, batter, rock, square, pos)
 }
 
 // backfill fills the land in behind a wall (owner, 2026-10-15: the walls
 // stood as free faces): from its top back into the slope until it meets
 // the land as drawn (or 12 m on, or short of another road, then down to
 // the land), so the slope ends at the wall's top as a cutting's does.
-func backfill(p *gltf.Primitive, land func(e, n float64) float64, clear func(e, n float64) bool, landColour func(e, n float64) [3]float32, t *terrain, from int, r sideRun, h []float64, batter float64, rock, square bool, pos func(k int, off float64) (float64, float64)) {
+func backfill(p *gltf.Primitive, land func(e, n float64) float64, clear func(e, n float64) bool, roadTop func(e, n float64) (float64, bool), landColour func(e, n float64) [3]float32, t *terrain, from int, r sideRun, h []float64, batter float64, rock, square bool, pos func(k int, off float64) (float64, float64)) {
 	const far, step = 12.0, 0.5
 	back := 0.0 // the top's back edge past the face (the coping)
 	if !rock {
@@ -790,10 +858,25 @@ func backfill(p *gltf.Primitive, land func(e, n float64) float64, clear func(e, 
 		o0 := wallOffM + hk*batter + back
 		top := t.fine[from+k].ele + hk
 		meet, z := far, 0.0
+		zRoad, toRoad := 0.0, false
 		for d := step; d <= far; d += step {
 			e, n := pos(k, o0+d)
 			if !clear(e, n) {
-				meet = math.Max(step, d-step) // short of another road: down to the land there
+				// A road at about the top's level: the fill runs on to its
+				// edge, tucked under it (owner, 2026-10-18, 19.07 km of the
+				// Hohneck loop: dropped to the land short of the Route des
+				// Crêtes, the fill stood as a ridge along the Chemin de
+				// Schmargult's wall). Else short of it, down to the land.
+				for dd := d; dd <= d+2 && roadTop != nil; dd += 0.25 {
+					re, rn := pos(k, o0+dd)
+					if hs, ok := roadTop(re, rn); ok && hs > top-0.6 {
+						meet, zRoad, toRoad = dd, hs-0.03, true
+						break
+					}
+				}
+				if !toRoad {
+					meet = math.Max(step, d-step)
+				}
 				break
 			}
 			if z = land(e, n); z >= top-0.05 {
@@ -805,6 +888,9 @@ func backfill(p *gltf.Primitive, land func(e, n float64) float64, clear func(e, 
 		e1, n1 := pos(k, o0+meet/2)
 		e2, n2 := pos(k, o0+meet)
 		z2 := land(e2, n2) + 0.03
+		if toRoad {
+			z2 = zRoad
+		}
 		zm := top + (z2-top)*0.5
 		rows[k-r.from] = row{{e0, top, -n0}, {e1, zm, -n1}, {e2, z2, -n2}}
 	}

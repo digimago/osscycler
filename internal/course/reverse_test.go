@@ -101,6 +101,23 @@ func TestReversedLap(t *testing.T) {
 			t.Errorf("%.0f m along the reverse is %.1f m from the forward course's point ForwardAt gives (%.0f m)", d, g, rev.ForwardAt(d))
 		}
 	}
+	// Opposite: the same spot the other way round, both ways; none on the
+	// run-in out, whose way back neither lapped course rides.
+	for _, pair := range [][2]*Course{{fwd, rev}, {rev, fwd}} {
+		a, b := pair[0], pair[1]
+		for d := a.Lap.StartM + 30; d < a.Lap.EndM-30; d += 50 {
+			o, ok := a.Opposite(b, d)
+			if !ok {
+				t.Fatalf("%s at %.0f m: no opposite on the lap", a.ID, d)
+			}
+			if g := math.Hypot(at(a, d)[0]-at(b, o)[0], at(a, d)[1]-at(b, o)[1]); g > 0.5 {
+				t.Errorf("%s at %.0f m: the opposite %.0f m along %s is %.1f m away", a.ID, d, o, b.ID, g)
+			}
+		}
+		if _, ok := a.Opposite(b, a.Lap.StartM/2); ok {
+			t.Errorf("%s: an opposite on the run-in out", a.ID)
+		}
+	}
 	if fwd.ForwardAt(123) != 123 {
 		t.Error("ForwardAt of a forward course isn't its own distance")
 	}

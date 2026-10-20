@@ -507,3 +507,36 @@ func TestLastRideIsTheCourseRideOnly(t *testing.T) {
 		t.Errorf("the ride's samples run from its own start: first %+v, last %+v", ss[0], ss[59])
 	}
 }
+
+// Turning round (ride.Session.TurnAround) ends the ride so far in a lap of
+// its own and starts another on the other way; an untimed ride that
+// finishes leaves no result.
+func TestTurnedRoundRideHasNoResult(t *testing.T) {
+	r := newRecorder(t)
+	reverse := func(phase telemetry.RidePhase) func(int) telemetry.State {
+		return func(i int) telemetry.State {
+			st := onCourse(phase)(i)
+			st.Ride.CourseID, st.Ride.CourseName, st.Ride.Untimed = "mash-reverse", "Mountain Mash (reverse)", true
+			return st
+		}
+	}
+	play(r, []step{
+		{30, onCourse(telemetry.RideRiding)},
+		{40, reverse(telemetry.RideRiding)},
+		{10, reverse(telemetry.RideFinished)},
+		{301, func(int) telemetry.State { return state(0, 0, 0) }},
+	})
+	if res, err := ReadResults(r.cfg.Dir); err != nil || len(res) != 0 {
+		t.Errorf("results %+v, %v: want none", res, err)
+	}
+	// Laps: the ride the first way, the ride back, what came after.
+	_, msgs := decodeOnly(t, r.cfg.Dir)
+	var secs []int64
+	for _, m := range byNum(msgs, 19) {
+		secs = append(secs, field(t, m, 8)/1000) // total_timer_time
+	}
+	// (The activity opens on the first sample: its timer from there.)
+	if len(secs) < 2 || secs[0] < 29 || secs[0] > 30 || secs[1] != 40 {
+		t.Errorf("laps of %v s, want 30 s the first way, then 40 s back", secs)
+	}
+}

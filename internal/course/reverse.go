@@ -99,3 +99,16 @@ func (c *Course) ForwardAt(d float64) float64 {
 	}
 	return max(0, min(p, f.Distance))
 }
+
+// Opposite is where the point d along c lies along o, c's other way (its
+// reverse, or the forward course of a reverse): the same spot on the
+// road, the other way round. ok is false where o has no such point: on a
+// lapped course's run-in out, whose way back to the start the other way's
+// lapped course leaves out.
+func (c *Course) Opposite(o *Course, d float64) (at float64, ok bool) {
+	p := c.rawLength() - c.toRaw(c.clamp(d))
+	if l := o.Lap; l != nil && !o.Loop && p > l.EndM {
+		return 0, false
+	}
+	return max(0, min(p, o.Distance)), true
+}

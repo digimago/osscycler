@@ -25,6 +25,8 @@ import (
 var (
 	ErrUnknownCourse = errors.New("ride: unknown course")
 	ErrRideActive    = errors.New("ride: a ride, workout or manual control is already under way")
+	ErrNoRide        = errors.New("ride: no course ride under way")
+	ErrNoOtherWay    = errors.New("ride: this course can't be ridden the other way")
 )
 
 // Trainer is the control the session needs from the trainer.
@@ -106,6 +108,10 @@ type run struct {
 	// chosen: the ghost is a ride the rider picked, kept all ride long;
 	// otherwise on a loop each lap faster than it becomes the ghost.
 	chosen bool
+	// untimed: the rider turned round onto this course partway along
+	// (TurnAround); joined: on its lap, partway round, untimed until the
+	// lap's line (lap 0, lapDist how far into the lap).
+	untimed, joined bool
 
 	// Lapped courses only (course.Lap).
 	lap                   int       // under way, from 1; 0 on the run-in
@@ -315,6 +321,108 @@ func (s *Session) Stop() error {
 	return nil
 }
 
+// otherWay is the course that rides c the other way: its reverse, or the
+// forward course of a reverse; nil when it has none.
+func (s *Session) otherWay(c *course.Course) *course.Course {
+	for _, o := range s.courses {
+		if (c.Forward != nil && o.ID == c.Forward.ID) || (o.Forward != nil && o.Forward.ID == c.ID) {
+			return o
+		}
+	}
+	return nil
+}
+
+// TurnAround turns the rider round during a course ride (owner,
+// 2026-10-20): the ride so far ends with no result, and the rider rides
+// on from the same spot, at the same speed, along the course's other way,
+// untimed. Timing lines time it from there as on any ride: on a lapped
+// course the lap's line starts a timed lap (the rest of the lap the rider
+// joined is untimed, its ghost waiting at the line); a one-way course
+// finishes with no time that counts. On a lapped course's run-in out the
+// other way has no way back to the start (Opposite), so the ride ends as
+// Stop ends it; then it returns "". Otherwise it returns the course
+// ridden on now. A pause holds on.
+func (s *Session) TurnAround() (string, error) {
+	s.mu.Lock()
+	r := s.run
+	if r == nil || !r.phase.Active() || r.c.Loop {
+		s.mu.Unlock()
+		if r != nil && r.c.Loop && r.phase.Active() {
+			return "", ErrNoOtherWay
+		}
+		return "", ErrNoRide
+	}
+	o := s.otherWay(r.c)
+	if o == nil {
+		s.mu.Unlock()
+		return "", ErrNoOtherWay
+	}
+	at, ok := r.c.Opposite(o, r.rider.DistanceM)
+	ghosts := s.cfg.Ghosts
+	s.mu.Unlock()
+	if !ok {
+		s.log.Info("turned round on the run-in: no way back along the course, the ride ends", "course", r.c.Name)
+		return "", s.Stop()
+	}
+	// The other way's lap ghost: from its lap's start, read outside the
+	// lock as start does.
+	var ghost *Ghost
+	if o.Lap != nil && ghosts != nil {
+		var err error
+		if ghost, err = ghosts.Ghost(o, o.Lap.StartM); err != nil {
+			s.log.Warn("no ghost for this ride", "course", o.Name, "err", err)
+		}
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.run != r || !r.phase.Active() {
+		return "", ErrNoRide // ended meanwhile
+	}
+	now := r.last // on the ticks' clock, as the ride's own times
+	if now.IsZero() {
+		now = time.Now()
+	}
+	ele, _ := o.At(at)
+	n := &run{c: o, rider: sim.Rider{Params: r.rider.Params, DistanceM: at, SpeedMPS: r.rider.SpeedMPS},
+		phase: r.phase, lastEle: ele, startM: at, ghost: ghost, untimed: true, yielded: r.yielded,
+		pausedAt: r.pausedAt, paused: r.paused}
+	if n.phase == telemetry.RideRiding {
+		n.start, n.last = now, now
+		if !n.pausedAt.IsZero() {
+			n.start = n.pausedAt // its clock stands until the pause ends
+		}
+	}
+	if l := o.Lap; l != nil && at >= l.StartM {
+		n.joined, n.lapDist = true, at-l.StartM
+		if at > l.EndM { // its tail: the lap's start again
+			n.lapDist = at - l.EndM
+		}
+	}
+	n.lapSpeed0 = n.rider.SpeedMPS
+	s.run = n
+	switch {
+	case n.yielded:
+		s.target = nil
+	case !n.pausedAt.IsZero():
+		flat := 0.0
+		s.target = &flat
+	default:
+		g := s.trainerGrade(o, at, n.rider.SpeedMPS)
+		s.target = &g
+	}
+	clock := time.Time{}
+	if n.phase == telemetry.RideRiding {
+		clock = now
+		if !n.pausedAt.IsZero() {
+			clock = n.pausedAt
+		}
+	}
+	s.publish(n, clock)
+	s.log.Info("turned round", "from", r.c.Name, "from_km", round(r.rider.DistanceM/1000, 2), "course", o.Name, "at_km", round(at/1000, 2))
+	return o.ID, nil
+}
+
 // Run advances the ride and drives the trainer until ctx is done.
 func (s *Session) Run(ctx context.Context) error {
 	var wg sync.WaitGroup
@@ -359,7 +467,7 @@ func (s *Session) tick(now time.Time) {
 			return
 		}
 		r.phase, r.start, r.last = telemetry.RideRiding, now, now
-		if l := r.c.Lap; l != nil && r.rider.DistanceM >= l.StartM {
+		if l := r.c.Lap; l != nil && r.rider.DistanceM >= l.StartM && !r.joined {
 			s.beginLap(r, now, r.rider.DistanceM-l.StartM, 1) // the ride starts on the lap
 		}
 		s.log.Info("ride started", "course", r.c.Name)
@@ -403,7 +511,7 @@ func (s *Session) tick(now time.Time) {
 		flat := 0.0
 		s.target = &flat
 		elapsed := finish.Sub(r.start)
-		s.log.Info("ride finished", "course", r.c.Name, "time", elapsed.Round(time.Second),
+		s.log.Info("ride finished", "course", r.c.Name, "time", elapsed.Round(time.Second), "untimed", r.untimed,
 			"avg_power_w", round(r.energyJ/elapsed.Seconds(), 0), "climbed_m", round(r.climbed, 0))
 	} else {
 		g := s.trainerGrade(r.c, r.rider.DistanceM, r.rider.SpeedMPS)
@@ -474,7 +582,20 @@ func crossedAt(r *run, now time.Time, over float64) time.Time {
 // keeps the current lap's trace for the ghost.
 func (s *Session) laps(r *run, now time.Time, moved float64) {
 	l := r.c.Lap
-	if r.lap == 0 {
+	switch {
+	case r.lap == 0 && r.joined:
+		// Partway round: the lap's line starts the first timed lap.
+		if r.lapDist += moved; r.lapDist >= l.Length() {
+			over := r.lapDist - l.Length()
+			cross := crossedAt(r, now, over)
+			if cross.Before(r.start) {
+				cross = r.start
+			}
+			r.joined = false
+			s.beginLap(r, cross, over, 1)
+			s.log.Info("over the lap's line: timed from here", "course", r.c.Name)
+		}
+	case r.lap == 0:
 		if r.rider.DistanceM >= l.StartM {
 			over := r.rider.DistanceM - l.StartM
 			cross := crossedAt(r, now, over)
@@ -484,7 +605,7 @@ func (s *Session) laps(r *run, now time.Time, moved float64) {
 			s.beginLap(r, cross, over, 1)
 			s.log.Info("onto the lap", "course", r.c.Name)
 		}
-	} else {
+	default:
 		r.lapDist += moved
 	}
 	for r.lap > 0 && r.lapDist >= l.Length() {
@@ -601,12 +722,16 @@ func (s *Session) publish(r *run, now time.Time) {
 			Yielded:         r.yielded,
 			Paused:          r.paused,
 			LapPaused:       r.lapPaused,
+			Untimed:         r.untimed,
 		}
 		if l != nil {
 			st.Ride.Lap, st.Ride.LapElapsed = r.lap, lapElapsed
 			st.Ride.LapStartM, st.Ride.LapLengthM = l.StartM, l.Length()
 			st.Ride.LapDistanceM = r.lapDist
-			if r.lap == 0 {
+			switch {
+			case r.lap == 0 && r.joined:
+				st.Ride.LapDistanceM = r.lapDist - l.Length() // to go to the line: negative
+			case r.lap == 0:
 				st.Ride.LapDistanceM = r.rider.DistanceM - l.StartM // to go to the lap: negative
 			}
 		}

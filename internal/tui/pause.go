@@ -38,9 +38,15 @@ func (m Model) pauseKey(key string) (Model, tea.Cmd, bool) {
 	case "p", "P", "space", " ":
 		return m, m.setPaused(!m.paused()), true
 	case "esc":
-		if m.underWay() && !m.paused() {
+		switch {
+		case m.underWay() && !m.paused():
 			m.menu, m.menuPaused, m.notice = &menuState{}, true, ""
 			return m, m.setPaused(true), true
+		case m.underWay():
+			// Already paused (p, another screen, nobody watching): the menu
+			// all the same, and leaving it leaves the pause as it was.
+			m.menu, m.menuPaused, m.notice = &menuState{}, false, ""
+			return m, nil, true
 		}
 	}
 	return m, nil, false

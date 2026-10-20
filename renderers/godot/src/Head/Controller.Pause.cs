@@ -38,6 +38,12 @@ public sealed partial class Controller
                 _menuPaused = true;
                 SetPaused(true);
                 return true;
+            case "esc" when UnderWay(st):
+                // Already paused (p, another screen, nobody watching): the
+                // menu all the same, and leaving it leaves the pause as it was.
+                OpenMenu();
+                _menuPaused = false;
+                return true;
         }
         return false;
     }

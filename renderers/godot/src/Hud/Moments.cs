@@ -118,7 +118,9 @@ public sealed class Moments
             {
                 double avgKmh = r.ElapsedS > 0 ? (r.CourseDistanceM - r.StartDistanceM) / r.ElapsedS * 3.6 : 0;
                 var (verdict, colour) = ("First ride on this stretch: the PB to beat next time", Palette.Dim);
-                if (r.Ghost is { } g)
+                if (r.Untimed)
+                    verdict = "Turned round on the way: not timed";
+                else if (r.Ghost is { } g)
                     (verdict, colour) = g.GapS < 0
                         ? ($"NEW PB  {Format.Secs(-g.GapS)} faster than {Format.Clock(g.TimeS)}", Palette.Power)
                         : ($"{Format.Secs(g.GapS)} off your {g.Label} ({Format.Clock(g.TimeS)})", Palette.Behind);

@@ -134,6 +134,12 @@ func (m Model) rideKey(key string) (Model, tea.Cmd, bool) {
 			_, err := cmds.SetDifficulty(ctx, want)
 			return err
 		}), true
+	case key == "r" && m.rideActive():
+		m, turn, cmd := m.turnKey()
+		if turn {
+			return m, m.command("turn round", cmd), true
+		}
+		return m, nil, true
 	// w also on a loop: a workout rides on it.
 	case (key == "r" && !m.rideActive() || key == "w" && !m.courseRide()) && !m.workoutActive() && !m.calibrationActive() && m.countdown == 0:
 		m.notice = ""
@@ -465,6 +471,9 @@ func (m Model) rideResult(width, height int, finished bool) string {
 
 // rideVerdict says how a finished course ride went against its ghost.
 func rideVerdict(r *pb.Ride) string {
+	if r.GetUntimed() {
+		return dimStyle.Render("turned round on the way: not timed")
+	}
 	if g := r.GetGhost(); g != nil {
 		if gap := g.GetGapS(); gap < 0 {
 			return pbStyle.Render(fmt.Sprintf("★ NEW PB  %s faster than %s", secs(-gap), clock(g.GetTimeS())))

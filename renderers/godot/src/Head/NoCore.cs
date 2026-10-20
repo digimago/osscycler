@@ -12,6 +12,7 @@ public sealed class NoCore : ICommands
     static Task None() => Task.FromException(new InvalidOperationException("no core (start the renderer with --core)"));
 
     public Task StopRide() => None();
+    public Task<string> TurnAround() => Task.FromException<string>(new InvalidOperationException("no core (start the renderer with --core)"));
     public Task SetPaused(bool paused) => None();
     public Task SetSimulated(bool on) => None();
     public Task SetDifficulty(double pct) => None();

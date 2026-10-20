@@ -72,7 +72,7 @@ public sealed partial class Controller
                 (_summary, _summaryRide) = (null, false);
         if (!finished)
             return;
-        var heading = $"FINISHED  {r!.CourseName}  {Hud.Format.Clock(r.ElapsedS)}" + (r.Ghost is { } g
+        var heading = $"FINISHED  {r!.CourseName}  {Hud.Format.Clock(r.ElapsedS)}" + (r.Untimed ? "   turned round on the way: not timed" : r.Ghost is { } g
             ? g.GapS < 0 ? $"   NEW PB  {Hud.Format.Secs(-g.GapS)} faster" : $"   {Hud.Format.Secs(g.GapS)} off your {g.Label}"
             : "   first ride on this stretch");
         _cmds.RideSummary().ContinueWith(done =>

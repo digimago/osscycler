@@ -155,9 +155,14 @@ func (m Model) timeTile() metric {
 	t := metric{label: "TIME", value: clock(r.GetElapsedS()), style: lipgloss.NewStyle()}
 	if r.GetLoop() { // a loop is timed lap by lap
 		t.label, t.value = fmt.Sprintf("LAP %d", r.GetLap()), clock(r.GetLapElapsedS())
-		if r.GetLap() == 0 { // on the run-in: the lap comes
+		switch {
+		case r.GetLap() == 0 && r.GetUntimed(): // turned round: timed from the lap's line
+			t.label, t.value = "NOT TIMED", clock(r.GetElapsedS())
+		case r.GetLap() == 0: // on the run-in: the lap comes
 			t.label, t.value = "RUN-IN", clock(r.GetElapsedS())
 		}
+	} else if r.GetUntimed() { // turned round: no time that counts
+		t.label = "NOT TIMED"
 	}
 	g := r.GetGhost()
 	if g == nil {

@@ -23,6 +23,11 @@ sealed class Calls : ICommands
     }
 
     public Task StopRide() => Add("stop ride");
+    public async Task<string> TurnAround()
+    {
+        await Add("turn round");
+        return "posbank-reverse";
+    }
     public Task SetPaused(bool paused) => Add($"paused {paused}");
     public Task SetSimulated(bool on) => Add($"simulated {on}");
     public Task SetDifficulty(double pct) => Add($"difficulty {pct}");
@@ -163,6 +168,76 @@ public class HeadTests
         Assert.Equal("press x again to end the ride", h.Asking(20));
         h.Key("x", Riding(loop: true), 20 + Controller.AbortConfirmS + 1); // too late: asks again
         Assert.Single(c.Sent);
+    }
+
+    static State OnCourse(string id, double at, bool lapped = false) => new()
+    {
+        Ride = new Ride
+        {
+            Phase = RidePhase.Riding, CourseId = id, CourseDistanceM = 29730, DistanceM = at,
+            Loop = lapped, LapStartM = lapped ? 2320 : 0, LapLengthM = lapped ? 27310 : 0,
+        },
+    };
+
+    // r during a course ride asks, r again turns round (owner, 2026-10-20:
+    // r r as x x, since the ride so far no longer counts).
+    [Fact]
+    public void TurningRoundNeedsTwoPresses()
+    {
+        var c = new Calls();
+        var h = new Controller(c);
+        var st = OnCourse("posbank", 9000, lapped: true);
+        h.Key("r", st, 10);
+        Assert.Empty(c.Sent);
+        Assert.StartsWith("press r again to turn round", h.Asking(11));
+        h.Key("r", st, 12);
+        Assert.Equal(new[] { "turn round" }, c.Sent);
+
+        // Each key confirms only itself: x then r turns nothing round.
+        h.Key("x", st, 20);
+        h.Key("r", st, 21);
+        Assert.Single(c.Sent);
+        Assert.StartsWith("press r again", h.Asking(21));
+
+        // On the run-in out it ends the ride; the core says so.
+        Assert.StartsWith("press r again to end the ride", AskedAt(OnCourse("posbank", 1000, lapped: true)));
+    }
+
+    static string AskedAt(State st)
+    {
+        var h = new Controller(new Calls());
+        h.Key("r", st, 0);
+        return h.Asking(0);
+    }
+
+    // A test track (its lap the whole course) has no other way: r asks
+    // nothing, and the key map leaves r r out.
+    [Fact]
+    public void ATrackCantBeTurnedRound()
+    {
+        var c = new Calls();
+        var h = new Controller(c);
+        var st = new State { Ride = new Ride { Phase = RidePhase.Riding, CourseId = "oval-400", CourseDistanceM = 400, Loop = true, LapLengthM = 400 } };
+        h.Key("r", st, 0);
+        h.Key("r", st, 1);
+        Assert.Empty(c.Sent);
+        Assert.Equal("", h.Asking(1));
+        Assert.DoesNotContain(Controller.HelpFor(st).Item2, e => e.Item1 == "r r");
+        Assert.Contains(Controller.HelpFor(OnCourse("posbank", 9000, lapped: true)).Item2, e => e.Item1 == "r r");
+        // With the course list, a course without a reverse has none either.
+        var list = new List<Course> { new() { Id = "posbank" } };
+        Assert.Null(Controller.OtherWay(OnCourse("posbank", 9000).Ride, list));
+        list.Add(new Course { Id = "posbank-reverse" });
+        Assert.Equal("posbank-reverse", Controller.OtherWay(OnCourse("posbank", 9000).Ride, list));
+        Assert.Equal("posbank", Controller.OtherWay(OnCourse("posbank-reverse", 9000).Ride, list));
+    }
+
+    [Fact]
+    public void AnUntimedRideSaysSo()
+    {
+        var st = OnCourse("posbank-reverse", 9000);
+        st.Ride.Untimed = true;
+        Assert.Equal("NOT TIMED", Tiles.Make("time", st, null).Label);
     }
 
     [Fact]

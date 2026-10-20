@@ -18,7 +18,8 @@ import (
 var routes embed.FS
 
 // Included returns the courses that come with osscycler: the built-in test
-// tracks, then the included routes, sorted by ID. Unlike the tracks, the
+// tracks, then the included routes, sorted by ID, each followed by its
+// reverse. Unlike the tracks, the
 // routes are real places, with map data.
 func Included() []*Course {
 	cs := Tracks()
@@ -36,7 +37,8 @@ func Included() []*Course {
 			panic(fmt.Sprintf("course: included route %s: %v", n, err)) // a test reads every one
 		}
 		c.Included = true
-		cs = append(cs, c.Lapped())
+		fwd, rev := withReverse(c)
+		cs = append(cs, fwd, rev)
 	}
 	return cs
 }

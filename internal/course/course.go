@@ -56,6 +56,9 @@ type Course struct {
 	// Credit is the GPX file's copyright notice, e.g. for a route drawn
 	// along OpenStreetMap roads; empty when it has none.
 	Credit string
+	// Forward is the course a reversed one rides the other way, as ridden
+	// (reverse.go); nil on any other course.
+	Forward *Course
 
 	dist  []float64 // sample positions, 0 .. Distance
 	ele   []float64 // smoothed elevation at each sample
@@ -65,6 +68,9 @@ type Course struct {
 	trackDist, lat, lon []float64
 	// frame: Project's origin when not the start (InFrame).
 	frame *[2]float64
+	// raw: the length as loaded, when Lapped has left the run-in back out
+	// (0: Distance).
+	raw float64
 }
 
 // New builds a course from track points, which need elevation.
@@ -393,14 +399,19 @@ func ParseGPX(id string, r io.Reader) (*Course, error) {
 }
 
 // LoadDir loads every .gpx file in dir, sorted by name; the file name
-// without extension is the course ID. Files that fail to load are reported
-// in the error but don't stop the others.
+// without extension is the course ID. Each course is followed by its
+// reverse (Reversed, ID + ReverseSuffix). Files that fail to load are
+// reported in the error but don't stop the others.
 func LoadDir(dir string) ([]*Course, error) {
 	paths, err := filepath.Glob(filepath.Join(dir, "*.gpx"))
 	if err != nil {
 		return nil, err
 	}
 	sort.Strings(paths)
+	hasFile := map[string]bool{}
+	for _, p := range paths {
+		hasFile[strings.TrimSuffix(filepath.Base(p), filepath.Ext(p))] = true
+	}
 	var (
 		courses []*Course
 		errs    []error
@@ -418,7 +429,13 @@ func LoadDir(dir string) ([]*Course, error) {
 			errs = append(errs, fmt.Errorf("%s: %w", p, err))
 			continue
 		}
-		courses = append(courses, c.Lapped())
+		// Each course ridden the other way too, unless a file of its own
+		// has that ID.
+		fwd, rev := withReverse(c)
+		courses = append(courses, fwd)
+		if reversible(id) && !hasFile[rev.ID] {
+			courses = append(courses, rev)
+		}
 	}
 	return courses, errors.Join(errs...)
 }

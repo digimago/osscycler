@@ -22,7 +22,12 @@ var routes embed.FS
 // reverse. Unlike the tracks, the
 // routes are real places, with map data.
 func Included() []*Course {
-	cs := Tracks()
+	var cs []*Course
+	for _, t := range Tracks() {
+		rev := t.Reversed()
+		rev.Forward = t
+		cs = append(cs, t, rev)
+	}
 	names, err := fs.Glob(routes, "routes/*.gpx")
 	if err != nil {
 		panic(err) // the pattern is fixed

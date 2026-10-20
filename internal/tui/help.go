@@ -206,7 +206,7 @@ func (m Model) turnHelp() helpEntry {
 	case m.otherWay() == "":
 		return helpEntry{}
 	case m.onRunIn():
-		return helpEntry{"r r", "end the ride (no way back along the course from the run-in)"}
+		return helpEntry{"r r", "turn round, once you're on the lap (none from the run-in)"}
 	}
 	return helpEntry{"r r", "turn round: on along the course the other way, untimed until its next timing line"}
 }

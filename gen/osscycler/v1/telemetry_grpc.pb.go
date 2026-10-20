@@ -82,10 +82,10 @@ type TelemetryServiceClient interface {
 	// rides on from the same spot along the course's other way (its
 	// reverse, or the forward course of a reverse), untimed until a timing
 	// line: a lap's line starts a timed lap; a one-way course's finish ends
-	// the ride, not timed. On a lapped course's run-in out the other way has
-	// no way back to the start, so the ride ends there (course_id empty).
-	// FAILED_PRECONDITION without a course ride under way or on a course
-	// with no other way (the test tracks).
+	// the ride, not timed. FAILED_PRECONDITION without a course ride under
+	// way, on a course with no other way, or on a lapped course's run-in
+	// out, where the other way has no way back to the start (turn round
+	// once on the lap).
 	TurnAround(ctx context.Context, in *TurnAroundRequest, opts ...grpc.CallOption) (*TurnAroundResponse, error)
 	// SetDifficulty sets the share of climbs the trainer applies, 0-100 %,
 	// clamped. It applies to the ride under way and the ones after it.
@@ -510,10 +510,10 @@ type TelemetryServiceServer interface {
 	// rides on from the same spot along the course's other way (its
 	// reverse, or the forward course of a reverse), untimed until a timing
 	// line: a lap's line starts a timed lap; a one-way course's finish ends
-	// the ride, not timed. On a lapped course's run-in out the other way has
-	// no way back to the start, so the ride ends there (course_id empty).
-	// FAILED_PRECONDITION without a course ride under way or on a course
-	// with no other way (the test tracks).
+	// the ride, not timed. FAILED_PRECONDITION without a course ride under
+	// way, on a course with no other way, or on a lapped course's run-in
+	// out, where the other way has no way back to the start (turn round
+	// once on the lap).
 	TurnAround(context.Context, *TurnAroundRequest) (*TurnAroundResponse, error)
 	// SetDifficulty sets the share of climbs the trainer applies, 0-100 %,
 	// clamped. It applies to the ride under way and the ones after it.

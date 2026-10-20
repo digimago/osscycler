@@ -162,15 +162,28 @@ func TestLoadDirReverses(t *testing.T) {
 	}
 }
 
-// The included routes come both ways; the test tracks don't.
+// The included routes and the test tracks come both ways (owner,
+// 2026-10-20: the tracks too); a track's reverse is a closed loop the
+// other way round from the same line.
 func TestIncludedReverses(t *testing.T) {
 	byID := map[string]*Course{}
 	for _, c := range Included() {
 		byID[c.ID] = c
 	}
 	for _, tr := range Tracks() {
-		if byID[tr.ID+ReverseSuffix] != nil {
-			t.Errorf("track %s reversed", tr.ID)
+		r := byID[tr.ID+ReverseSuffix]
+		if r == nil || r.Forward != byID[tr.ID] || !r.Loop || !r.Builtin || r.Lap == nil || r.Lap.StartM != 0 || r.Lap.EndM != r.Distance {
+			t.Fatalf("track %s's reverse: %+v", tr.ID, r)
+		}
+		for d := 0.0; d < tr.Distance; d += 37 {
+			rl, rn := r.Position(d)
+			fl, fn := tr.Position(tr.Distance - d)
+			if math.Hypot((rl-fl)*metresPerDegree, (rn-fn)*metresPerDegree) > 0.5 {
+				t.Fatalf("%s reversed at %.0f m is off the track", tr.ID, d)
+			}
+		}
+		if o, ok := tr.Opposite(r, 100); !ok || math.Abs(o-(tr.Distance-100)) > 1e-6 {
+			t.Errorf("%s: opposite of 100 m is %.1f (%v)", tr.ID, o, ok)
 		}
 	}
 	p, r := byID["posbank"], byID["posbank-reverse"]

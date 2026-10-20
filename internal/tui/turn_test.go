@@ -42,8 +42,8 @@ func TestTurnRoundKeys(t *testing.T) {
 	}
 }
 
-// On the run-in out r r ends the ride; on a course with no other way r
-// says so and asks nothing.
+// On the run-in out, and on a course with no other way, r says why not
+// and asks nothing.
 func TestTurnRoundElsewhere(t *testing.T) {
 	rev := hillCourse()
 	rev.Id = "hill-reverse"
@@ -54,8 +54,9 @@ func TestTurnRoundElsewhere(t *testing.T) {
 	next, cmd := m.Update(StateMsg{State: st})
 	next, _ = next.Update(cmd())
 	m, _ = press(next.(Model), "r")
-	if out := plain(m.render()); !strings.Contains(out, "press r again to end the ride") {
-		t.Errorf("r on the run-in:\n%s", out)
+	m, _ = press(m, "r")
+	if m.asking != "" || !strings.Contains(m.notice, "turn round once you're on the lap") || cmds.turns != 0 {
+		t.Errorf("r r on the run-in: asking %q, notice %q, %d turns", m.asking, m.notice, cmds.turns)
 	}
 
 	cmds = &stubCommands{courses: []*pb.Course{hillCourse()}}

@@ -222,9 +222,10 @@ public sealed partial class Controller
             Run("close ride", _cmds.StopRide);
     }
 
-    // Confirm asks for key again (x x, r r): the second press within a
-    // few seconds acts; another key's first press doesn't count for it.
-    void Confirm(double now, string key, string question, Action act)
+    // Confirm asks for key again (x x, r r): the second press within
+    // waitS seconds (AbortConfirmS unless given) acts; another key's first
+    // press doesn't count for it.
+    void Confirm(double now, string key, string question, Action act, double waitS = AbortConfirmS)
     {
         if (now < _abortUntil && _confirmKey == key)
         {
@@ -232,8 +233,15 @@ public sealed partial class Controller
             act();
             return;
         }
-        (_abortUntil, _asking, _confirmKey) = (now + AbortConfirmS, question, key);
+        (_abortUntil, _asking, _confirmKey) = (now + waitS, question, key);
     }
+
+    // TurnConfirmS is how long a first r waits for the second: longer than
+    // x x's, as its question takes a while to read (owner, 2026-10-20: a
+    // second r after reading it only asked again).
+    public const double TurnConfirmS = 6;
+
+    const string RunInHint = "no way back along the course from the run-in: turn round once you're on the lap";
 
     // TurnKey is r during a course ride: r again turns round onto the
     // course's other way, untimed until a timing line (owner, 2026-10-20:
@@ -245,23 +253,23 @@ public sealed partial class Controller
             Say("this course can't be ridden the other way");
             return;
         }
-        string question = OnRunIn(r)
-            ? "press r again to end the ride (no way back along the course from the run-in)"
-            : "press r again to turn round (this ride won't count; timed again from the next line)";
-        Confirm(now, "r", question, () => Run("turn round", () => _cmds.TurnAround()));
+        if (OnRunIn(r))
+        {
+            Say(RunInHint);
+            return;
+        }
+        Confirm(now, "r", "press r again to turn round (this ride won't count; timed again from the next line)",
+            () => Run("turn round", () => _cmds.TurnAround()), TurnConfirmS);
     }
 
     // ReverseSuffix ends a reversed course's ID (course.ReverseSuffix).
     const string ReverseSuffix = "-reverse";
 
     // OtherWay is the course that rides r's the other way: its reverse, or
-    // the forward course of a reverse; null when it has none (a test track,
-    // whose lap is the whole course). Without the course list, the core
-    // has the last word.
+    // the forward course of a reverse; null when the course list has none.
+    // Without the list, the core has the last word.
     public static string? OtherWay(Ride r, IList<Course>? courses)
     {
-        if (r.Loop && r.LapStartM == 0 && r.LapLengthM >= r.CourseDistanceM - 0.01)
-            return null;
         string id = r.CourseId;
         string other = id.EndsWith(ReverseSuffix, StringComparison.Ordinal) ? id[..^ReverseSuffix.Length] : id + ReverseSuffix;
         if (courses == null)
@@ -275,10 +283,10 @@ public sealed partial class Controller
     // TurnHelp is r r's line in the key map; none on a test track.
     static List<(string, string)> TurnHelp(Ride r, IList<Course>? courses) => OtherWay(r, courses) == null
         ? new()
-        : new() { ("r r", OnRunIn(r) ? "end the ride (no way back along the course from the run-in)" : "turn round: on along the course the other way, untimed until its next timing line") };
+        : new() { ("r r", OnRunIn(r) ? "turn round, once you're on the lap (none from the run-in)" : "turn round: on along the course the other way, untimed until its next timing line") };
 
     // OnRunIn: on a lapped course's run-in out, which the other way has no
-    // way back along: turning round there ends the ride.
+    // way back along: no turning round there.
     public static bool OnRunIn(Ride r) => r.Loop && r.LapLengthM > 0 && r.DistanceM < r.LapStartM;
 
     // Run sends a command; a failure shows as a notice.

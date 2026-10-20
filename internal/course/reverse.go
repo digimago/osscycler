@@ -19,17 +19,21 @@ const reverseName = " (reverse)"
 //
 // c must be a course as loaded, before Lapped: a lapped course has left
 // out the run-in back to its start, which the reverse rides first. Lap the
-// result for the reverse's own lap. The test tracks aren't reversed:
-// their made-up landscapes are laid out along their own way.
+// result for the reverse's own lap. A closed loop (a test track) reverses
+// as it is, the other way round from the same line (owner, 2026-10-20);
+// its made-up surroundings are the forward track's (scenery.TrackScenery).
 func (c *Course) Reversed() *Course {
-	if c.Lap != nil || c.Loop {
-		panic("course: Reversed of a lapped course or a loop: " + c.ID)
+	if c.Lap != nil && !c.Loop {
+		panic("course: Reversed of a lapped course: " + c.ID)
 	}
 	r := &Course{
 		ID: c.ID + ReverseSuffix, Name: c.Name + reverseName,
 		Distance: c.Distance, Spacing: c.Spacing,
 		Gain: c.Loss, Loss: c.Gain, MaxGrade: -c.MinGrade, MinGrade: -c.MaxGrade,
-		Builtin: c.Builtin, Included: c.Included, Credit: c.Credit, raw: c.rawLength(),
+		Builtin: c.Builtin, Included: c.Included, Credit: c.Credit, raw: c.rawLength(), Loop: c.Loop,
+	}
+	if c.Loop {
+		r.Lap = &Lap{StartM: 0, EndM: c.Distance}
 	}
 	n := len(c.dist)
 	r.dist = append([]float64(nil), c.dist...) // the same grid

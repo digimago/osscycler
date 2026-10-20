@@ -54,8 +54,8 @@ type Rides interface {
 	// StartAgainst races the earlier ride that finished at finished.
 	StartAgainst(courseID string, finished time.Time) error
 	Stop() error
-	// TurnAround turns the rider round onto the course's other way; ""
-	// when the ride ended instead (on a run-in out).
+	// TurnAround turns the rider round onto the course's other way: the
+	// course ridden on now.
 	TurnAround() (string, error)
 	SetDifficulty(pct float64) float64
 }
@@ -587,7 +587,7 @@ func (s *telemetryServer) TurnAround(context.Context, *pb.TurnAroundRequest) (*p
 	}
 	id, err := s.rides.TurnAround()
 	switch {
-	case errors.Is(err, ride.ErrNoRide), errors.Is(err, ride.ErrNoOtherWay):
+	case errors.Is(err, ride.ErrNoRide), errors.Is(err, ride.ErrNoOtherWay), errors.Is(err, ride.ErrOnRunIn):
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	case err != nil:
 		return nil, status.Error(codes.Internal, err.Error())

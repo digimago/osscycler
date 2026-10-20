@@ -102,8 +102,9 @@ func TestTurnAroundOnTheLap(t *testing.T) {
 }
 
 // On the run-in out the other way has no way back to the start: turning
-// round ends the ride.
-func TestTurnAroundOnTheRunInEndsTheRide(t *testing.T) {
+// round is refused there (owner, 2026-10-20: ending the ride was a
+// surprise), and the ride goes on.
+func TestTurnAroundOnTheRunInIsRefused(t *testing.T) {
 	fwd, rev := bothWays(t, square(t))
 	s, hub := sessionOf(fwd, rev)
 	if err := s.Start(fwd.ID); err != nil {
@@ -113,11 +114,42 @@ func TestTurnAroundOnTheRunInEndsTheRide(t *testing.T) {
 	if r := ride(hub); r.Lap != 0 || r.DistanceM < 50 {
 		t.Fatalf("not on the run-in: %+v", r)
 	}
-	if id, err := s.TurnAround(); err != nil || id != "" {
+	if id, err := s.TurnAround(); !errors.Is(err, ErrOnRunIn) || id != "" {
 		t.Fatalf("turned round onto %q, %v", id, err)
 	}
-	if r := ride(hub); r.Phase != telemetry.RideAborted || r.CourseID != fwd.ID {
-		t.Errorf("after turning round on the run-in: phase %v on %s", r.Phase, r.CourseID)
+	if r := ride(hub); r.Phase != telemetry.RideRiding || r.CourseID != fwd.ID || r.Untimed {
+		t.Errorf("after turning round on the run-in: phase %v on %s, untimed %v", r.Phase, r.CourseID, r.Untimed)
+	}
+}
+
+// A test track turns round onto its reverse, the other way round from the
+// same spot, untimed until the line.
+func TestTurnAroundOnATrack(t *testing.T) {
+	oval := course.Tracks()[0]
+	rev := oval.Reversed()
+	rev.Forward = oval
+	s, hub := sessionOf(oval, rev)
+	if err := s.Start(oval.ID); err != nil {
+		t.Fatal(err)
+	}
+	at := pedal(s, hub, time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC), 20*time.Second, 300, nil)
+	before := ride(hub)
+	if id, err := s.TurnAround(); err != nil || id != rev.ID {
+		t.Fatalf("turned round onto %q, %v", id, err)
+	}
+	r := ride(hub)
+	if g := metresApart(before.Lat, before.Lon, r.Lat, r.Lon); g > 1 || !r.Untimed || r.Lap != 0 || r.LapDistanceM >= 0 {
+		t.Fatalf("on the reversed oval %.1f m away: %+v", g, r)
+	}
+	var first telemetry.Lap
+	pedal(s, hub, at, 3*time.Minute, 300, func(r telemetry.Ride) {
+		if first.N == 0 && r.LastLap.N == 1 {
+			first = r.LastLap
+		}
+	})
+	// A whole flying lap of 400 m: about 40 s.
+	if first.N != 1 || first.Elapsed < 30*time.Second || first.Elapsed > 60*time.Second {
+		t.Errorf("the first timed lap the other way round: %+v", first)
 	}
 }
 

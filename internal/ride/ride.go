@@ -27,6 +27,7 @@ var (
 	ErrRideActive    = errors.New("ride: a ride, workout or manual control is already under way")
 	ErrNoRide        = errors.New("ride: no course ride under way")
 	ErrNoOtherWay    = errors.New("ride: this course can't be ridden the other way")
+	ErrOnRunIn       = errors.New("ride: no way back along the course from the run-in: turn round once you're on the lap")
 )
 
 // Trainer is the control the session needs from the trainer.
@@ -339,17 +340,15 @@ func (s *Session) otherWay(c *course.Course) *course.Course {
 // course the lap's line starts a timed lap (the rest of the lap the rider
 // joined is untimed, its ghost waiting at the line); a one-way course
 // finishes with no time that counts. On a lapped course's run-in out the
-// other way has no way back to the start (Opposite), so the ride ends as
-// Stop ends it; then it returns "". Otherwise it returns the course
-// ridden on now. A pause holds on.
+// other way has no way back to the start (Opposite): refused with
+// ErrOnRunIn (owner, 2026-10-20: ending the ride there was a surprise),
+// the ride going on. It returns the course ridden on now. A pause holds
+// on.
 func (s *Session) TurnAround() (string, error) {
 	s.mu.Lock()
 	r := s.run
-	if r == nil || !r.phase.Active() || r.c.Loop {
+	if r == nil || !r.phase.Active() {
 		s.mu.Unlock()
-		if r != nil && r.c.Loop && r.phase.Active() {
-			return "", ErrNoOtherWay
-		}
 		return "", ErrNoRide
 	}
 	o := s.otherWay(r.c)
@@ -361,8 +360,7 @@ func (s *Session) TurnAround() (string, error) {
 	ghosts := s.cfg.Ghosts
 	s.mu.Unlock()
 	if !ok {
-		s.log.Info("turned round on the run-in: no way back along the course, the ride ends", "course", r.c.Name)
-		return "", s.Stop()
+		return "", ErrOnRunIn
 	}
 	// The other way's lap ghost: from its lap's start, read outside the
 	// lock as start does.

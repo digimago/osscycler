@@ -4560,7 +4560,7 @@ func (*TurnAroundRequest) Descriptor() ([]byte, []int) {
 
 type TurnAroundResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The course ridden on now; empty when the ride ended instead.
+	// The course ridden on now.
 	CourseId      string `protobuf:"bytes,1,opt,name=course_id,json=courseId,proto3" json:"course_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

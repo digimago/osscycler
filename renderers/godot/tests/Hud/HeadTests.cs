@@ -199,33 +199,28 @@ public class HeadTests
         Assert.Single(c.Sent);
         Assert.StartsWith("press r again", h.Asking(21));
 
-        // On the run-in out it ends the ride; the core says so.
-        Assert.StartsWith("press r again to end the ride", AskedAt(OnCourse("posbank", 1000, lapped: true)));
+        // Reading the question takes a while: a second r 5 s later counts.
+        h.Key("r", st, 40);
+        h.Key("r", st, 45);
+        Assert.Equal(2, c.Sent.Count(s => s == "turn round"));
+
+        // On the run-in out it says why not, and asks nothing.
+        var runIn = OnCourse("posbank", 1000, lapped: true);
+        h.Key("r", runIn, 60);
+        h.Key("r", runIn, 61);
+        Assert.Equal(2, c.Sent.Count(s => s == "turn round"));
+        Assert.Equal("", h.Asking(61));
+        Assert.Contains("once you're on the lap", h.Notice(61));
     }
 
-    static string AskedAt(State st)
-    {
-        var h = new Controller(new Calls());
-        h.Key("r", st, 0);
-        return h.Asking(0);
-    }
-
-    // A test track (its lap the whole course) has no other way: r asks
-    // nothing, and the key map leaves r r out.
+    // A course the list has no other way for: r asks nothing, and the key
+    // map leaves r r out.
     [Fact]
-    public void ATrackCantBeTurnedRound()
+    public void ACourseWithoutAnOtherWayCantBeTurnedRound()
     {
-        var c = new Calls();
-        var h = new Controller(c);
-        var st = new State { Ride = new Ride { Phase = RidePhase.Riding, CourseId = "oval-400", CourseDistanceM = 400, Loop = true, LapLengthM = 400 } };
-        h.Key("r", st, 0);
-        h.Key("r", st, 1);
-        Assert.Empty(c.Sent);
-        Assert.Equal("", h.Asking(1));
-        Assert.DoesNotContain(Controller.HelpFor(st).Item2, e => e.Item1 == "r r");
-        Assert.Contains(Controller.HelpFor(OnCourse("posbank", 9000, lapped: true)).Item2, e => e.Item1 == "r r");
-        // With the course list, a course without a reverse has none either.
         var list = new List<Course> { new() { Id = "posbank" } };
+        Assert.Empty(Controller.HelpFor(OnCourse("posbank", 9000), list).Item2.Where(e => e.Item1 == "r r"));
+        Assert.Contains(Controller.HelpFor(OnCourse("posbank", 9000, lapped: true)).Item2, e => e.Item1 == "r r");
         Assert.Null(Controller.OtherWay(OnCourse("posbank", 9000).Ride, list));
         list.Add(new Course { Id = "posbank-reverse" });
         Assert.Equal("posbank-reverse", Controller.OtherWay(OnCourse("posbank", 9000).Ride, list));

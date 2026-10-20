@@ -264,3 +264,12 @@ Owner's list, 2026-10-10 (in this order unless said otherwise):
 ## Since 2026-10-20
 
 (New entries here: date, what was done, its numbers, the owner's verdict.)
+
+### 2026-10-20: turning round, first rides
+
+The owner rode the reversed Posbank Loop in the 3D view: `r r` "either ends the ride or does nothing", and now and then `esc` didn't open the menu during a ride.
+
+- Ends the ride: turning round on a run-in out ended the ride by design (the other way's lapped course has no way back to the start). Now refused with a hint, "turn round once you're on the lap" (owner's choice over ending the ride or riding back to the start). `ride.ErrOnRunIn`, FAILED_PRECONDITION.
+- Does nothing: reproduced in the 3D view on a `-fake` core, just past the reversed course's lap line. The core turned round correctly (2.41 km on the reverse → 29.57 km on the forward course, the same lat/lon, the forward lap's line 62 m ahead, timed lap 1 from it), and the view's loading cover went up until the forward world was in. But the second `r` had to come within 3 s (as `x x`), and the question is a long sentence: read it, press `r` again, and it only asked again. The second `r` now has 6 s (`turnConfirm`, `TurnConfirmS`).
+- `esc`: both screens opened the menu on `esc` only when the core wasn't paused, so after `p`, another screen's pause or the unattended pause it did nothing. It now opens the menu on a paused ride too and leaves the pause as it was.
+- The test tracks reversed too (owner): a closed loop reverses as it is, the other way round from the same line; `scenery.TrackScenery` gives a reverse the forward track's surroundings (the same start, so the same frame). Graph worlds: figure 8 forward 389,718 triangles, 46,564 plants, reverse 389,618 and 46,574, both 402 made-up map elements, checks clean; the oval's reverse 1.0 MB, clean. Looked at the reversed figure 8 at 1.3 km: the forward descent a 4-6 % climb, the polder fences and forest as forward.

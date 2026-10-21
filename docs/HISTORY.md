@@ -303,3 +303,7 @@ Three tests that had only run on the classic builder failed on the graph builder
 - `TestWaterFromItsOutline`: beside a ditch the graph builder's land lies 1.3-3.0 cm under the water's level (it eases the banks down and tucks the land's edge 3 cm under the sheet), where the classic test allowed 1 cm: the test takes the graph builder's 3 cm tuck (a hairline at the shore at most).
 - `TestCoursesSharingARoadBuildTheSameWorldThere`: with the shared road a course's own way (no map road), the graph builder's land eases to each course's own road samples, drawn along each course's own distance: plants 91 % at the same spot, land 0.16 m apart (the known gap for worlds per area). With the shared road a map road, as shared roads are, it passes as written (98 % and more, within 5 cm).
 
+### 2026-10-21: a flaky control socket test
+
+`ControlSocketTests.RequestsWaitingWhenTheViewClosesAreAnswered` failed once on CI (a 5 s timeout, run 39661870400). The test slept 200 ms for its request to be queued; on a slow runner the request was read just after `Dispose` had emptied the queue, was queued after it, and waited for a frame that never came, so the client hung: a real shutdown race of the renderer's control socket, not only the test's. Now every request still unanswered when the view closes is answered "the view closed" (`ControlSocket._closed`), and the test waits for its request to be queued (`Waiting`). 30 of 30 runs passed with every core busy.
+

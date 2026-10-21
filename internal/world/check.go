@@ -16,8 +16,7 @@ import (
 // surface is there at all: off road (2026-10-10: an 8.7 m road between two
 // junctions in Rhenen was left out, and the rider crossed the grass under
 // it; the terrain was whole, so neither holes nor land over road saw it).
-// riddenMaterials are the surfaces a rider can be on (settleOnRoad keeps
-// the riding line on them).
+// riddenMaterials are the surfaces a rider can be on.
 var riddenMaterials = map[string]bool{"road": true, "cycle lane": true, "sidewalk": true, "kerb": true,
 	"roundabout centre": true, "start line": true, "running track": true}
 

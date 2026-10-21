@@ -44,7 +44,6 @@ func main() {
 	to := flag.Float64("to", 0, "end of the stretch, m along the course (0: the end)")
 	out := flag.String("out", "", "directory to write the world to")
 	demDir := flag.String("dem", "", "AHN tile cache (e.g. _gpx/.dem); empty: no ground model")
-	engine := flag.String("builder", world.DefaultEngine, "world builder: classic or graph")
 	flag.Parse()
 	if *id == "" || *out == "" {
 		flag.Usage()
@@ -133,7 +132,7 @@ func main() {
 		}
 		o.Elevation = m.Elevation
 	}
-	w, err := world.BuildWith(*engine, cc, o)
+	w, err := world.Build(cc, o)
 	if err != nil {
 		log.Fatal(err)
 	}

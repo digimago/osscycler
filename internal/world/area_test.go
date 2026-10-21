@@ -14,6 +14,9 @@ import (
 // to 1.1 m apart and 10 % of its plants where the loop's stood): in one
 // frame their grids line up, and heights are the ground model's own, not
 // each course's GPS profile's (A reads 10 m, B 25 m on the same road).
+// The road is a map road, as shared roads are; a road of a course's own
+// (a path the map lacks) is still drawn along each course's own distance,
+// so two courses' differ: the worlds-per-area work.
 func TestCoursesSharingARoadBuildTheSameWorldThere(t *testing.T) {
 	const lat0, lon0 = 52.0, 5.0
 	kx := 111195.0 * math.Cos(lat0*math.Pi/180)
@@ -56,7 +59,15 @@ func TestCoursesSharingARoadBuildTheSameWorldThere(t *testing.T) {
 		c = c.InFrame(lat0, lon0)
 		lm := scenery.NewLandMap(c, &scenery.Data{Elements: []scenery.Element{
 			{Type: "way", ID: 1, Tags: map[string]string{"landuse": "forest"}, Geometry: ring(-500, -500, 1000, 2000)}}})
-		w, err := Build(c, Options{Generator: "test", Elevation: ground, Land: lm})
+		road := scenery.Way{Line: [][2]float64{{0, -100}, {0, 1600}}, Nodes: []int64{1, 2}, Name: "Shared road", Class: "tertiary", WidthM: 6}
+		on := make([]int, int(c.Distance/5)+1) // the way the route rides every 5 m: the road once on it
+		for i := range on {
+			if lat, lon := c.Position(float64(i) * 5); math.Abs((lon-lon0)*kx) > 3 || (lat-lat0)*111195 < 300 && c.ID == "b" {
+				on[i] = -1
+			}
+		}
+		sc := &scenery.Scenery{Ways: []scenery.Way{road}, RouteOn: on, RouteStepM: 5}
+		w, err := Build(c, Options{Generator: "test", Elevation: ground, Land: lm, Scenery: sc})
 		if err != nil {
 			t.Fatal(err)
 		}

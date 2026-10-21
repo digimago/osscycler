@@ -97,19 +97,6 @@ func (s *surface) ground(e, n float64) float64 {
 	return h
 }
 
-// parkingMesh is a car park's surface laid on the ground.
-func parkingMesh(s *surface, outline [][2]float64, material int) gltf.Primitive {
-	return draped(s.at, outline, material, parkingLiftM)
-}
-
-// draped is a flat area laid on a surface (height at east, north), lift
-// above it: its outline triangulated, every triangle split alike into
-// pieces at most drapeCellM across (so shared edges split the same and
-// nothing cracks).
-func draped(height func(e, n float64) float64, outline [][2]float64, material int, lift float64) gltf.Primitive {
-	return drapedIn(height, outline, material, lift, drapeCellM, false)
-}
-
 // drapedIn is draped with triangles at most cell across; cell 0 leaves the
 // outline's triangles whole (a junction: its outline has a point every
 // 2 m along each road, at the road's height, and is near-flat between).

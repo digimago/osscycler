@@ -1292,7 +1292,7 @@ func rayToRing(r [][2]float64, i int, p [2]float64, nx, ny float64) float64 {
 }
 
 // gWaterSheet is water x's surface for the graph builder, from its own
-// outline (as the classic builder's waterMeshes): its level from its
+// outline (as the classic builder's was): its level from its
 // banks, but never over the shore as the land stands there (dry, its
 // heights eased to the roads beside it; shoreUnderM under it within
 // shoreReachM), so a ditch beside a road lies below the verge between them

@@ -173,6 +173,11 @@ func patchMeshes(p patch, m roadMaterials, v *verger) []gltf.Primitive {
 	if p.rb != nil && p.rb.paved() {
 		out = append(out, p.rb.pavedMesh(m.paving, m.kerb)...)
 	}
+	if p.rb != nil && len(p.rb.bridged) > 0 && m.rail >= 0 {
+		if q := p.rb.railMesh(p, m.rail, m.cornerWalk); len(q.Indices) > 0 {
+			out = append(out, q)
+		}
+	}
 	return out
 }
 

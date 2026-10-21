@@ -334,6 +334,7 @@ func Build(c *course.Course, o Options) (*World, error) {
 		ways = o.Scenery.Ways
 	}
 	rbs := findRoundabouts(ways, true)
+	roadMats.addRailMaterial(w.doc, rbs)
 	if minR := styleFor(o.Region).rbIslandMinR; minR > 0 {
 		for i := range rbs {
 			rbs[i].island = rbs[i].island || rbs[i].r >= minR

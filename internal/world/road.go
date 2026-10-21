@@ -32,6 +32,17 @@ type roadMaterials struct {
 	paving     int     // a roundabout\'s paved centre circle
 	apronM     float64 // an island roundabout's apron of setts round the island (style.rbApronM)
 	cornerWalk bool    // a junction's sidewalk stops at the corner where only one road has one (style.cornerWalk)
+	rail       int     // a roundabout's railing over a bridge; -1 when no roundabout has one (addRailMaterial)
+}
+
+// addRailMaterial gives the road materials a railing's steel when a
+// roundabout lies over a bridge (only then, so other worlds stay as they
+// were).
+func (m *roadMaterials) addRailMaterial(d *gltf.Doc, rbs []roundabout) {
+	m.rail = -1
+	if anyBridged(rbs) {
+		m.rail = d.AddMaterial(gltf.Material{Name: "railing", Color: [4]float32{1, 1, 1, 1}, Roughness: 0.6})
+	}
 }
 
 func addRoadMaterials(d *gltf.Doc, st *style) roadMaterials {
@@ -39,7 +50,7 @@ func addRoadMaterials(d *gltf.Doc, st *style) roadMaterials {
 		c := srgbLinear(hex)
 		return d.AddMaterial(gltf.Material{Name: name, Color: [4]float32{c[0], c[1], c[2], 1}, Roughness: rough})
 	}
-	var m roadMaterials
+	m := roadMaterials{rail: -1} // addRailMaterial gives it one when needed
 	// One grey for every carriageway until roads get textures (owner,
 	// 2026-10-09): the surface (asphalt, concrete, klinkers, unpaved) is
 	// known per road and junction, for the texture to show then.

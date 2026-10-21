@@ -25,6 +25,11 @@ type roundabout struct {
 	plane     [3]float64 // height a + b·east + c·north
 	keepRight bool       // traffic goes round anticlockwise (seen from above)
 	arms      []rbArm    // the roads leaving it (shape)
+	// bridged are the angles its ring's bridges span (the map's ring
+	// pieces tagged bridge: La Bresse's second roundabout lies over the
+	// Moselotte), each from its start anticlockwise by its length, in
+	// radians from east.
+	bridged [][2]float64
 }
 
 // rbArm is a road leaving a roundabout: its line, where it's cut at the
@@ -184,9 +189,136 @@ func findRoundabouts(ws []scenery.Way, keepRight bool) []roundabout {
 		if lanes >= 2 {
 			hw = math.Max(hw, ringHalf2M)
 		}
-		out = append(out, roundabout{c: c, r: r, hw: hw, island: lanes >= 2 || r >= islandMinR, keepRight: keepRight})
+		rb := roundabout{c: c, r: r, hw: hw, island: lanes >= 2 || r >= islandMinR, keepRight: keepRight}
+		for _, k := range groups[root] {
+			if ws[k].Bridge {
+				rb.bridged = append(rb.bridged, angleSpan(c, ws[k].Line))
+			}
+		}
+		out = append(out, rb)
 	}
 	return out
+}
+
+// anyBridged tells whether any of the roundabouts lies over a bridge.
+func anyBridged(rbs []roundabout) bool {
+	for _, rb := range rbs {
+		if len(rb.bridged) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// angleSpan is the angles a line round c covers: from its least
+// anticlockwise by its length (unwrapped along the line, so a piece
+// across east is one span).
+func angleSpan(c [2]float64, line [][2]float64) [2]float64 {
+	lo, hi, prev := 0.0, 0.0, 0.0
+	for i, p := range line {
+		a := math.Atan2(p[1]-c[1], p[0]-c[0])
+		if i > 0 {
+			for a-prev > math.Pi {
+				a -= 2 * math.Pi
+			}
+			for a-prev < -math.Pi {
+				a += 2 * math.Pi
+			}
+		} else {
+			lo, hi = a, a
+		}
+		lo, hi, prev = math.Min(lo, a), math.Max(hi, a), a
+	}
+	return [2]float64{lo, hi - lo}
+}
+
+// railStepM: a railing's rails follow its arc in pieces this long.
+const railStepM = 1.0
+
+// railMesh is the railing along a roundabout's edge over its bridges
+// (owner, 2026-10-21, La Bresse: the roundabout over the river had none,
+// its sidewalk running along the top of the wall down to the water): the
+// edge's arcs between its roads where a bridge spans them, at the outer
+// edge of the sidewalk where one runs there (with corner, the French
+// style, it runs the whole way round; otherwise from the road with one,
+// halfway), else at the carriageway's; steel posts every railPostM, two
+// rails, as a bridge's.
+func (rb *roundabout) railMesh(p patch, material int, corner bool) gltf.Primitive {
+	out := gltf.Primitive{Material: material}
+	steel := srgbLinear(0x8e979c)
+	R := rb.outer()
+	type arcSpan struct {
+		a0, span     float64
+		fromA, fromB bool
+	}
+	var arcs []arcSpan
+	angleOf := func(q [2]float64) float64 { return math.Atan2(q[1]-rb.c[1], q[0]-rb.c[0]) }
+	for _, e := range p.edges {
+		if len(e.kerb) < 2 {
+			continue
+		}
+		a0 := angleOf(e.kerb[0])
+		arcs = append(arcs, arcSpan{a0, math.Mod(angleOf(e.kerb[len(e.kerb)-1])-a0+4*math.Pi, 2*math.Pi), e.fromA, e.fromB})
+	}
+	if len(p.edges) == 0 { // laid over its roads: the whole circle
+		arcs = append(arcs, arcSpan{0, 2 * math.Pi, false, false})
+	}
+	for _, a := range arcs {
+		walked := func(t float64) bool {
+			switch {
+			case a.fromA && a.fromB, corner && (a.fromA || a.fromB):
+				return true
+			case a.fromA:
+				return t <= 0.5
+			case a.fromB:
+				return t >= 0.5
+			}
+			return false
+		}
+		for _, b := range rb.bridged {
+			off := math.Mod(b[0]-a.a0+4*math.Pi, 2*math.Pi)
+			for _, o := range []float64{off, off - 2*math.Pi} {
+				x0, x1 := math.Max(0, o), math.Min(a.span, o+b[1])
+				if x1-x0 < 1e-3 {
+					continue
+				}
+				rb.railArc(&out, R, a.a0+x0, x1-x0, func(f float64) bool { return walked((x0 + f*(x1-x0)) / a.span) }, steel)
+			}
+		}
+	}
+	return out
+}
+
+// railArc adds a railing round the roundabout from angle a0 anticlockwise
+// by span, on the sidewalk's outer edge where walked (by the fraction
+// along it) tells, else at the edge R.
+func (rb *roundabout) railArc(out *gltf.Primitive, R, a0, span float64, walked func(float64) bool, steel [3]float32) {
+	n := max(1, int(math.Ceil(span*(R+walkM)/railStepM)))
+	pts := make([][3]float64, n+1)
+	for k := range pts {
+		f := float64(k) / float64(n)
+		r, base := R-0.1, 0.0
+		if walked(f) {
+			r, base = R+walkM-0.1, kerbM
+		}
+		a := a0 + f*span
+		e, nn := rb.c[0]+r*math.Cos(a), rb.c[1]+r*math.Sin(a)
+		pts[k] = [3]float64{e, rb.height(e, nn) + base, -nn}
+	}
+	up := func(q [3]float64, h float64) [3]float64 { return [3]float64{q[0], q[1] + h, q[2]} }
+	run, next := 0.0, 0.0
+	for k, q := range pts {
+		if k > 0 {
+			run += math.Hypot(q[0]-pts[k-1][0], q[2]-pts[k-1][2])
+			for _, h := range []float64{0.65, railH} {
+				beam(out, up(pts[k-1], h), up(q, h), 0.06, 0.06, steel)
+			}
+		}
+		if run >= next || k == len(pts)-1 {
+			beam(out, q, up(q, railH+0.05), 0.07, 0.07, steel)
+			next = run + railPostM
+		}
+	}
 }
 
 // fit sets the roundabout's plane through the heights of the roads near

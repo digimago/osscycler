@@ -290,3 +290,7 @@ The paragraphs of the notes the `france` branch added or extended, word for word
 
 The TUI's number prompts (ERG watts, grade, brake level, FTP) open with a suggested value, and typing appended to it: 5 after a suggested 3 % made 35, 180 after 150 W made 15018 (the 5-character limit), 265 after an FTP of 200 made 20026. Now, as in the 3D view, the first character typed replaces the suggestion, enter takes it as it is, and backspace edits it (`input.typed`); a grade's minus sign may start the replacement. `TestPromptSuggestionIsReplacedByTyping` (fails without the fix with exactly those values).
 
+### 2026-10-21: a flaky control socket test
+
+`ControlSocketTests.RequestsWaitingWhenTheViewClosesAreAnswered` failed once on CI (a 5 s timeout, run 39661870400). The test slept 200 ms for its request to be queued; on a slow runner the request was read just after `Dispose` had emptied the queue, was queued after it, and waited for a frame that never came, so the client hung: a real shutdown race of the renderer's control socket, not only the test's. Now every request still unanswered when the view closes is answered "the view closed" (`ControlSocket._closed`), and the test waits for its request to be queued (`Waiting`). 30 of 30 runs passed with every core busy.
+

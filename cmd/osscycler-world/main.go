@@ -1,6 +1,6 @@
 // Command osscycler-world builds the 3D world of courses for renderers:
 // terrain from a ground model (the Dutch AHN where the course lies in the
-// Netherlands), the road on it, and a manifest, written as
+// Netherlands, IGN's RGE ALTI in France), the road on it, and a manifest, written as
 // <out>/<course>/world.glb and world.json.
 //
 // Ground model tiles are fetched once and cached; -fetch=false builds from
@@ -23,6 +23,8 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime/debug"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -44,7 +46,7 @@ func run() error {
 	var (
 		courses  = flag.String("courses", home.Courses(), "directory of .gpx courses")
 		out      = flag.String("out", home.Worlds(), "directory for the worlds, one subdirectory per course")
-		ground   = flag.String("dem", "auto", "ground model: auto (AHN inside the Netherlands), ahn, or none")
+		ground   = flag.String("dem", "auto", "ground model: auto (AHN inside the Netherlands, IGN RGE ALTI inside France, else the course profile), ahn, rgealti, or none")
 		cache    = flag.String("dem-cache", "", "ground model tile cache (default <courses>/.dem)")
 		fetch    = flag.Bool("fetch", true, "fetch missing ground model tiles and map data; false uses the caches only")
 		osm      = flag.Bool("osm", true, "use OpenStreetMap map data")
@@ -58,10 +60,13 @@ func run() error {
 		maxHoles = flag.Float64("max-holes", 10, "fail when the check finds more holes than this within 40 m of the path, m²")
 		maxOver  = flag.Float64("max-land-over-road", 1, "fail when the check finds more land over road than this within 40 m of the path, m²")
 		maxOff   = flag.Float64("max-off-road", 1, "fail when the check finds more of the riding line than this with no road surface under it, m per km of course")
-		check    = flag.String("check", "fail", "after a build: fail past -max-holes, -max-land-over-road or -max-off-road, or warn (the world is kept)")
+		maxStep  = flag.Float64("max-path-step", 3, "fail when the rider's height changes more than this between two points of the path (5 m apart), m")
+		check    = flag.String("check", "fail", "after a build: fail past -max-holes, -max-land-over-road, -max-off-road or -max-path-step, or warn (the world is kept)")
 		progress = flag.Bool("progress", false, "print each phase (\""+worlds.PhasePrefix+"…\") and the world's directory (\""+worlds.WorldPrefix+"…\"), for a program running this one")
+		ifCached = flag.Bool("if-cached", false, "build only from what the caches hold (implies -fetch=false): a course whose ground model, map data or coastline isn't all cached is skipped, saying so (\""+worlds.SkippedPrefix+"…\"); a renderer building worlds ahead of rides asks this way")
 		ifStale  = flag.Bool("if-stale", false, "build only when no current world is there (in -out or -prebuilt); a renderer asks this way")
 		preview  = flag.Bool("preview", false, "with -if-stale: before building a world, build a preview to ride meanwhile (no ground model or map data, made-up countryside; seconds) and say where (\""+worlds.PreviewPrefix+"…\")")
+		engine   = flag.String("builder", envOr("OSSCYCLER_WORLD_BUILDER", world.DefaultEngine), "world builder: graph (the road network first; the default), classic (the terrain first; the fallback, built instead when the graph builder fails or its world fails the check; worlds in <out>/.classic/), or ab to build both and compare them ($OSSCYCLER_WORLD_BUILDER sets the default)")
 		prebuilt = flag.String("prebuilt", "", "ready-built worlds to use with -if-stale, a list of directories (default: share/osscycler/worlds beside the program, worlds/ beside it, /usr/share/osscycler/worlds)")
 	)
 	flag.Usage = func() {
@@ -73,13 +78,17 @@ func run() error {
 		flag.Usage()
 		os.Exit(2)
 	}
+	if _, ok := world.Engines[*engine]; !ok && *engine != "ab" {
+		return fmt.Errorf("-builder %q: want one of %v, or ab", *engine, world.EngineNames())
+	}
 	if *check != "fail" && *check != "warn" {
 		return fmt.Errorf("-check %q: want fail or warn", *check)
 	}
-	switch *ground {
-	case "auto", "ahn", "none":
-	default:
-		return fmt.Errorf("-dem %q: want auto, ahn or none", *ground)
+	if g := append([]string{"auto", "none"}, worlds.Grounds()...); !slices.Contains(g, *ground) {
+		return fmt.Errorf("-dem %q: want one of %v", *ground, g)
+	}
+	if *ifCached {
+		*fetch = false
 	}
 	if *osmCache == "" {
 		*osmCache = filepath.Join(*courses, ".osm")
@@ -117,8 +126,9 @@ func run() error {
 	}, nil)
 	b := &worlds.Builder{
 		Ground: *ground, DEMCache: *cache, DEMCellM: *demCell, Fetch: *fetch, UserAgent: userAgent, Log: log,
-		Options: world.Options{CellM: *cell, ChunkM: *chunk, CorridorM: *corridor, RoadWidthM: *width, Generator: generator},
-		Timing:  &worlds.Timing{File: filepath.Join(*out, ".timing.json")},
+		Options:  world.Options{CellM: *cell, ChunkM: *chunk, CorridorM: *corridor, RoadWidthM: *width, Generator: generator},
+		Timing:   &worlds.Timing{File: filepath.Join(*out, ".timing.json")},
+		Complete: *ifCached,
 	}
 	if *progress {
 		// How far, and the time left: at most twice a second, and at each
@@ -139,74 +149,167 @@ func run() error {
 	if *osm {
 		b.Maps = maps
 	}
+	engines := []string{*engine}
+	if *engine == "ab" {
+		engines = []string{world.EngineClassic, world.EngineGraph}
+	}
 	for _, id := range flag.Args() {
 		c := byID[id]
 		if c == nil {
 			return fmt.Errorf("no course %q (included or in %s)", id, *courses)
 		}
-		if *ifStale {
-			exe, _ := os.Executable()
-			dirs := worlds.PrebuiltDirs(exe)
-			if *prebuilt != "" {
-				dirs = filepath.SplitList(*prebuilt)
-			}
-			if dir := worlds.Find(append([]string{*out}, dirs...), id, worlds.Stamp(c)); dir != "" {
-				if *progress {
-					fmt.Println(worlds.WorldPrefix + dir)
-				}
-				continue
-			}
-		}
 		var phase func(string)
 		if *progress {
 			phase = func(p string) { fmt.Println(worlds.PhasePrefix + p) }
 		}
-		// The test tracks build in a second or two: no preview for them.
-		if *ifStale && *preview && !c.Builtin {
-			dir, err := buildPreview(ctx, b, c, *out, phase)
+		var reports []report
+		for k, eng := range engines {
+			if *ifStale {
+				dirs := []string{filepath.Dir(worlds.Dir(*out, id, eng))}
+				if eng == world.DefaultEngine {
+					// Ready-built worlds are the default builder's (a
+					// stamp tells an older release's apart).
+					exe, _ := os.Executable()
+					pre := worlds.PrebuiltDirs(exe)
+					if *prebuilt != "" {
+						pre = filepath.SplitList(*prebuilt)
+					}
+					dirs = append(dirs, pre...)
+				}
+				if dir := worlds.Find(dirs, id, worlds.EngineStamp(c, eng)); dir != "" {
+					if *progress {
+						fmt.Println(worlds.WorldPrefix + dir)
+					}
+					continue
+				}
+			}
+			// The test tracks build in a second or two: no preview for them.
+			if k == 0 && *ifStale && *preview && !c.Builtin {
+				dir, err := buildPreview(ctx, b, c, *out, phase)
+				if err != nil {
+					log.Warn("no preview world", "course", id, "err", err)
+				} else if *progress {
+					fmt.Println(worlds.PreviewPrefix + dir)
+				}
+			}
+			eb := *b
+			eb.Engine = eng
+			r, err := buildOne(ctx, &eb, c, worlds.Dir(*out, id, eng), phase)
+			if errors.Is(err, worlds.ErrIncomplete) {
+				// Built when it is ridden, fetching what it lacks.
+				fmt.Println(worlds.SkippedPrefix + strings.ReplaceAll(err.Error(), "\n", "; "))
+				continue
+			}
 			if err != nil {
-				log.Warn("no preview world", "course", id, "err", err)
-			} else if *progress {
-				fmt.Println(worlds.PreviewPrefix + dir)
+				return fmt.Errorf("%s: %w", id, err)
+			}
+			failed := func(chk world.CheckResult) bool {
+				offPerKm := chk.OffRoadM / math.Max(c.Distance/1000, 1e-3)
+				return chk.HolesM2 > *maxHoles || chk.LandOverRoadM2 > *maxOver || offPerKm > *maxOff || chk.StepM > *maxStep
+			}
+			if failed(r.check) && *check != "warn" && *engine != "ab" && eng != world.EngineClassic {
+				// The classic builder as the fallback: its world in the
+				// place of the one asked for, with that one's stamp.
+				log.Warn("the check found more than the limits; building with the classic builder instead", "course", id, "builder", eng,
+					"holes_m2", r.check.HolesM2, "land_over_road_m2", r.check.LandOverRoadM2, "off_road_m", r.check.OffRoadM, "path_step_m", r.check.StepM)
+				eb.Engine, eb.Stamp = world.EngineClassic, worlds.EngineStamp(c, eng)
+				if r, err = buildOne(ctx, &eb, c, worlds.Dir(*out, id, eng), phase); err != nil {
+					return fmt.Errorf("%s: %w", id, err)
+				}
+			}
+			reports = append(reports, r)
+			chk := r.check
+			if failed(chk) {
+				if *check != "warn" && *engine != "ab" {
+					return fmt.Errorf("%s: the check found more than -max-holes %g m², -max-land-over-road %g m², -max-off-road %g m/km or -max-path-step %g m", id, *maxHoles, *maxOver, *maxOff, *maxStep)
+				}
+				log.Warn("the check found more than -max-holes, -max-land-over-road, -max-off-road or -max-path-step", "course", id, "builder", r.engine,
+					"holes_m2", chk.HolesM2, "land_over_road_m2", chk.LandOverRoadM2, "off_road_m", chk.OffRoadM, "off_road_m_per_km", chk.OffRoadM/math.Max(c.Distance/1000, 1e-3), "path_step_m", chk.StepM)
+			}
+			if *progress {
+				fmt.Println(worlds.WorldPrefix + r.dir)
 			}
 		}
-		start := time.Now()
-		res, err := b.Build(ctx, c, phase)
-		if err != nil {
-			return fmt.Errorf("%s: %w", id, err)
-		}
-		w, mapInfo := res.World, res.MapInfo
-		dir := filepath.Join(*out, id)
-		if err := w.Write(dir); err != nil {
-			return err
-		}
-		size := int64(0)
-		if fi, err := os.Stat(filepath.Join(dir, world.ModelFile)); err == nil {
-			size = fi.Size()
-		}
-		fmt.Printf("%s: %d terrain chunks (%s), %s, %d vertices, %d triangles, %d plants, %.1f MB, in %s → %s\n",
-			id, w.Manifest.Terrain.Chunks, w.Manifest.Terrain.Source, mapInfo, w.Vertices, w.Triangles, w.Plants,
-			float64(size)/1e6, time.Since(start).Round(100*time.Millisecond), dir)
-		cs := time.Now()
-		if phase != nil {
-			phase(worlds.PhaseCheck)
-		}
-		r := w.Check()
-		offPerKm := r.OffRoadM / math.Max(c.Distance/1000, 1e-3)
-		fmt.Printf("%s: check within 40 m of the path: holes %.1f m²%s, land over road %.1f m²%s; riding line off road %.0f m (%.1f m/km)%s (%s)\n",
-			id, r.HolesM2, worst(r.Holes), r.LandOverRoadM2, worst(r.LandOverRoad), r.OffRoadM, offPerKm, worst(r.OffRoad), time.Since(cs).Round(100*time.Millisecond))
-		if r.HolesM2 > *maxHoles || r.LandOverRoadM2 > *maxOver || offPerKm > *maxOff {
-			if *check != "warn" {
-				return fmt.Errorf("%s: the check found more than -max-holes %g m², -max-land-over-road %g m² or -max-off-road %g m/km", id, *maxHoles, *maxOver, *maxOff)
-			}
-			log.Warn("the check found more than -max-holes, -max-land-over-road or -max-off-road", "course", id,
-				"holes_m2", r.HolesM2, "land_over_road_m2", r.LandOverRoadM2, "off_road_m", r.OffRoadM, "off_road_m_per_km", offPerKm)
-		}
-		if *progress {
-			fmt.Println(worlds.WorldPrefix + dir)
+		if len(reports) == 2 {
+			printAB(c, reports[0], reports[1])
 		}
 	}
 	return nil
+}
+
+// report is what one build made: where, how big, how long, and its check.
+type report struct {
+	engine, dir string
+	w           *world.World
+	sizeMB      float64
+	build       time.Duration
+	check       world.CheckResult
+}
+
+// buildOne builds course c's world with b into dir, writes it, prints
+// what it made and checks it.
+func buildOne(ctx context.Context, b *worlds.Builder, c *course.Course, dir string, phase func(string)) (report, error) {
+	start := time.Now()
+	res, err := b.Build(ctx, c, phase)
+	if err != nil {
+		return report{}, err
+	}
+	w := res.World
+	if err := w.Write(dir); err != nil {
+		return report{}, err
+	}
+	r := report{engine: b.Engine, dir: dir, w: w, build: time.Since(start)}
+	if r.engine == "" {
+		r.engine = world.DefaultEngine
+	}
+	if res.FellBack {
+		r.engine = world.EngineClassic + " (fallback)"
+	}
+	if fi, err := os.Stat(filepath.Join(dir, world.ModelFile)); err == nil {
+		r.sizeMB = float64(fi.Size()) / 1e6
+	}
+	fmt.Printf("%s: [%s] %d terrain chunks (%s), %s, %d vertices, %d triangles, %d plants, %.1f MB, in %s → %s\n",
+		c.ID, r.engine, w.Manifest.Terrain.Chunks, w.Manifest.Terrain.Source, res.MapInfo, w.Vertices, w.Triangles, w.Plants,
+		r.sizeMB, r.build.Round(100*time.Millisecond), dir)
+	cs := time.Now()
+	if phase != nil {
+		phase(worlds.PhaseCheck)
+	}
+	r.check = w.Check()
+	chk := r.check
+	offPerKm := chk.OffRoadM / math.Max(c.Distance/1000, 1e-3)
+	fmt.Printf("%s: [%s] check within 40 m of the path: holes %.1f m²%s, land over road %.1f m²%s; riding line off road %.0f m (%.1f m/km)%s; path height steps at most %.2f m%s; sharpest turn %.0f° per step%s, pace at most %.2f× (%s)\n",
+		c.ID, r.engine, chk.HolesM2, worst(chk.Holes), chk.LandOverRoadM2, worst(chk.LandOverRoad), chk.OffRoadM, offPerKm, worst(chk.OffRoad),
+		chk.StepM, worst(chk.Steps), chk.TurnDeg, worst(chk.Turns), chk.PaceMax, time.Since(cs).Round(100*time.Millisecond))
+	return r, nil
+}
+
+// printAB prints two builds of one course side by side.
+func printAB(c *course.Course, a, b report) {
+	km := math.Max(c.Distance/1000, 1e-3)
+	row := func(name, unit string, x, y float64) {
+		fmt.Printf("  %-22s %12.2f %12.2f  %s\n", name, x, y, unit)
+	}
+	fmt.Printf("%s: %-22s %12s %12s\n", c.ID, "A/B", a.engine, b.engine)
+	row("build", "s", a.build.Seconds(), b.build.Seconds())
+	row("size", "MB", a.sizeMB, b.sizeMB)
+	row("triangles", "M", float64(a.w.Triangles)/1e6, float64(b.w.Triangles)/1e6)
+	row("plants", "k", float64(a.w.Plants)/1e3, float64(b.w.Plants)/1e3)
+	row("holes", "m²", a.check.HolesM2, b.check.HolesM2)
+	row("land over road", "m²", a.check.LandOverRoadM2, b.check.LandOverRoadM2)
+	row("off road", "m/km", a.check.OffRoadM/km, b.check.OffRoadM/km)
+	row("path height step", "m", a.check.StepM, b.check.StepM)
+	row("sharpest turn", "° per 5 m", a.check.TurnDeg, b.check.TurnDeg)
+	row("turns over 30°", "", float64(len(a.check.Turns)), float64(len(b.check.Turns)))
+	row("pace at most", "× even", a.check.PaceMax, b.check.PaceMax)
+	fmt.Printf("  worlds: %s, %s\n", a.dir, b.dir)
+}
+
+func envOr(name, def string) string {
+	if v := os.Getenv(name); v != "" {
+		return v
+	}
+	return def
 }
 
 // buildPreview builds course c's preview world, unless a current one is

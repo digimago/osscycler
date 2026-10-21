@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "osscycler-view": {
+      "command": "go",
+      "args": ["run", "./cmd/osscycler-mcp"]
+    }
+  }
+}

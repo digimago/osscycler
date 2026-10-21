@@ -10,7 +10,12 @@ shader_type spatial;
 uniform float near = 45.0;
 uniform float fade = 15.0;
 uniform float bloom = 0.0;
-const vec3 TWIGS = vec3(0.075, 0.08, 0.035);
+// Out of flower the near heather (grass_clumps, grass_cards) is olive
+// twigs under withered brown spikes; the mounds beyond were the twigs'
+// dark olive alone, so the heath went from a warm brown carpet to a band
+// of dark blobs at 45 m (owner, 2026-10-12: the distant heather at
+// 10.0 km on the Velp loop). The near plants' mix.
+const vec3 TWIGS = mix(vec3(0.075, 0.08, 0.035), vec3(0.16, 0.09, 0.06), 0.5);
 
 varying float show;
 varying float flower;

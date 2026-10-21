@@ -11,7 +11,18 @@ Each package documents its own part: start with `go doc ./internal/telemetry`,
 ## Setup
 
 You need Go 1.27 or newer. Code generation (`buf`) and the linters run
-through `go run` / `go tool`, so there is nothing else to install.
+through `go run` / `go tool`, so there is nothing else to install for
+the core, the TUI and the world builder.
+
+The 3D view (`make 3d`, `dotnet test renderers/godot/tests/Hud`) also
+needs Godot 4.7 with .NET (the "mono" build; `scripts/godot.sh`
+downloads 4.7.2 and prints its path, for `GODOT=`) and the .NET SDK 8 or
+later. `make 3d` takes the first of `godot-mono`, `godot4-mono` and
+`godot-dotnet` on the `PATH` unless `GODOT=` names one, stops if it isn't
+the .NET build, and imports the project's assets before it starts.
+Running Godot yourself in a fresh checkout, import them once first:
+`godot --headless --path renderers/godot --import` (or the HUD font
+doesn't load).
 
 ```sh
 make help            # list targets
@@ -117,12 +128,13 @@ key from `ANT_PLUS_NETWORK_KEY` or the key file built in:
 - macOS: a universal `.tar.gz` (Intel and Apple Silicon)
 - `SHA256SUMS`
 
-Every push and pull request runs `make check` and actionlint in GitHub
-Actions (the `check` workflow), without secrets: the network key test
-skips there.
+Every pull request, and every push to `develop` and `main`, runs `make
+check`, the 3D view's tests and actionlint in GitHub Actions (the `check`
+workflow), without secrets: the network key test skips there.
 
-Pushing a `v*` tag runs `make check` and `make release` in GitHub Actions
-with the repository secret `ANT_PLUS_NETWORK_KEY` and makes a draft
+Pushing a `v*` tag runs the network key test and `make release` in
+GitHub Actions with the repository secret `ANT_PLUS_NETWORK_KEY` (the
+rest of the checks ran on that commit when it reached `main`) and makes a draft
 release with every file attached. Check it (files, notes), then publish
 it on GitHub: published releases are immutable, so a fix after that is a
 new version. Running the workflow by hand builds the same files as

@@ -5,6 +5,7 @@ import (
 	"math"
 
 	"github.com/digimago/osscycler/internal/gltf"
+	"github.com/digimago/osscycler/internal/scenery"
 )
 
 // Bridges (plan step 6): where a road passes over another, or stands off
@@ -24,12 +25,17 @@ const (
 	pierSpanM  = 24.0 // a span longer than this rests on piers
 	footM      = 0.6  // walls and piers reach this far into the ground
 	deckMinM   = 6.0  // a run of deck shorter than this stays a road
+	railMinM   = 3.0  // a tagged bridge shorter than this gets no railings
 )
 
 // markDecks marks the road samples on a deck: over another road more than
 // bridgeM lower (within its edge and deckClearM, more the deeper it lies), or aloft. Short gaps
-// are bridged, and runs too short for a deck dropped.
-func markDecks(lines []*roadLine, loopM float64) {
+// are bridged, and runs too short for a deck dropped. With beside, a road
+// running alongside the lower one isn't over it (a road climbing beside
+// another on a mountainside stands behind a wall, owner, 2026-10-16,
+// 1.48 km of the Route des Américains: drawn as a bridge, with an
+// abutment and grass spikes beside the Rue du Hohneck).
+func markDecks(lines []*roadLine, loopM float64, beside bool) {
 	type ref struct{ l, i int }
 	const cellM = 10.0
 	grid := map[[2]int][]ref{}
@@ -50,6 +56,9 @@ func markDecks(lines []*roadLine, loopM float64) {
 					for _, r := range grid[[2]int{gx, gy}] {
 						o := lines[r.l].samples[r.i]
 						if o.ele > s.ele-bridgeM || math.Hypot(o.e-s.e, o.n-s.n) > o.edge+deckClearM+deckSlope*(s.ele-o.ele-bridgeM) {
+							continue
+						}
+						if beside && r.l != li && alongsideAt(l.samples, i, lines[r.l].samples, r.i) {
 							continue
 						}
 						if r.l == li {
@@ -95,11 +104,29 @@ func markDecks(lines []*roadLine, loopM float64) {
 	}
 }
 
+// alongsideAt tells whether sample i of a and sample j of b run within
+// parallelCosine of each other's way.
+func alongsideAt(a []sample, i int, b []sample, j int) bool {
+	way := func(ss []sample, k int) (float64, float64) {
+		p, q := ss[max(0, k-1)], ss[min(len(ss)-1, k+1)]
+		l := math.Hypot(q.e-p.e, q.n-p.n)
+		if l == 0 {
+			return 0, 0
+		}
+		return (q.e - p.e) / l, (q.n - p.n) / l
+	}
+	ae, an := way(a, i)
+	be, bn := way(b, j)
+	return math.Abs(ae*be+an*bn) >= parallelCosine
+}
+
 // onDeck tells whether the segment from sample i to i+1 is a deck's.
 func onDeck(ss []sample, i int) bool { return ss[i].aloft && ss[i+1].aloft }
 
-// addBridges builds the decks' structure, a mesh per terrain chunk.
-func (w *World) addBridges(t *terrain, lines []*roadLine) error {
+// addBridges builds the decks' structure, a mesh per terrain chunk, and
+// the edge beams and railings of every bridge the map tags that stays a
+// road (ways: what the samples' way indices refer to).
+func (w *World) addBridges(t *terrain, lines []*roadLine, ways []scenery.Way) error {
 	s := &surface{t: t, lists: map[[2]int]chunkLists{}}
 	concrete, steel := srgbLinear(0xa9a59c), srgbLinear(0x8e979c)
 	var mat int
@@ -127,8 +154,29 @@ func (w *World) addBridges(t *terrain, lines []*roadLine) error {
 			for j+1 < len(ss) && onDeck(ss, j) {
 				j++
 			}
-			deck(prim, s, l, i, j, concrete, steel)
+			deck(prim, s, l, i, j, concrete, steel, true)
 			i = j
+		}
+		// A bridge in the map that isn't a deck (a low bridge over a canal
+		// or ditch, within bridgeM of the ground model) is drawn as road;
+		// it still has its edge beams and railings (owner, 2026-10-11: the
+		// bridges at 2.7 and 3.93 km of a new course had none).
+		tagged := func(k int) bool {
+			return ss[k].way >= 0 && ss[k].way < len(ways) && ways[ss[k].way].Bridge && !ss[k].aloft && !ss[k].onPatch && !ss[k].again
+		}
+		for i := 0; i < len(ss); {
+			if !tagged(i) {
+				i++
+				continue
+			}
+			j := i
+			for j+1 < len(ss) && tagged(j+1) {
+				j++
+			}
+			if ss[j].d-ss[i].d >= railMinM {
+				deck(prim, s, l, i, j, concrete, steel, false)
+			}
+			i = j + 1
 		}
 	}
 	for _, k := range chunkOrder(byChunk) {
@@ -145,10 +193,12 @@ func (w *World) addBridges(t *terrain, lines []*roadLine) error {
 type deckFrame struct {
 	c, r, along [3]float64
 	left, right float64
+	butt        [2]bool // another road's surface continues at that edge: no beam or railing there
 }
 
-// deck builds the structure of line l's deck from sample i to j.
-func deck(prim func(e, n float64) *gltf.Primitive, s *surface, l *roadLine, i, j int, concrete, steel [3]float32) {
+// deck builds the structure of line l's deck from sample i to j; not
+// full, only its edge beams and railings (a low bridge drawn as road).
+func deck(prim func(e, n float64) *gltf.Primitive, s *surface, l *roadLine, i, j int, concrete, steel [3]float32, full bool) {
 	ss := l.samples
 	frames := make([]deckFrame, 0, j-i+1)
 	for k := i; k <= j; k++ {
@@ -157,12 +207,12 @@ func deck(prim func(e, n float64) *gltf.Primitive, s *surface, l *roadLine, i, j
 		de, dn, _ := l.smooth.heading(a.d)
 		left, right := a.hw+a.wide[0], a.hw+a.wide[1]
 		if a.walk[0] {
-			left = a.hw + walkM
+			left = a.hw + a.walkWidth(0)
 		}
 		if a.walk[1] {
-			right = a.hw + walkM
+			right = a.hw + a.walkWidth(1)
 		}
-		frames = append(frames, deckFrame{c: [3]float64{x, a.ele, -y}, r: [3]float64{dn, 0, de}, along: [3]float64{de, 0, -dn}, left: left, right: right})
+		frames = append(frames, deckFrame{c: [3]float64{x, a.ele, -y}, r: [3]float64{dn, 0, de}, along: [3]float64{de, 0, -dn}, left: left, right: right, butt: a.butt})
 	}
 	mid := frames[len(frames)/2].c
 	p := prim(mid[0], -mid[2])
@@ -176,14 +226,21 @@ func deck(prim func(e, n float64) *gltf.Primitive, s *surface, l *roadLine, i, j
 		ra, rb := a.right+edgeBeamW, b.right+edgeBeamW
 		// The slab's underside, and the edge beams: inner face, top,
 		// outer face down to the underside.
-		quad(p, at(a, la, -deckDepthM), at(a, ra, -deckDepthM), at(b, rb, -deckDepthM), at(b, lb, -deckDepthM), down, concrete)
-		for _, side := range []struct {
+		if full {
+			quad(p, at(a, la, -deckDepthM), at(a, ra, -deckDepthM), at(b, rb, -deckDepthM), at(b, lb, -deckDepthM), down, concrete)
+		}
+		for si, side := range []struct {
 			in, out [2]float64 // a's and b's inner and outer offsets
 			sign    float64
 		}{
 			{[2]float64{-a.left, -b.left}, [2]float64{la, lb}, -1},
 			{[2]float64{a.right, b.right}, [2]float64{ra, rb}, 1},
 		} {
+			// Two carriageways joined side by side: none down the middle
+			// of the road between them (a dual carriageway's two bridges).
+			if a.butt[si] && b.butt[si] {
+				continue
+			}
 			outN := scale3(a.r, side.sign)
 			inN := scale3(a.r, -side.sign)
 			quad(p, at(a, side.in[0], -0.05), at(b, side.in[1], -0.05), at(b, side.in[1], edgeBeamH), at(a, side.in[0], edgeBeamH), inN, concrete)
@@ -196,6 +253,28 @@ func deck(prim func(e, n float64) *gltf.Primitive, s *surface, l *roadLine, i, j
 			}
 		}
 	}
+	// The edge beams' ends (owner, 2026-10-12, the figure 8's overpass:
+	// the beams stood open at the deck's ends, their inner and outer faces
+	// with nothing across them): a face across each, from the beam's foot
+	// (on a full deck the abutment's top, which closes the rest) to its
+	// top, facing away from the span.
+	foot := -deckDepthM
+	if full {
+		foot = -0.02
+	}
+	for _, end := range []struct {
+		f   deckFrame
+		dir float64 // along the road, away from the span
+	}{{frames[0], -1}, {frames[len(frames)-1], 1}} {
+		f := end.f
+		n := scale3(f.along, end.dir)
+		for si, side := range [][2]float64{{-f.left, -f.left - edgeBeamW}, {f.right, f.right + edgeBeamW}} {
+			if f.butt[si] {
+				continue
+			}
+			quad(p, at(f, side[0], foot), at(f, side[1], foot), at(f, side[1], edgeBeamH), at(f, side[0], edgeBeamH), n, concrete)
+		}
+	}
 	// Railing posts along each side, every railPostM.
 	var run float64
 	for k := range frames {
@@ -206,9 +285,15 @@ func deck(prim func(e, n float64) *gltf.Primitive, s *surface, l *roadLine, i, j
 			continue
 		}
 		f := frames[k]
-		for _, m := range []float64{-f.left - edgeBeamW/2, f.right + edgeBeamW/2} {
+		for si, m := range []float64{-f.left - edgeBeamW/2, f.right + edgeBeamW/2} {
+			if f.butt[si] {
+				continue
+			}
 			beam(p, at(f, m, edgeBeamH), at(f, m, railH+0.05), 0.07, 0.07, steel)
 		}
+	}
+	if !full {
+		return
 	}
 	// Abutments at both ends: a wall across under the deck's end, down
 	// into the ground, its face towards the span.

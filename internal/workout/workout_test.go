@@ -108,6 +108,57 @@ func TestRoundTrip(t *testing.T) {
 	}
 }
 
+// realLayout is laid out as a real .zwo file (checked 2026-10-14 against a
+// workout downloaded from whatisonzwift.com; its content is Zwift's, so
+// this one is made up): empty author and description, an empty <tags/>,
+// four-space indents, sets as IntervalsT each followed by its own
+// recovery, and a cooldown written from PowerLow down to PowerHigh.
+const realLayout = `<workout_file>
+    <author></author>
+    <name>Made-up surges</name>
+    <description></description>
+    <sportType>bike</sportType>
+    <tags/>
+    <workout>
+        <Warmup Duration="480" PowerLow="0.45" PowerHigh="0.7"/>
+        <SteadyState Duration="240" Power="0.77"/>
+        <IntervalsT Repeat="4" OnDuration="30" OffDuration="45" OnPower="1.05" OffPower="0.6"/>
+        <SteadyState Duration="300" Power="0.55"/>
+        <IntervalsT Repeat="4" OnDuration="30" OffDuration="45" OnPower="1.05" OffPower="0.6"/>
+        <SteadyState Duration="300" Power="0.55"/>
+        <Cooldown Duration="240" PowerLow="0.7" PowerHigh="0.45"/>
+    </workout>
+</workout_file>
+`
+
+// A file laid out as Zwift's are is read and written back byte for byte,
+// also by way of the text format, and its cooldown rides downwards.
+func TestRealZWOLayout(t *testing.T) {
+	w := parse(t, realLayout)
+	var buf bytes.Buffer
+	if err := w.WriteZWO(&buf); err != nil {
+		t.Fatal(err)
+	}
+	if buf.String() != realLayout {
+		t.Errorf("written back differently:\n%s", buf.String())
+	}
+	tw, err := ParseText(strings.NewReader(FormatText(w)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	buf.Reset()
+	if err := tw.WriteZWO(&buf); err != nil {
+		t.Fatal(err)
+	}
+	if buf.String() != realLayout {
+		t.Errorf("by way of the text format, written back differently:\n%s", buf.String())
+	}
+	segs := w.Timeline()
+	if last := segs[len(segs)-1]; w.Blocks[last.Block].Type != Cooldown || last.From != 0.7 || last.To != 0.45 {
+		t.Errorf("cooldown %+v, want 0.7 down to 0.45", last)
+	}
+}
+
 func TestRejects(t *testing.T) {
 	for name, doc := range map[string]string{
 		"run":       `<workout_file><sportType>run</sportType><workout><SteadyState Duration="60" Power="0.5"/></workout></workout_file>`,

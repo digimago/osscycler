@@ -52,8 +52,21 @@ public static class Tiles
             case "cadence":
                 return new("CADENCE", tr != null && tr.HasCadenceRpm ? tr.CadenceRpm.ToString() : "--", "rpm", Palette.Cadence);
             case "cadence_5s":
-                string unit = working && w.TargetCadence > 0 ? $"rpm · aim {w.TargetCadence}" : "rpm";
-                return new("CADENCE 5s", cadence is double c ? Format.Fixed(c, 0) : "--", unit, Palette.Cadence);
+            {
+                string value = cadence is double c ? Format.Fixed(c, 0) : "--";
+                if (!working || w.TargetCadence == 0)
+                    return new("CADENCE 5s", value, "rpm", Palette.Cadence);
+                string unit = $"rpm · aim {w.TargetCadence}";
+                // The core's verdict: within erg.CadenceTolerance of the aim, or which way
+                // to go (in words: the font has no ▲ ▼ ✓).
+                return w.CadenceCheck switch
+                {
+                    CadenceCheck.Low => new("CADENCE 5s", value, unit + " · faster", Palette.Cadence, Palette.Behind),
+                    CadenceCheck.High => new("CADENCE 5s", value, unit + " · slower", Palette.Cadence, Palette.Behind),
+                    CadenceCheck.On => new("CADENCE 5s", value, unit + " · on target", Palette.Cadence, Palette.Ahead),
+                    _ => new("CADENCE 5s", value, unit, Palette.Cadence),
+                };
+            }
             case "speed":
                 if (riding)
                     return new("SPEED", Format.Fixed(r.SpeedMps * 3.6, 1), "km/h", Palette.Speed);
@@ -63,7 +76,10 @@ public static class Tiles
             case "time":
                 return Time(r);
             case "to_go":
-                return new(r.Loop ? "LAP TO GO" : "TO GO", Format.Fixed(Math.Max(0, r.CourseDistanceM - r.DistanceM) / 1000, 2), "km", Palette.Speed);
+            {
+                var (label, metres) = Laps.ToGo(r);
+                return new(label, Format.Fixed(Math.Max(0, metres) / 1000, 2), "km", Palette.Speed);
+            }
             case "climbed":
                 return new("CLIMBED", Format.Fixed(r.ClimbedM, 0), r.Loop ? "m" : $"of {Format.Fixed(r.CourseGainM, 0)} m", Palette.Plain);
             case "avg_power":
@@ -87,7 +103,9 @@ public static class Tiles
     {
         string label = "TIME", value = Format.Clock(r.ElapsedS);
         if (r.Loop)
-            (label, value) = ($"LAP {r.Lap}", Format.Clock(r.LapElapsedS));
+            (label, value) = r.Lap == 0 ? (r.Untimed ? "NOT TIMED" : "RUN-IN", Format.Clock(r.ElapsedS)) : ($"LAP {r.Lap}", Format.Clock(r.LapElapsedS));
+        else if (r.Untimed)
+            label = "NOT TIMED"; // turned round: no time that counts
         var g = r.Ghost;
         if (g == null)
             return new(label, value, "", Palette.Plain);

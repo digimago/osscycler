@@ -83,11 +83,21 @@ func (s *Store) Best(courseID string, startM, distanceM float64) (Entry, bool) {
 // Ghost is the personal best on course c from startM, ready to race.
 // nil, nil when the stretch has no PB yet.
 func (s *Store) Ghost(c *course.Course, startM float64) (*ride.Ghost, error) {
-	best, ok := s.Best(c.ID, startM, c.Distance-startM)
+	startM, distM := stretch(c, startM)
+	best, ok := s.Best(c.ID, startM, distM)
 	if !ok {
 		return nil, nil
 	}
 	return s.ghost(c, best)
+}
+
+// stretch is what a ride on course c from startM covers: on a lapped
+// course its lap (each lap a result: course.Lap), else the rest of it.
+func stretch(c *course.Course, startM float64) (start, dist float64) {
+	if l := c.Lap; l != nil {
+		return l.StartM, l.Length()
+	}
+	return startM, c.Distance - startM
 }
 
 // Race is the ride on course c that finished at finished (to the second,
@@ -101,7 +111,8 @@ func (s *Store) Race(c *course.Course, finished time.Time) (*ride.Ghost, float64
 		if e.CourseID != c.ID || !e.Finished.Equal(finished.Truncate(time.Second)) {
 			continue
 		}
-		if !SameStretch(e.Result, record.Result{CourseID: c.ID, StartM: e.StartM, DistanceM: c.Distance - e.StartM}) {
+		start, dist := stretch(c, e.StartM)
+		if !SameStretch(e.Result, record.Result{CourseID: c.ID, StartM: start, DistanceM: dist}) {
 			return nil, 0, ride.ErrCourseChanged
 		}
 		if e.Paused {

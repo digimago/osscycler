@@ -44,6 +44,11 @@ type input struct {
 	// control is the manual control mode the number sets; unspecified
 	// means FTP.
 	control pb.ControlMode
+	// typed: the value is the rider's; until then it is a suggestion, which
+	// the first character typed replaces (enter takes it as it is,
+	// backspace edits it), as in the 3D view (typing 5 after a suggested
+	// 3 % had made 35).
+	typed bool
 }
 
 func (m Model) fetchWorkouts(open bool) tea.Cmd {
@@ -219,10 +224,17 @@ func (m Model) inputKey(key string) (Model, tea.Cmd, bool) {
 		if len(in.value) > 0 {
 			in.value = in.value[:len(in.value)-1]
 		}
+		in.typed = true
 		m.input = &in
-	case len(key) == 1 && key[0] >= '0' && key[0] <= '9' && len(in.value) < 5,
+	case len(key) == 1 && key[0] >= '0' && key[0] <= '9',
 		key == "." && in.control != pb.ControlMode_CONTROL_MODE_UNSPECIFIED,
-		key == "-" && in.control == pb.ControlMode_CONTROL_MODE_GRADE && in.value == "":
+		key == "-" && in.control == pb.ControlMode_CONTROL_MODE_GRADE:
+		if !in.typed {
+			in.value, in.typed = "", true
+		}
+		if key == "-" && in.value != "" || len(in.value) >= 5 {
+			break
+		}
 		in.value += key
 		m.input = &in
 	}
@@ -322,6 +334,9 @@ func (m Model) workoutInfo(width int) string {
 	cad := m.metrics()[2].value + " rpm"
 	if c := p.GetTargetCadence(); c > 0 {
 		cad += fmt.Sprintf(" (target %d)", c)
+		if hint, st := cadenceHint(p.GetCadenceCheck()); hint != "" {
+			cad += " " + st.Render(hint)
+		}
 	}
 	lines = append(lines, fmt.Sprintf("%s · %s · %s / %s · %s",
 		next, cad, clock(p.GetElapsedS()), clock(p.GetDurationS()), dimStyle.Render(truncate(p.GetName(), 40))))

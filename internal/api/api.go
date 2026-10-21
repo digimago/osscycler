@@ -28,6 +28,7 @@ import (
 	"github.com/digimago/osscycler/internal/ant"
 	"github.com/digimago/osscycler/internal/control"
 	"github.com/digimago/osscycler/internal/course"
+	"github.com/digimago/osscycler/internal/effort"
 	"github.com/digimago/osscycler/internal/history"
 	"github.com/digimago/osscycler/internal/profile"
 	"github.com/digimago/osscycler/internal/record"
@@ -53,6 +54,9 @@ type Rides interface {
 	// StartAgainst races the earlier ride that finished at finished.
 	StartAgainst(courseID string, finished time.Time) error
 	Stop() error
+	// TurnAround turns the rider round onto the course's other way: the
+	// course ridden on now.
+	TurnAround() (string, error)
 	SetDifficulty(pct float64) float64
 }
 
@@ -65,6 +69,9 @@ type History interface {
 type Activities interface {
 	List() ([]record.Activity, error)
 	Open(name string) (io.ReadCloser, int64, error)
+	// Samples reads a finished recording's samples and the FTP it was
+	// ridden with (0: none).
+	Samples(name string) ([]effort.Sample, float64, error)
 }
 
 // DownloadActivity fetches a recording from the core into w and returns
@@ -109,12 +116,24 @@ type Control interface {
 
 // Profile changes the rider's settings.
 type Profile interface {
-	SetProfile(ctx context.Context, weightKg, ftpW, heightCm *float64, view *string) (telemetry.Profile, error)
+	SetProfile(ctx context.Context, weightKg, ftpW, heightCm, maxHR *float64, choices map[string]string) (telemetry.Profile, error)
+}
+
+// Simulator puts a simulated rider in place of the trainer, or takes it
+// away (telemetry.Switch).
+type Simulator interface {
+	SetSimulated(on bool)
 }
 
 // Recorder ends the recorded activity on the rider's request.
 type Recorder interface {
 	End(ctx context.Context, discard bool) (file string, err error)
+	// History is the activity under way ("" when none) and its samples
+	// from riding second since on.
+	History(since int) (file string, samples []effort.Sample)
+	// LastRide is the last course ride of the activity under way: its
+	// samples, distances from its start; ok false when there is none.
+	LastRide() (file string, samples []effort.Sample, ok bool)
 }
 
 // Services are the optional commands behind the API; nil ones answer
@@ -129,6 +148,8 @@ type Services struct {
 	Activities Activities
 	Control    Control
 	Scenery    Scenery
+	// Simulator: nil for a core without a stick (-fake).
+	Simulator Simulator
 	// CourseFiles reads a course's GPX file (for clients that build its
 	// world); nil: none to give.
 	CourseFiles CourseFiles
@@ -171,7 +192,7 @@ func NewServer(hub *telemetry.Hub, svc Services, token string, opts ...grpc.Serv
 		}),
 	)
 	s := grpc.NewServer(opts...)
-	pb.RegisterTelemetryServiceServer(s, &telemetryServer{hub: hub, cal: svc.Calibrator, rides: svc.Rides, workouts: svc.Workouts, recorder: svc.Recorder, history: svc.History, profile: svc.Profile, activities: svc.Activities, control: svc.Control, scenery: svc.Scenery, courseFiles: svc.CourseFiles, maxHz: DefaultRateHz})
+	pb.RegisterTelemetryServiceServer(s, &telemetryServer{hub: hub, cal: svc.Calibrator, rides: svc.Rides, workouts: svc.Workouts, recorder: svc.Recorder, history: svc.History, profile: svc.Profile, activities: svc.Activities, control: svc.Control, scenery: svc.Scenery, courseFiles: svc.CourseFiles, simulator: svc.Simulator, maxHz: DefaultRateHz})
 	return s, nil
 }
 
@@ -199,6 +220,7 @@ type telemetryServer struct {
 	scenery     Scenery              // nil: no map data
 	courseFiles CourseFiles          // nil: no course files to give
 	maxHz       uint32
+	simulator   Simulator
 }
 
 func (s *telemetryServer) SetTrainerControl(_ context.Context, req *pb.SetTrainerControlRequest) (*pb.SetTrainerControlResponse, error) {
@@ -230,6 +252,14 @@ func (s *telemetryServer) SetTrainerControl(_ context.Context, req *pb.SetTraine
 
 // SetPaused parks the core or carries on (telemetry.Hub.SetPaused); the
 // rides, workouts, manual control and recorder each hold while paused.
+func (s *telemetryServer) SetSimulated(_ context.Context, req *pb.SetSimulatedRequest) (*pb.SetSimulatedResponse, error) {
+	if s.simulator == nil {
+		return nil, status.Error(codes.Unimplemented, "this core has no trainer to simulate (it runs -fake)")
+	}
+	s.simulator.SetSimulated(req.GetSimulated())
+	return &pb.SetSimulatedResponse{Simulated: req.GetSimulated()}, nil
+}
+
 func (s *telemetryServer) SetPaused(_ context.Context, req *pb.SetPausedRequest) (*pb.SetPausedResponse, error) {
 	s.hub.SetPaused(req.GetPaused())
 	st, _ := s.hub.Latest()
@@ -284,6 +314,7 @@ func (s *telemetryServer) ListActivities(context.Context, *pb.ListActivitiesRequ
 		} else {
 			out.StartUnixMs, out.ElapsedS, out.TimerS = a.Start.UnixMilli(), a.Elapsed.Seconds(), a.Timer.Seconds()
 			out.DistanceM, out.AvgPowerW, out.Virtual, out.Laps = a.DistanceM, a.AvgPowerW, a.Virtual, uint32(a.Laps)
+			out.HeldMaxHeartRateBpm = uint32(a.HeldMaxHR)
 		}
 		resp.Activities = append(resp.Activities, out)
 	}
@@ -326,7 +357,13 @@ func (s *telemetryServer) SetProfile(ctx context.Context, req *pb.SetProfileRequ
 	if s.profile == nil {
 		return nil, status.Error(codes.Unimplemented, "this core has no rider profile")
 	}
-	p, err := s.profile.SetProfile(ctx, req.WeightKg, req.FtpW, req.HeightCm, req.View)
+	choices := map[string]string{}
+	for name, v := range map[string]*string{"view": req.View, "world_build": req.WorldBuild, "world_fetch": req.WorldFetch} {
+		if v != nil {
+			choices[name] = *v
+		}
+	}
+	p, err := s.profile.SetProfile(ctx, req.WeightKg, req.FtpW, req.HeightCm, req.MaxHrBpm, choices)
 	switch {
 	case errors.Is(err, profile.ErrOutOfRange):
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -353,6 +390,99 @@ func (s *telemetryServer) ListResults(context.Context, *pb.ListResultsRequest) (
 		})
 	}
 	return resp, nil
+}
+
+// samples are an activity's samples from second since on: the one being
+// recorded (name empty, or its name) or a finished one, with its name and
+// the FTP it was ridden with (0: not known).
+func (s *telemetryServer) samples(name string, since int) (string, []effort.Sample, float64, error) {
+	if s.recorder != nil {
+		if cur, ss := s.recorder.History(since); name == "" || name == cur {
+			if cur == "" {
+				return "", nil, 0, status.Error(codes.FailedPrecondition, "no ride is being recorded")
+			}
+			st, _ := s.hub.Latest()
+			return cur, ss, st.Workout.FTPW, nil
+		}
+	}
+	if name == "" {
+		return "", nil, 0, status.Error(codes.FailedPrecondition, "no ride is being recorded")
+	}
+	if s.activities == nil {
+		return "", nil, 0, status.Error(codes.NotFound, "this core has no recordings")
+	}
+	ss, ftp, err := s.activities.Samples(name)
+	switch {
+	case errors.Is(err, record.ErrNoActivity):
+		return "", nil, 0, status.Error(codes.NotFound, err.Error())
+	case err != nil:
+		return "", nil, 0, status.Error(codes.Internal, err.Error())
+	}
+	return name, ss[min(max(0, since), len(ss)):], ftp, nil
+}
+
+// lastRide is the last course ride of the activity being recorded.
+func (s *telemetryServer) lastRide() (string, []effort.Sample, error) {
+	if s.recorder == nil {
+		return "", nil, status.Error(codes.FailedPrecondition, "no ride is being recorded")
+	}
+	name, ss, ok := s.recorder.LastRide()
+	if !ok {
+		return "", nil, status.Error(codes.FailedPrecondition, "no course ride in the activity being recorded")
+	}
+	return name, ss, nil
+}
+
+func (s *telemetryServer) GetActivityHistory(_ context.Context, req *pb.GetActivityHistoryRequest) (*pb.GetActivityHistoryResponse, error) {
+	name, ss, _, err := s.samples(req.GetName(), int(req.GetSinceS()))
+	if err != nil {
+		return nil, err
+	}
+	resp := &pb.GetActivityHistoryResponse{Name: name, FromS: req.GetSinceS()}
+	for _, x := range ss {
+		resp.PowerW = append(resp.PowerW, int32(x.PowerW))
+		resp.HeartRateBpm = append(resp.HeartRateBpm, int32(x.HR))
+		resp.CadenceRpm = append(resp.CadenceRpm, int32(x.Cadence))
+		resp.SpeedMps = append(resp.SpeedMps, float32(x.SpeedMS))
+	}
+	return resp, nil
+}
+
+func (s *telemetryServer) GetActivitySummary(_ context.Context, req *pb.GetActivitySummaryRequest) (*pb.GetActivitySummaryResponse, error) {
+	var name string
+	var ss []effort.Sample
+	var ftp float64
+	var err error
+	if req.GetLastRide() {
+		name, ss, err = s.lastRide()
+	} else {
+		name, ss, ftp, err = s.samples(req.GetName(), 0)
+	}
+	if err != nil {
+		return nil, err
+	}
+	st, _ := s.hub.Latest()
+	if req.GetLastRide() {
+		ftp = st.Workout.FTPW
+	}
+	if ftp <= 0 {
+		ftp = st.Profile.FTPW
+	}
+	sum := effort.Summarize(ss, ftp, st.Profile.MaxHRBpm)
+	out := &pb.ActivitySummary{Name: name, TimerS: sum.TimerS, DistanceM: sum.DistanceM,
+		AvgPowerW: sum.AvgPowerW, MaxPowerW: sum.MaxPowerW, NormalizedPowerW: sum.NormPowerW, WorkKj: sum.WorkKJ,
+		AvgHeartRateBpm: sum.AvgHR, MaxHeartRateBpm: sum.MaxHR, AvgCadenceRpm: sum.AvgCadenceRPM,
+		PowerZoneS: sum.PowerZoneS, HeartRateZoneS: sum.HRZoneS, FtpW: sum.FTPW, MaxHrBpm: sum.MaxHRBpm}
+	if sum.PowerZoneS != nil {
+		out.PowerZoneUpper = effort.PowerZones
+	}
+	if sum.HRZoneS != nil {
+		out.HeartRateZoneUpper = effort.HRZones
+	}
+	for _, b := range sum.Curve {
+		out.PowerCurve = append(out.PowerCurve, &pb.PowerBest{DurationS: uint32(b.DurationS), PowerW: b.PowerW})
+	}
+	return &pb.GetActivitySummaryResponse{Summary: out}, nil
 }
 
 func (s *telemetryServer) EndActivity(ctx context.Context, req *pb.EndActivityRequest) (*pb.EndActivityResponse, error) {
@@ -449,6 +579,25 @@ func (s *telemetryServer) StopRide(context.Context, *pb.StopRideRequest) (*pb.St
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	return &pb.StopRideResponse{}, nil
+}
+
+func (s *telemetryServer) TurnAround(context.Context, *pb.TurnAroundRequest) (*pb.TurnAroundResponse, error) {
+	if s.rides == nil {
+		return nil, status.Error(codes.Unimplemented, "this core has no courses")
+	}
+	id, err := s.rides.TurnAround()
+	switch {
+	case errors.Is(err, ride.ErrNoRide), errors.Is(err, ride.ErrNoOtherWay), errors.Is(err, ride.ErrOnRunIn):
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	case err != nil:
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	if id != "" && s.scenery != nil {
+		// The other way's map data, from where the rider is now.
+		st, _ := s.hub.Latest()
+		s.scenery.Want(id, st.Ride.DistanceM)
+	}
+	return &pb.TurnAroundResponse{CourseId: id}, nil
 }
 
 func (s *telemetryServer) StartCalibration(ctx context.Context, req *pb.StartCalibrationRequest) (*pb.StartCalibrationResponse, error) {

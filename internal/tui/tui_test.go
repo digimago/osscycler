@@ -120,6 +120,7 @@ type stubCommands struct {
 	races              []string
 	heights            []float64
 	stops              int
+	turns              int
 	difficulties       []float64
 	workouts           []*pb.WorkoutDef
 	saved              []*pb.WorkoutDef
@@ -137,9 +138,19 @@ type stubCommands struct {
 	fitBytes           []byte
 	profileCalls       [][2]*float64
 	pauses             []bool
+	simulated          []bool
+	history            *pb.GetActivityHistoryResponse // the activity being recorded
+	historyCalls       []uint32
+	summary            *pb.ActivitySummary
+	summaryNames       []string
 }
 
-func (s *stubCommands) SetProfile(_ context.Context, w, f, h *float64) (*pb.RiderProfile, error) {
+func (s *stubCommands) SetSimulated(_ context.Context, on bool) error {
+	s.simulated = append(s.simulated, on)
+	return nil
+}
+
+func (s *stubCommands) SetProfile(_ context.Context, w, f, h, hr *float64) (*pb.RiderProfile, error) {
 	p := s.profile
 	if p == nil {
 		p = &pb.RiderProfile{}
@@ -154,9 +165,41 @@ func (s *stubCommands) SetProfile(_ context.Context, w, f, h *float64) (*pb.Ride
 		p.HeightCm = *h
 		s.heights = append(s.heights, *h)
 	}
+	if hr != nil {
+		p.MaxHrBpm = *hr
+	}
 	s.profile = p
 	s.profileCalls = append(s.profileCalls, [2]*float64{w, f})
 	return p, nil
+}
+
+func (s *stubCommands) ActivityHistory(_ context.Context, name string, since uint32) (*pb.GetActivityHistoryResponse, error) {
+	s.historyCalls = append(s.historyCalls, since)
+	h := s.history
+	if h == nil {
+		return nil, errors.New("no ride is being recorded")
+	}
+	out := &pb.GetActivityHistoryResponse{Name: h.GetName(), FromS: since}
+	if int(since) < len(h.GetPowerW()) {
+		out.PowerW, out.HeartRateBpm = h.GetPowerW()[since:], h.GetHeartRateBpm()[since:]
+	}
+	return out, nil
+}
+
+func (s *stubCommands) RideSummary(_ context.Context) (*pb.ActivitySummary, error) {
+	s.summaryNames = append(s.summaryNames, "last ride")
+	if s.summary == nil {
+		return nil, errors.New("no course ride")
+	}
+	return s.summary, nil
+}
+
+func (s *stubCommands) ActivitySummary(_ context.Context, name string) (*pb.ActivitySummary, error) {
+	s.summaryNames = append(s.summaryNames, name)
+	if s.summary == nil {
+		return nil, errors.New("no such activity")
+	}
+	return s.summary, nil
 }
 
 func (s *stubCommands) SetTrainerControl(_ context.Context, mode pb.ControlMode, v float64) (float64, error) {
@@ -210,6 +253,10 @@ func (s *stubCommands) StartRideAgainst(_ context.Context, id string, finished i
 	return nil
 }
 func (s *stubCommands) StopRide(context.Context) error { s.stops++; return nil }
+func (s *stubCommands) TurnAround(context.Context) (string, error) {
+	s.turns++
+	return "hill-reverse", nil
+}
 func (s *stubCommands) ListWorkouts(context.Context) ([]*pb.WorkoutDef, error) {
 	return s.workouts, nil
 }
@@ -411,6 +458,24 @@ func hillCourse() *pb.Course {
 	return c
 }
 
+// The steep reds are too dark for black labels on the look-ahead strip
+// and for the GRADE tile's digits on a dark terminal.
+func TestGradeColorsRead(t *testing.T) {
+	for _, tc := range []struct {
+		grade float64
+		white bool
+	}{{2, false}, {6, false}, {9, false}, {11, true}, {16, true}} {
+		if r, _, _, _ := textOn(gradeColor(tc.grade)).RGBA(); (r > 0) != tc.white {
+			t.Errorf("label on %v %%: white %v, want %v", tc.grade, r > 0, tc.white)
+		}
+	}
+	for _, g := range []float64{0, 13, 16} {
+		if l := luminance(readable(gradeColor(g))); l < 0.55 {
+			t.Errorf("GRADE digits at %v %%: luminance %.2f, too dark to read", g, l)
+		}
+	}
+}
+
 func TestGradeColor(t *testing.T) {
 	hex := func(c interface{ RGBA() (r, g, b, a uint32) }) string {
 		r, g, b, _ := c.RGBA()
@@ -420,7 +485,8 @@ func TestGradeColor(t *testing.T) {
 		grade float64
 		want  string
 	}{
-		{0, "#2c7bb6"}, {16, "#7f0000"}, {25, "#7f0000"}, {-3, "#6c7a89"},
+		// Owner, 2026-10-14: 6 % yellowish, 9 % dark orange, 16 % a very dark red.
+		{0, "#2c7bb6"}, {6, "#ffd93d"}, {9, "#e0560f"}, {16, "#4a0000"}, {25, "#4a0000"}, {-3, "#6c7a89"},
 	} {
 		if got := hex(gradeColor(tc.grade)); got != tc.want {
 			t.Errorf("gradeColor(%v) = %s, want %s", tc.grade, got, tc.want)
@@ -573,6 +639,33 @@ func TestArmedAndFinished(t *testing.T) {
 	run(m, cmd)
 	if cmds.stops != 1 {
 		t.Errorf("enter on the result: StopRide calls %d", cmds.stops)
+	}
+}
+
+// A course ride ends at its line with its own summary, its result on top;
+// closing it ends the ride: back to free riding (owner, 2026-10-13).
+func TestFinishedRideShowsItsSummary(t *testing.T) {
+	cmds := &stubCommands{courses: []*pb.Course{hillCourse()}, summary: &pb.ActivitySummary{
+		TimerS: 754, DistanceM: 6000, AvgPowerW: 245, MaxPowerW: 400, FtpW: 250,
+		PowerCurve: []*pb.PowerBest{{DurationS: 5, PowerW: 400}, {DurationS: 60, PowerW: 300}}}}
+	m := calModel(cmds)
+	next, cmd := m.Update(StateMsg{State: rideState(pb.RidePhase_RIDE_PHASE_RIDING, 2900)})
+	m = run(next.(Model), cmd)
+	next, cmd = m.Update(StateMsg{State: rideState(pb.RidePhase_RIDE_PHASE_FINISHED, 3000)})
+	m = run(next.(Model), cmd)
+	if len(cmds.summaryNames) != 1 || cmds.summaryNames[0] != "last ride" {
+		t.Fatalf("summaries asked for: %v", cmds.summaryNames)
+	}
+	out := plain(m.render())
+	for _, want := range []string{"FINISHED", "Hill Test", "BEST POWER", "6.00 km"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the finished ride's summary lacks %q:\n%s", want, out)
+		}
+	}
+	m, cmd = press(m, "x")
+	run(m, cmd)
+	if cmds.stops != 1 || m.summary != nil {
+		t.Errorf("closing the summary: StopRide calls %d, summary open %v", cmds.stops, m.summary != nil)
 	}
 }
 
@@ -1182,14 +1275,14 @@ func TestGhostOnRideScreen(t *testing.T) {
 }
 
 func TestOnboarding(t *testing.T) {
-	cmds := &stubCommands{}
+	cmds := &stubCommands{activities: []*pb.Activity{{Name: "a.fit", HeldMaxHeartRateBpm: 168}, {Name: "b.fit", HeldMaxHeartRateBpm: 176}}}
 	m0, _ := New("x:1", cmds).Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	st := sample()
 	st.Profile = &pb.RiderProfile{Missing: []string{"weight_kg", "ftp_w"}, SuggestedFtpW: 200, Path: "/home/r/.config/osscycler/profile.json"}
 	next, _ := m0.Update(StateMsg{State: st})
 	m := next.(Model)
 	out := plain(m.render())
-	for _, want := range []string{"WELCOME TO OSSCYCLER", "1/3  Your weight:", "kg", "climbs feel", "profile.json", "esc later"} {
+	for _, want := range []string{"WELCOME TO OSSCYCLER", "1/4  Your weight:", "kg", "climbs feel", "profile.json", "esc later"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("onboarding lacks %q:\n%s", want, out)
 		}
@@ -1208,20 +1301,30 @@ func TestOnboarding(t *testing.T) {
 		t.Fatalf("calls %v", cmds.profileCalls)
 	}
 	// Height is optional: enter on the empty field skips it.
-	if out := plain(m.render()); !strings.Contains(out, "2/3  Your height:") || !strings.Contains(out, "Optional") {
+	if out := plain(m.render()); !strings.Contains(out, "2/4  Your height:") || !strings.Contains(out, "Optional") {
 		t.Errorf("height step:\n%s", out)
 	}
 	m = pressAll(m, "enter")
 	if len(cmds.profileCalls) != 1 || len(cmds.heights) != 0 {
 		t.Errorf("skipping the height sent %v", cmds.heights)
 	}
-	if out := plain(m.render()); !strings.Contains(out, "3/3  Your FTP: 220") || !strings.Contains(out, "2.5 W/kg") {
+	if out := plain(m.render()); !strings.Contains(out, "3/4  Your FTP: 220") || !strings.Contains(out, "2.5 W/kg") {
 		t.Errorf("FTP step:\n%s", out)
 	}
 	m, cmd = press(m, "enter")
 	m = run(m, cmd)
-	if len(cmds.profileCalls) != 2 || *cmds.profileCalls[1][1] != 220 || m.onboarding != nil || m.notice != "profile saved" {
-		t.Errorf("after FTP: calls %d, onboarding %v, notice %q", len(cmds.profileCalls), m.onboarding, m.notice)
+	if len(cmds.profileCalls) != 2 || *cmds.profileCalls[1][1] != 220 {
+		t.Errorf("after FTP: calls %d", len(cmds.profileCalls))
+	}
+	// The maximum heart rate is optional too, and the last step; the
+	// highest held in the rides is told, not filled in.
+	if out := plain(m.render()); !strings.Contains(out, "4/4  Your maximum heart rate:") || !strings.Contains(out, "heart rate zones") ||
+		!strings.Contains(out, "held for 10 s in your rides: 176 bpm") || !strings.Contains(out, "not medical advice") || m.onboarding.value != "" {
+		t.Errorf("max HR step:\n%s", out)
+	}
+	m = pressAll(m, "enter")
+	if len(cmds.profileCalls) != 2 || m.onboarding != nil || m.notice != "profile saved" {
+		t.Errorf("skipping the max HR: calls %d, onboarding %v, notice %q", len(cmds.profileCalls), m.onboarding, m.notice)
 	}
 
 	// The core says it's complete: nothing more to ask; the menu's Profile
@@ -1251,12 +1354,25 @@ func TestOnboarding(t *testing.T) {
 	m = pressAll(m, "backspace", "backspace", "backspace", "183")
 	m, cmd = press(m, "enter")
 	m = run(m, cmd)
-	if fmt.Sprint(cmds.heights) != "[183]" || !strings.Contains(plain(m.render()), "3/3  Your FTP: 220") {
+	if fmt.Sprint(cmds.heights) != "[183]" || !strings.Contains(plain(m.render()), "3/4  Your FTP: 220") {
 		t.Errorf("height 183: sent %v\n%s", cmds.heights, plain(m.render()))
 	}
 	// esc goes back a step while editing, with the value in the profile.
-	if out := plain(pressAll(m, "esc").render()); !strings.Contains(out, "2/3  Your height: 183") {
+	if out := plain(pressAll(m, "esc").render()); !strings.Contains(out, "2/4  Your height: 183") {
 		t.Errorf("back to height:\n%s", out)
+	}
+	// On to the maximum heart rate: out of range caught, then saved.
+	m, cmd = press(m, "enter")
+	m = run(m, cmd)
+	m = pressAll(m, "300", "enter")
+	if !strings.Contains(m.notice, "100 to 230") {
+		t.Errorf("300 bpm: notice %q", m.notice)
+	}
+	m = pressAll(m, "backspace", "backspace", "backspace", "188")
+	m, cmd = press(m, "enter")
+	m = run(m, cmd)
+	if cmds.profile.GetMaxHrBpm() != 188 || m.onboarding != nil {
+		t.Errorf("max HR 188: profile %v, onboarding %v", cmds.profile, m.onboarding)
 	}
 }
 
@@ -1321,6 +1437,40 @@ func TestActivitiesExport(t *testing.T) {
 	m = pressAll(m, "down")
 	if _, cmd := press(m, "s"); cmd != nil {
 		t.Error("export offered for a broken recording")
+	}
+}
+
+// A prompt's suggested value is replaced by the first character typed
+// (owner: typing 5 after a suggested 3 % made 35), taken as it is with
+// enter, and edited by backspace, as in the 3D view.
+func TestPromptSuggestionIsReplacedByTyping(t *testing.T) {
+	cmds := &stubCommands{}
+	m := calModel(cmds)
+	m = pressAll(m, "w", "enter", "180") // suggested 150
+	m, cmd := press(m, "enter")
+	run(m, cmd)
+	m = pressAll(m, "g", "-2.5") // suggested 3, a minus first
+	m, cmd = press(m, "enter")
+	run(m, cmd)
+	m = pressAll(m, "g") // the suggestion as it is
+	m, cmd = press(m, "enter")
+	run(m, cmd)
+	m = pressAll(m, "w", "enter", "backspace", "5") // 150 edited: 15, then 155
+	m, cmd = press(m, "enter")
+	run(m, cmd)
+	want := "[CONTROL_MODE_POWER 180 CONTROL_MODE_GRADE -2.5 CONTROL_MODE_GRADE 3 CONTROL_MODE_POWER 155]"
+	if got := fmt.Sprint(cmds.controls); got != want {
+		t.Errorf("calls %s\nwant  %s", got, want)
+	}
+	// The FTP prompt alike: 265 over a suggested 200.
+	st := sample()
+	st.Workout = &pb.WorkoutProgress{FtpW: 200, IntensityPct: 100}
+	next, _ := m.Update(StateMsg{State: st})
+	m = pressAll(next.(Model), "f", "265")
+	m, cmd = press(m, "enter")
+	run(m, cmd)
+	if fmt.Sprint(cmds.ftps) != "[265]" {
+		t.Errorf("SetFTP calls %v", cmds.ftps)
 	}
 }
 
@@ -1489,6 +1639,19 @@ func TestCadenceTiles(t *testing.T) {
 	if out := plain(next.(Model).render()); !strings.Contains(out, "CADENCE 5s") || !strings.Contains(out, "aim 90") {
 		t.Errorf("workout lacks the cadence and its aim:\n%s", out)
 	}
+	// The core's verdict on the cadence shows beside the aim.
+	for check, want := range map[pb.CadenceCheck]string{
+		pb.CadenceCheck_CADENCE_CHECK_LOW:  "▲ faster",
+		pb.CadenceCheck_CADENCE_CHECK_ON:   "✓",
+		pb.CadenceCheck_CADENCE_CHECK_HIGH: "▼ slower",
+	} {
+		st := workoutState(pb.WorkoutPhase_WORKOUT_PHASE_RUNNING, 300)
+		st.Workout.CadenceCheck = check
+		next, _ := calModel(&stubCommands{workouts: []*pb.WorkoutDef{testWorkoutDef(t)}}).Update(StateMsg{State: st})
+		if out := plain(next.(Model).render()); !strings.Contains(out, "aim 90 "+want) {
+			t.Errorf("%v: no %q beside the aim:\n%s", check, want, out)
+		}
+	}
 }
 
 // dashboard is the TUI on its dashboard, the profile complete.
@@ -1516,6 +1679,30 @@ func TestHintsFitTheWidth(t *testing.T) {
 	for _, w := range []int{60, 80, 100, 160} {
 		if f := dashboard(t, sample(), w).footer(); strings.Count(f, "\n")+1 != 3 {
 			t.Errorf("width %d: footer is %d lines, want 3:\n%s", w, strings.Count(f, "\n")+1, plain(f))
+		}
+	}
+}
+
+// A course with a run-in and a lap (owner, 2026-10-13): its lap from 500
+// to 3000 m, the course running on 100 m into the lap's start again. Past
+// its end a lap back; the line at the lap's start once, then at its end
+// each lap.
+func TestLapOnACourseWithARunIn(t *testing.T) {
+	c := &pb.Course{DistanceM: 3100, LapStartM: 500, LapEndM: 3000}
+	if !lapped(c) || lapped(&pb.Course{DistanceM: 3100}) {
+		t.Error("lapped: a course with a lap is, a one-way course isn't")
+	}
+	for s, want := range map[float64]float64{400: 400, 3050: 3050, 3150: 650, 5700: 700} {
+		if got := coursePos(c, s); math.Abs(got-want) > 1e-9 {
+			t.Errorf("coursePos(%.0f) = %.0f, want %.0f", s, got, want)
+		}
+	}
+	for _, x := range []struct {
+		from, to float64
+		want     bool
+	}{{490, 510, true}, {1000, 1010, false}, {2990, 3010, true}, {3050, 3060, false}, {5490, 5510, true}} {
+		if got := lapLine(c, x.from, x.to); got != x.want {
+			t.Errorf("lapLine(%.0f, %.0f) = %v", x.from, x.to, got)
 		}
 	}
 }

@@ -34,26 +34,48 @@ void vertex() {
 	if (here) {
 		look(s.ground, unit(s.h2, 0u), dense, tall, t, col);
 	}
-	float w = tall * 1.6 * size * stretch;
+	// The field's headland by the road grows grass.
+	if (here && crop_of(s.ground) >= 0 && s.clear < HEADLAND) {
+		dense = 0.9; tall = 0.4; t = unit(s.h2, 0u) < 0.5 ? 0 : 1; col = vec3(1.0);
+	}
+	bool crop = t >= 6;
+	float w = tall * card_width(t) * size * stretch;
+	// A crop stands in rows: its spot moved across onto the nearest row.
+	vec2 p = s.p;
+	if (crop) {
+		vec2 across = across_rows(s.ground);
+		float sp = row_spacing(crop_of(s.ground));
+		float q = dot(p, across);
+		p += across * ((floor(q / sp) + 0.5) * sp - q);
+	}
 	show = 0.0;
 	if (here && unit(s.h2, 16u) < dense * density && s.clear >= w * 0.4 / stretch) {
 		float inward = s.inward;
 		if (clump_k > 0 && taken(s.cell, clump_k)) {
 			int kind = plant_kind(t);
-			if (clump_grows(s, t, dense, kind, clump_density[kind])) {
+			if (kind < 3 && clump_grows(s, t, dense, kind, clump_density[kind])) {
 				float r = clump_reach[kind];
 				inward = min(inward, smoothstep(r - clump_fade, r, s.d));
 			}
 		}
 		show = amount(s.outer, inward, s.keep);
+		// A crop at the camera (a chase camera swinging out over a field)
+		// fades rather than filling the view.
+		if (crop) {
+			show *= smoothstep(1.0, 2.5, distance(vec3(p.x, s.y + 1.0, p.y), CAMERA_POSITION_WORLD));
+		}
 	}
 	if (show <= 0.0) {
 		VERTEX = vec3(0.0); // nothing here: every vertex in one point
 	} else {
-		float hgt = tall * size * (0.8 + 0.4 * unit(s.h, 8u)) * (0.75 + 0.5 * unit(s.h3, 0u));
-		vec3 v = yawed(vec3(VERTEX.x * w, VERTEX.y * hgt, VERTEX.z * w), unit(s.h2, 8u) * 6.2831853);
-		v.x += sway(s.p, TIME) * 0.05 * (1.0 - UV.y) * hgt;
-		VERTEX = vec3(s.p.x, s.y - 0.02, s.p.y) + v;
+		float hgt = crop ? tall * (0.88 + 0.24 * unit(s.h, 8u))
+			: tall * size * (0.8 + 0.4 * unit(s.h, 8u)) * (0.75 + 0.5 * unit(s.h3, 0u));
+		// A crop's card faces along its row (a little either way), the rest
+		// any way.
+		float yaw = crop ? -row_angle(s.ground) + 0.3 * (unit(s.h2, 8u) - 0.5) : unit(s.h2, 8u) * 6.2831853;
+		vec3 v = yawed(vec3(VERTEX.x * w, VERTEX.y * hgt, VERTEX.z * w), yaw);
+		v.x += sway(p, TIME) * (crop ? 0.02 : 0.05) * (1.0 - UV.y) * hgt;
+		VERTEX = vec3(p.x, s.y - 0.02, p.y) + v;
 	}
 	NORMAL = vec3(0.0, 1.0, 0.0);
 	tint = tone(s, col);

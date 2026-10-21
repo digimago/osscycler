@@ -91,7 +91,7 @@ func (v *verger) across(x, z, dx, dz, base, limit, y0 float64, line int) []vpt {
 		if k == 0 {
 			h = y0
 		}
-		c := landColors[land]
+		c := styleFor(v.t.o.Region).landColour(land)
 		pts[k] = vpt{px, h, pz, [3]float32{c[0], c[1], c[2]}}
 	}
 	return pts
@@ -319,7 +319,11 @@ func rasterize(byChunk map[[2]int][]gltf.Primitive, chunkM float64) map[[2]int][
 // cutter holds the road surface triangles (glTF x, z), by cell.
 type cutter struct {
 	tris  [][3][2]float64
+	ys    [][3]float64 // each triangle's corner heights
 	cells map[[2]int][]int
+	// seams: edges the cut makes get a skirt where the land stands over
+	// the surface across them (the road cutter; water has bank faces).
+	seams bool
 }
 
 const cutterCellM = 4.0
@@ -331,18 +335,22 @@ func (c *cutter) add(p gltf.Primitive) {
 	pos := p.Positions
 	for t := 0; t+2 < len(p.Indices); t += 3 {
 		var tr [3][2]float64
+		var ys [3]float64
 		for k := range 3 {
 			v := p.Indices[t+k]
 			tr[k] = [2]float64{float64(pos[3*v]), float64(pos[3*v+2])}
+			ys[k] = float64(pos[3*v+1])
 		}
 		if math.Abs(cross2(tr[0], tr[1], tr[2])) < 1e-6 {
 			continue // upright: a wall, a skirt
 		}
 		if cross2(tr[0], tr[1], tr[2]) < 0 {
 			tr[1], tr[2] = tr[2], tr[1] // anticlockwise in x, z
+			ys[1], ys[2] = ys[2], ys[1]
 		}
 		id := len(c.tris)
 		c.tris = append(c.tris, tr)
+		c.ys = append(c.ys, ys)
 		lo, hi := bbox(tr[:])
 		for gx := int(math.Floor(lo[0] / cutterCellM)); gx <= int(math.Floor(hi[0]/cutterCellM)); gx++ {
 			for gz := int(math.Floor(lo[1] / cutterCellM)); gz <= int(math.Floor(hi[1]/cutterCellM)); gz++ {
@@ -428,7 +436,12 @@ func subtract(p [][2]float64, t [3][2]float64) [][][2]float64 {
 }
 
 // clip is p without what the road surfaces cover.
-func (c *cutter) clip(p gltf.Primitive) gltf.Primitive {
+func (c *cutter) clip(p gltf.Primitive) gltf.Primitive { return c.clipSeams(p, c.seams) }
+
+// clipSeams is clip, with seam skirts or without (the 5 m terrain: at a
+// road's edge its verge is what shows, and skirts under the terrain cut
+// there stood hidden in the verges by the hundred thousand).
+func (c *cutter) clipSeams(p gltf.Primitive, seams bool) gltf.Primitive {
 	out := gltf.Primitive{Material: p.Material}
 	pos := p.Positions
 	hasN, hasC, hasUV := len(p.Normals) > 0, len(p.Colors) > 0, len(p.UVs) > 0
@@ -544,9 +557,148 @@ func (c *cutter) clip(p gltf.Primitive) gltf.Primitive {
 					out.Indices = append(out.Indices, vs[0], vs[i], vs[i+1])
 				}
 			}
+			// A seam skirt under every edge the cut made: where the land
+			// stands over the surface it was cut along (a side road's verge
+			// over a junction, 6 cm; owner, 2026-10-11, Zandvoort 12.9 km:
+			// "looking under terrain"), its edge is closed; where it lies
+			// lower, the skirt is hidden under that surface.
+			// Only edges with a cutting surface across them: the cut also
+			// splits the land into fragments, whose edges between each other
+			// need nothing.
+			ccw := ringArea(pc) > 0
+			for i, q := range pc {
+				if !seams {
+					break
+				}
+				r := pc[(i+1)%len(pc)]
+				if onEdgeOf(tr, q, r) {
+					continue
+				}
+				l := math.Hypot(r[0]-q[0], r[1]-q[1])
+				if l < 1e-3 {
+					continue
+				}
+				ox, oz := (r[1]-q[1])/l, -(r[0]-q[0])/l // right of q->r: outside a ccw piece
+				if !ccw {
+					ox, oz = -ox, -oz
+				}
+				m := [2]float64{(q[0]+r[0])/2 + ox*0.02, (q[1]+r[1])/2 + oz*0.02}
+				// The land's height at the edge's middle, against the
+				// highest surface across it.
+				mid := [2]float64{(q[0] + r[0]) / 2, (q[1] + r[1]) / 2}
+				a := cross2(mid, tr[1], tr[2]) / den
+				b := cross2(tr[0], mid, tr[2]) / den
+				hl := a*float64(pos[3*idx[0]+1]) + b*float64(pos[3*idx[1]+1]) + (1-a-b)*float64(pos[3*idx[2]+1])
+				across, hs := false, math.Inf(-1)
+				for _, id := range cands {
+					ct := c.tris[id]
+					cd := cross2(ct[0], ct[1], ct[2])
+					u := cross2(m, ct[1], ct[2]) / cd
+					v := cross2(ct[0], m, ct[2]) / cd
+					if u < 0 || v < 0 || 1-u-v < 0 {
+						continue
+					}
+					across = true
+					hs = math.Max(hs, u*c.ys[id][0]+v*c.ys[id][1]+(1-u-v)*c.ys[id][2])
+				}
+				if across && hl > hs+seamOverM {
+					seamSkirt(&out, vs[i], vs[(i+1)%len(vs)], hasN, hasC, hasUV)
+				}
+			}
 		}
 	}
 	return out
+}
+
+// seamM: a seam skirt reaches this far down; only where the land stands
+// more than seamOverM over the surface across the edge.
+const seamM, seamOverM = 0.3, 0.01
+
+// onEdgeOf tells whether the segment q-r lies along one of triangle t's
+// edges (it is the triangle's own edge, not one the cut made).
+func onEdgeOf(t [3][2]float64, q, r [2]float64) bool {
+	for k := range 3 {
+		a, b := t[k], t[(k+1)%3]
+		l := math.Hypot(b[0]-a[0], b[1]-a[1])
+		if l == 0 {
+			continue
+		}
+		if math.Abs(cross2(a, b, q))/l < 1e-4 && math.Abs(cross2(a, b, r))/l < 1e-4 {
+			return true
+		}
+	}
+	return false
+}
+
+// seamSkirt adds a vertical face under the edge from vertex a to b of p,
+// seamM deep, seen from both sides, in the vertices' own colours.
+func seamSkirt(p *gltf.Primitive, a, b uint32, hasN, hasC, hasUV bool) {
+	pos := p.Positions
+	ax, az := float64(pos[3*a]), float64(pos[3*a+2])
+	bx, bz := float64(pos[3*b]), float64(pos[3*b+2])
+	l := math.Hypot(bx-ax, bz-az)
+	if l < 1e-3 {
+		return
+	}
+	nx, nz := (bz-az)/l, -(bx-ax)/l
+	low := func(v uint32, sx, sz float32) uint32 {
+		p.Positions = append(p.Positions, p.Positions[3*v], p.Positions[3*v+1]-seamM, p.Positions[3*v+2])
+		if hasN {
+			p.Normals = append(p.Normals, sx, 0, sz)
+		}
+		if hasC {
+			p.Colors = append(p.Colors, p.Colors[3*v:3*v+3]...)
+		}
+		if hasUV {
+			p.UVs = append(p.UVs, p.UVs[2*v:2*v+2]...)
+		}
+		return uint32(len(p.Positions)/3 - 1)
+	}
+	top := func(v uint32, sx, sz float32) uint32 {
+		w := low(v, sx, sz)
+		p.Positions[3*w+1] += seamM
+		return w
+	}
+	for _, sg := range []float32{1, -1} {
+		sx, sz := float32(nx)*sg, float32(nz)*sg
+		ta, tb := top(a, sx, sz), top(b, sx, sz)
+		ba, bb := low(a, sx, sz), low(b, sx, sz)
+		n := [3]float64{float64(sx), 0, float64(sz)}
+		tri(p, ta, ba, tb, n)
+		tri(p, tb, ba, bb, n)
+	}
+}
+
+// highest is the height of the highest road surface within r of glTF
+// x, z (each triangle's plane taken at the point), and whether any is.
+func (c *cutter) highest(x, z, r float64) (float64, bool) {
+	best, found := math.Inf(-1), false
+	p := [2]float64{x, z}
+	for gx := int(math.Floor((x - r) / cutterCellM)); gx <= int(math.Floor((x+r)/cutterCellM)); gx++ {
+		for gz := int(math.Floor((z - r) / cutterCellM)); gz <= int(math.Floor((z+r)/cutterCellM)); gz++ {
+			for _, id := range c.cells[[2]int{gx, gz}] {
+				t := c.tris[id]
+				in := cross2(t[0], t[1], p) >= 0 && cross2(t[1], t[2], p) >= 0 && cross2(t[2], t[0], p) >= 0
+				for k := 0; !in && k < 3; k++ {
+					in = segDist(t[k], t[(k+1)%3], x, z) <= r
+				}
+				if !in {
+					continue
+				}
+				// The plane through the corners, at the point.
+				a, b, cc := t[0], t[1], t[2]
+				det := (b[0]-a[0])*(cc[1]-a[1]) - (cc[0]-a[0])*(b[1]-a[1])
+				y := math.Max(c.ys[id][0], math.Max(c.ys[id][1], c.ys[id][2]))
+				if math.Abs(det) > 1e-9 {
+					u := ((x-a[0])*(cc[1]-a[1]) - (cc[0]-a[0])*(z-a[1])) / det
+					v := ((b[0]-a[0])*(z-a[1]) - (x-a[0])*(b[1]-a[1])) / det
+					y = math.Min(y, c.ys[id][0]+u*(c.ys[id][1]-c.ys[id][0])+v*(c.ys[id][2]-c.ys[id][0]))
+				}
+				best, found = math.Max(best, y), true
+			}
+		}
+	}
+	return best, found
 }
 
 // dist is how far glTF x, z is from the road surfaces (0 on one), up to

@@ -70,6 +70,7 @@ func mix(a, b rgb, t float64) rgb {
 type roadScene struct {
 	step, finish     float64
 	loop             bool // the finish is the start: the road goes round
+	c                *pb.Course
 	east, north, ele []float64
 	// From map data, when the core has it: four land uses per sample (left
 	// far, left near, right near, right far) and the buildings by distance.
@@ -89,7 +90,7 @@ func newRoadScene(c *pb.Course) *roadScene {
 		return nil
 	}
 	k := int(math.Round(roadSmoothM / step / 2))
-	sc := &roadScene{step: step, finish: c.GetDistanceM(), loop: c.GetLoop(),
+	sc := &roadScene{step: step, finish: c.GetDistanceM(), loop: c.GetLoop(), c: c,
 		east: movingAverage(e, k), north: movingAverage(n, k), ele: movingAverage(ele, 0),
 		buildings: c.GetBuildings()}
 	if sc.loop {
@@ -155,8 +156,12 @@ func loopAverage(v []float32, k int) []float64 {
 	return out
 }
 
-// lapPos is s within the lap on a loop; s itself otherwise.
+// lapPos is s on the course: within the lap on a loop, past the end of a
+// course with a lap a lap back (coursePos); s itself otherwise.
 func (sc *roadScene) lapPos(s float64) float64 {
+	if sc.c != nil {
+		return coursePos(sc.c, s)
+	}
 	if !sc.loop {
 		return s
 	}
@@ -504,6 +509,9 @@ func (sc *roadScene) band(px []rgb, onRoad []bool, w int, cam roadCamera, near, 
 			line = sc.lapPos(s) // a line every lap
 		}
 		finish := line >= 0 && line < 2
+		if sc.c != nil && lapped(sc.c) && !sc.loop {
+			finish = lapLine(sc.c, s-2, s) // the lap's line: no finish at the course's end
+		}
 		row := px[y*w : (y+1)*w]
 		for x := range row {
 			lateral := (float64(x) + 0.5 - mid) * mPerPx

@@ -11,7 +11,10 @@ course being ridden; without a core it rides a world at a fixed speed.
 ## Run
 
 Needs Godot 4.7 with .NET (the "mono" build) and a .NET SDK 8 or later on
-`PATH`.
+`PATH`. `make 3d` finds, checks and runs it for you; running `godot`
+directly in a fresh checkout, import the assets once first
+(`godot --headless --path renderers/godot --import`, or the HUD font
+doesn't load).
 
 ```sh
 make world                                   # builds _worlds/posbank
@@ -24,7 +27,7 @@ godot --path renderers/godot -- --core 127.0.0.1:7420 --worlds "$PWD/_worlds"
 The renderer's own arguments come after `--`:
 
 | Argument | |
-|---|---|
+| --- | --- |
 | `--core ADDR` | follow the ride on this core; the world is `<worlds>/<course id>` |
 | `--worlds DIR` | where the worlds are (default `~/osscycler/worlds`) |
 | `--token-file FILE` | the API token (default `$OSSCYCLER_API_TOKEN`, then `~/osscycler/api-token`) |
@@ -40,6 +43,7 @@ The renderer's own arguments come after `--`:
 | `--keys K@N,...` | press these keys at these frames, e.g. `"?@60,x@120"` (checking the head) |
 | `--debug` | space marks the spot as flawed: a line in `marks.jsonl` and a screenshot (only while no menu, prompt or editor is open; `space@N` in `--keys`); ctrl+→ / ctrl+← look 100 m further or back along the course (shift: 1 km), ctrl+↓ back to the rider: with a core only the view moves (the ride stays where it is), without one the fixed-speed ride jumps. The renderer isn't counted as a screen then, and quits without asking |
 | `--marks DIR` | where the marks go (default `~/osscycler/marks`); the `world-faults` skill's `marks.py` reads them |
+| `--control PORT` | a control socket on `127.0.0.1:PORT` (0: any free port) for debugging sessions: one JSON request per line (`state`, `goto`, `shot`, `stats`, `keys`, `load`, `hide`, `mark`, `quit`; `src/Main.Control.cs`), served between frames. `cmd/osscycler-mcp` drives it for an AI assistant; `osscycler 3d --debug --control 7431` opens one on a ride |
 
 ## Keys
 
@@ -144,6 +148,11 @@ dotnet test renderers/godot/tests/Hud
 - Godot's camera field of view is vertical by default; the renderer sets a
   horizontal one, as the TUI's (70° vertical was about 102° across on a
   16:9 screen: the world looked flat and far away).
+- The 3D view renders at the window's full resolution up to 1440 pixels
+  high, and above that at 1440 lines, upscaled with FSR (the HUD stays at
+  the window's own; `RenderScale.cs`). Full screen on a Retina Mac
+  (3600×2260) went from 49-58 to 78-84 fps on the figure-8; the GPU is the
+  limit there.
 - Haze by distance: clear within 60-140 m, full by 360-460 m (the world
   ends 300 m from the road), the sun's height and direction and the sky's
   tint picked from the seed.

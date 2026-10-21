@@ -139,6 +139,10 @@ type State struct {
 	// (Announce): a script running a session, a coach.
 	Announcement   string
 	AnnouncedUntil time.Time
+	// Simulated: a simulated rider stands in for the trainer and heart
+	// rate strap (Switch.SetSimulated), at the rider's request when they
+	// have none at hand. Nothing is recorded meanwhile.
+	Simulated bool
 }
 
 // SetPaused parks the core or carries on; whether that changed anything.
@@ -207,6 +211,7 @@ type Profile struct {
 	WeightKg         float64
 	FTPW             float64
 	HeightCm         float64 // zero: unknown
+	MaxHRBpm         float64 // zero: unknown
 	CdA              float64 // drag area rides start with, m²
 	DifficultyPct    float64
 	SuggestedFTPW    float64 // a starting point for onboarding
@@ -217,6 +222,8 @@ type Profile struct {
 	CdAForced        bool   // -cda: the size of the rider doesn't apply
 	Path             string // where it is saved
 	View             string // a 3D renderer's view: "chase" or "eyes"
+	WorldBuild       string // building worlds ahead: "idle" or "always"
+	WorldFetch       string // and its downloads: "cached" or "allowed"
 }
 
 // Recording is the FIT recorder's status.
@@ -250,6 +257,16 @@ func (p WorkoutPhase) Active() bool {
 	return p == WorkoutArmed || p == WorkoutRunning || p == WorkoutPaused
 }
 
+// CadenceCheck is the rider's cadence against a workout's target cadence.
+type CadenceCheck uint8
+
+const (
+	CadenceNone CadenceCheck = iota // no target now, or no cadence reading
+	CadenceLow                      // below the tolerance: pedal faster
+	CadenceOn
+	CadenceHigh // above it: pedal slower
+)
+
 // Workout is an ERG workout in progress. FTPW and IntensityPct are
 // settings, published with or without a workout.
 type Workout struct {
@@ -264,6 +281,8 @@ type Workout struct {
 	Free             bool    // no ERG target in this segment
 	TargetW          float64 // ERG target; 0 when Free
 	TargetCadence    int
+	CadenceCheck     CadenceCheck // the 5 s cadence against TargetCadence
+	CadenceAvg       float64      // that 5 s cadence; 0 without a reading
 	NextLabel        string
 	NextTargetW      float64
 	NextFree         bool
@@ -325,8 +344,13 @@ type Ride struct {
 	Ghost RideGhost
 
 	// Loop: the course goes round, and the ride with it until the rider
-	// stops; DistanceM is then along the current lap.
-	Loop bool
+	// stops (a test track, or a course whose end comes back to its start:
+	// course.Lap). The lap starts LapStartM along the course and is
+	// LapLengthM long; LapDistanceM is how far into the lap under way the
+	// rider is (negative on the run-in before the first: how far to it).
+	Loop                  bool
+	LapStartM, LapLengthM float64
+	LapDistanceM          float64
 	// Lap is the lap under way, from 1; LapElapsed its time so far.
 	Lap        int
 	LapElapsed time.Duration
@@ -340,6 +364,10 @@ type Ride struct {
 	// up a climb would make an unbeatable time). On a loop, per lap: the
 	// lap under way (LapPaused) and the completed ones (Lap.Paused).
 	Paused, LapPaused bool
+	// Untimed: the rider turned round onto this course partway along
+	// (ride.Session.TurnAround). A one-way ride then finishes with no time
+	// that counts; a lapped one is untimed until its lap's line.
+	Untimed bool
 }
 
 // OnLoop reports whether a loop ride is under way: it moves the rider
@@ -364,6 +392,7 @@ type Lap struct {
 type RideGhost struct {
 	Label     string        // e.g. "PB 7 Oct"
 	DistanceM float64       // where the ghost is now on the course
+	SpeedMPS  float64       // its speed there; 0 while it stands (armed, paused, finished)
 	Gap       time.Duration // the rider behind the ghost (negative: ahead), at the rider's position
 	Elapsed   time.Duration // the ghost's time to the line
 }

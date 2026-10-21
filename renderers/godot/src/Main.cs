@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using Godot;
+using Osscycler.Hud;
 using Osscycler.V1;
 
 namespace Osscycler;
@@ -33,6 +35,9 @@ namespace Osscycler;
 //	--debug           space marks the spot as flawed (a line in marks.jsonl and a screenshot), for analysis;
 //	                  ctrl+→ / ctrl+← look 100 m further or back along the course (shift: 1 km), ctrl+↓ back to the rider
 //	--marks DIR       where the marks go (default ~/osscycler/marks)
+//	--control PORT    a control socket on 127.0.0.1:PORT (0: any free port) for debugging
+//	                  sessions: move, look, screenshot, measure (ControlSocket, Main.Control.cs;
+//	                  cmd/osscycler-mcp drives it)
 public partial class Main : Node3D
 {
     const float EyeM = 1.6f;      // a rider's eyes above the road
@@ -50,6 +55,8 @@ public partial class Main : Node3D
     float _look; // radians to the right of the way ahead
     string _worldsDir = "";
     Camera3D _camera = null!;
+    Godot.Environment _env = null!;
+    float _hazeDensity = 0.0004f, _depthDensity;
     Hud.HudView _hud = null!;
     Head.Controller _head = null!;
     Vector3 _gaze;
@@ -62,6 +69,8 @@ public partial class Main : Node3D
     readonly List<(int Frame, string Key)> _keys = new();
     float _relief = 1;
     int _seed;
+    Weather _weather;
+    DirectionalLight3D? _sun;
     bool _debug;          // --debug: space marks the spot (Mark)
     string _marksDir = "";
 
@@ -104,6 +113,7 @@ public partial class Main : Node3D
     double _reportedAt, _posErr, _clock;
     string _missing = "";
     WorldSource? _source; // the ride's world: here, or built here (a preview first)
+    WorldAhead? _ahead;   // the courses' worlds, built ahead while nothing is ridden
     string _worldStatus = "";
     string _shownDir = ""; // the directory of the world shown
 
@@ -129,6 +139,7 @@ public partial class Main : Node3D
         _shot = args.File("shot", "") is { Length: > 0 } s ? s : null;
         _shotFrames = (int)args.Number("frames", _shotFrames);
         StatsArgs(args);
+        ControlArgs(args);
         // --keys "?@60,x@120": keys pressed at those frames (for checks).
         foreach (var part in args.Get("keys", "").Split(',', StringSplitOptions.RemoveEmptyEntries))
         {
@@ -145,8 +156,14 @@ public partial class Main : Node3D
         _marksDir = args.File("marks", Path.Combine(Core.Home(), "marks"));
         _bloom = Grass.Bloom(seed % 1000); // the seed's day of the year
         var weather = Weather.From(seed);
-        AddChild(Sky(weather));
-        AddChild(Sun(weather));
+        _weather = weather;
+        var sky = Sky(weather);
+        _env = sky.Environment;
+        _depthDensity = _env.FogDensity;
+        AddChild(sky);
+        _sun = Sun();
+        AddChild(_sun);
+        PlaceSun(48);
         // Godot's field of view is vertical by default: 70° made about 102°
         // across on a wide screen, which looked flat and far away.
         _camera = new Camera3D
@@ -158,9 +175,22 @@ public partial class Main : Node3D
             Current = true,
         };
         _relief = (float)Math.Max(0.1, args.Number("relief", 1));
+        // For checks: the haze over distant terrain, its end as a share of
+        // the terrain's reach and its curve.
+        _hazeDensity = (float)args.Number("haze", 0.0004);
         if (args.Get("ghost", "") != "")
             _ghostAhead = args.Number("ghost", 10);
         _look = Mathf.DegToRad((float)args.Number("look", 0));
+        // --camera x,y,z,yaw,pitch: the camera fixed in the world's frame
+        // (x east, y up, z south; yaw clockwise from north, pitch up, -90
+        // straight down, north at the top), for top-down views and close
+        // looks at a world's faults; no HUD.
+        if (args.Get("camera", "") is { Length: > 0 } cam)
+        {
+            var v = cam.Split(',').Select(x => float.Parse(x, System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+            if (v.Length == 5)
+                _fixedCamera = (new Vector3(v[0], v[1], v[2]), Mathf.DegToRad(v[3]), Mathf.DegToRad(v[4]));
+        }
         AddChild(_camera);
         // The fade under the HUD: the haze's own colour, so a swap reads as
         // riding through a bank of mist.
@@ -182,6 +212,8 @@ public partial class Main : Node3D
         AddChild(fadeLayer);
         _hud = new Hud.HudView(GetViewport());
         AddChild(_hud.Node);
+        Scale3D();
+        GetViewport().SizeChanged += Scale3D;
 
         var core = args.Get("core", "");
         // The HUD's arrangement, kept on this machine (as the TUI's tui.json).
@@ -197,6 +229,7 @@ public partial class Main : Node3D
             {
                 _core = new Core(core, Core.Token(args.File("token-file", "")), head: !watcher);
                 _source = new WorldSource(_core, _worldsDir);
+                _ahead = new WorldAhead(_core, _worldsDir);
                 _head = new Head.Controller(_core, layout) { Watcher = watcher };
                 if (_debug)
                     _head.Note($"debug: space marks a flawed spot ({_marksDir})");
@@ -219,6 +252,8 @@ public partial class Main : Node3D
     public override void _ExitTree()
     {
         _source?.Stop(); // a world being built for this screen: no one to load it now
+        _ahead?.Stop();
+        _control?.Dispose();
         _core?.Dispose();
         _trace?.Dispose();
     }
@@ -336,13 +371,17 @@ public partial class Main : Node3D
         }
         _world = w;
         AddChild(w.Scene);
+        Reach(w.Manifest.Terrain.FarM);
+        if (w.Manifest.Origin.Lat != 0 || w.Manifest.Origin.Lon != 0)
+            PlaceSun(w.Manifest.Origin.Lat);
         // Grass beside the scene, not in it: the scene is scaled by the
         // relief, the grass shouldn't be.
         if (w.Ground != null)
         {
-            _grass = new Grass(w.Ground, _relief, w.TerrainMaterial, _bloom);
+            _grass = new Grass(w.Ground, _relief, w.TerrainMaterial, _bloom, (float)w.Manifest.Ground.DryAboveM);
             AddChild(_grass.Node);
         }
+        _hidden.Clear(); // the old world's nodes went with it
         HideParts(w);
         _missing = "";
         _gaze = Vector3.Zero;
@@ -393,6 +432,8 @@ public partial class Main : Node3D
         Lap("head");
         _hud.Arrange(_head.Layout);
         _hud.Head(_head.Asking(_clock), _head.Notice(_clock), _head.Help, _head.List(), _head.Prompt, _head.Dialog(now, _clock), _head.Form(now));
+        _hud.Summary(_head.Summary, _head.SummaryHeading);
+        _hud.Graph(_head.Graph(now), now?.Profile?.FtpW ?? 0);
         if (_core != null)
         {
             var st = _core.Latest().State;
@@ -400,6 +441,8 @@ public partial class Main : Node3D
             var wk = st?.Workout is { } p && p.Id != "" ? _core.Workout(p.Id) : null;
             // Riding a preview: what the world's build is doing.
             string note = _ride != null && _world?.Manifest.Course.Id == _ride.CourseId ? _worldStatus : "";
+            if (_ride == null)
+                note = _ahead?.Status ?? ""; // worlds being built ahead
             if (Math.Abs(Viewed - _distance) > 0.5) // a debug view ahead or behind the rider
                 note = string.Format(CultureInfo.InvariantCulture, "view {0:+0;-0} m, at {1:F2} km · ctrl+↓ back", Viewed - _distance, Viewed / 1000)
                     + (note != "" ? "   " + note : "");
@@ -421,6 +464,7 @@ public partial class Main : Node3D
             GD.Print($"osscycler: view at {_distance:F0} m saved to {_shot}: {err}");
             GetTree().Quit();
         }
+        ServeControl();
     }
 
     // Keys go to the head (Head.Controller), named as the TUI names them.
@@ -521,15 +565,7 @@ public partial class Main : Node3D
         {
             shot = "";
         }
-        // Heights back to the world's frame: the scene is scaled by --relief.
-        Vector3 Frame(Vector3 v) => v with { Y = v.Y / _relief };
-        double at = Viewed; // the spot looked at (the rider's, or a debug view ahead or behind)
-        var rider = Frame(w.InLane(at));
-        var cam = Frame(_camera.GlobalPosition);
-        var fwd = -_camera.GlobalTransform.Basis.Z;
-        fwd = new Vector3(fwd.X, fwd.Y / _relief, fwd.Z).Normalized();
-        var (lat, lon) = Head.Marks.LatLon(m.Origin.Lat, m.Origin.Lon, rider.X, rider.Z);
-        double along = m.Course.Loop && w.Length > 0 ? ((at % w.Length) + w.Length) % w.Length : Math.Clamp(at, 0, w.Length);
+        var (at, along, rider, lat, lon, cam, fwd) = Spot(w);
         double R(double v, int digits) => Math.Round(v, digits);
         var mark = new Head.Mark
         {
@@ -593,6 +629,19 @@ public partial class Main : Node3D
     {
         var (st, _) = _core!.Latest();
         var r = st?.Ride;
+        // Worlds are built ahead only while nothing is ridden: a ride (its
+        // own world first), a workout or manual control stops it.
+        // The rider's profile says when and how (world_build, world_fetch).
+        _ahead?.Fetch(st?.Profile?.WorldFetch == "allowed");
+        if (Head.AheadQueue.Riding(st))
+        {
+            if (st?.Profile?.WorldBuild == "always")
+                _ahead?.Idle(r?.CourseId ?? "");
+            else
+                _ahead?.Busy();
+        }
+        else if (st != null)
+            _ahead?.Idle();
         if (r == null || r.CourseId == "")
         {
             _ride = null;
@@ -602,10 +651,10 @@ public partial class Main : Node3D
         }
         // Here, or built here: a preview first while the world is built,
         // then the world itself in its place.
-        var (dir, status) = _source!.For(r.CourseId);
+        var (dir, stamp, status) = _source!.For(r.CourseId);
         _worldStatus = status;
-        if (dir != null && dir != _shownDir && dir != _loadingDir && dir != _missing && _swapIn == null)
-            LoadInBackground(dir); // a failure sets _missing: not tried every frame
+        if (Head.WorldPick.NeedsLoad(dir, stamp, _shownDir, _world?.Manifest.Stamp ?? "", _loadingDir, _missing, _swapIn != null))
+            LoadInBackground(dir!); // a failure sets _missing: not tried every frame
         if (_ride == null || r.DistanceM != _ride.DistanceM || r.Phase != _ride.Phase)
         {
             // Where the last report puts the rider now, not where the last
@@ -624,13 +673,29 @@ public partial class Main : Node3D
 
     // Idle shows a world at rest while no ride is on (free riding, the
     // dashboard's tiles over it): the figure 8 if it has been built, else
-    // the first world there is.
+    // the first world there is; with another builder than the default
+    // (the graph builder) chosen ($OSSCYCLER_WORLD_BUILDER, e.g. classic),
+    // that builder's worlds (<worlds>/.<builder>/) first, as
+    // osscycler-world puts them.
     void Idle()
     {
         _idleTried = true;
-        var dirs = new List<string> { Path.Combine(_worldsDir, "figure-8") };
-        if (Directory.Exists(_worldsDir))
-            dirs.AddRange(Directory.GetDirectories(_worldsDir));
+        var roots = new List<string>();
+        var builder = System.Environment.GetEnvironmentVariable("OSSCYCLER_WORLD_BUILDER") ?? "";
+        if (builder != "" && builder != "graph" && builder.IndexOfAny(new[] { '/', '\\', '.' }) < 0)
+            roots.Add(Path.Combine(_worldsDir, "." + builder));
+        roots.Add(_worldsDir);
+        var dirs = new List<string>();
+        foreach (var r in roots)
+        {
+            dirs.Add(Path.Combine(r, "figure-8"));
+            if (Directory.Exists(r))
+            {
+                var found = Directory.GetDirectories(r);
+                Array.Sort(found, StringComparer.Ordinal);
+                dirs.AddRange(found);
+            }
+        }
         foreach (var d in dirs)
             if (File.Exists(Path.Combine(d, "world.json")) && Show(d))
             {
@@ -648,7 +713,14 @@ public partial class Main : Node3D
             return d;
         double dt = Math.Max(0, _clock - _reportedAt);
         d += r.SpeedMps * Math.Min(dt, 0.5) + _posErr * Math.Max(0, 1 - dt / PosBlendS);
-        return r.Loop ? d : Math.Min(d, r.CourseDistanceM);
+        if (!r.Loop)
+            return Math.Min(d, r.CourseDistanceM);
+        // Past a lapped course's end: a lap back, where the core will put
+        // the rider (course.Lap), rather than standing at the world's end.
+        if (r.LapLengthM > 0 && _world is { } w && !w.Manifest.Course.Loop)
+            while (d > r.CourseDistanceM)
+                d -= r.LapLengthM;
+        return d;
     }
 
     // Place puts the camera at the rider's eyes, facing where the rider is
@@ -658,8 +730,21 @@ public partial class Main : Node3D
     // ahead (riders look a little into a bend). The head stays nearer
     // level than the bike, on climbs as the TUI's road view does, and
     // leans a little with it in bends.
+    (Vector3 At, float Yaw, float Pitch)? _fixedCamera;
+
     void Place(double delta)
     {
+        if (_fixedCamera is var (camAt, camYaw, camPitch))
+        {
+            var flat = new Vector3(Mathf.Sin(camYaw), 0, -Mathf.Cos(camYaw));
+            var look = flat * Mathf.Cos(camPitch) + Vector3.Up * Mathf.Sin(camPitch);
+            var up = Mathf.Abs(camPitch) > Mathf.DegToRad(89) ? flat : Vector3.Up;
+            _camera.Transform = new Transform3D(Basis.LookingAt(look, up), camAt);
+            _grass?.Update(_camera.Position);
+            if (_hud.Node is CanvasLayer hudLayer)
+                hudLayer.Visible = false;
+            return;
+        }
         var w = _world!;
         double at = Viewed;
         var here = w.InLane(at);
@@ -677,9 +762,7 @@ public partial class Main : Node3D
         var b = w.InLane(at + BendSpanM) - here;
         a.Y = 0;
         b.Y = 0;
-        float turn = a.LengthSquared() > 0 && b.LengthSquared() > 0 ? (-a).SignedAngleTo(b, Vector3.Up) : 0;
-        float curvature = turn / (2 * (float)BendSpanM); // left positive
-        float roll = HeadLean * Mathf.Atan((float)(_speed * _speed) * curvature / 9.81f);
+        float roll = HeadLean * BikeLean(a, b, (float)_speed);
 
         // Smoothed lightly against the path's 5 m steps; a new world snaps.
         float k = _gaze == Vector3.Zero ? 1 : 1 - Mathf.Exp(-SteerPerS * (float)delta);
@@ -714,7 +797,7 @@ public partial class Main : Node3D
         var w = _world;
         var st = _core?.Latest().State;
         float height = st?.Profile?.HeightCm is > 0 and var cm ? (float)cm / 100 : Avatar.Pose.RefHeight;
-        if (_me == null || Math.Abs(height - _riderHeight) > 0.005f)
+        if (_me == null || _ghostRider == null || Math.Abs(height - _riderHeight) > 0.005f)
         {
             foreach (var c in new[] { _me, _ghostRider })
                 c?.Node.QueueFree();
@@ -776,7 +859,7 @@ public partial class Main : Node3D
             _ghostSpeed = 0;
             return double.NaN;
         }
-        _ghost.Report(gh.DistanceM, _ride!.ElapsedS, _clock);
+        _ghost.Report(gh.DistanceM, _ride!.ElapsedS, _clock, gh.SpeedMps);
         if (_ride.Phase != RidePhase.Riding || _core.Latest().State?.Paused == true)
         {
             _ghost.Stand();
@@ -785,6 +868,27 @@ public partial class Main : Node3D
         }
         _ghostSpeed = _ghost.Speed;
         return _ghost.At(_clock);
+    }
+
+    // MaxLeanRad: a bike on a road leans at most this far (racers in a
+    // fast bend about 45°; riders on public roads much less).
+    const float MaxLeanRad = 35 * Mathf.Pi / 180;
+
+    // BikeLean is the bike's lean (tan = v²/(g·r), left positive) at speed
+    // through a bend from a (behind) to b (ahead), both horizontal and
+    // relative to here. The curvature is the turn over the chords' real
+    // length, not the nominal span: where the path's points bunch, the
+    // chords are short and a centimetre's zigzag turned the span's
+    // curvature into a radius of metres, and the rider fell flat at 40 km/h
+    // (owner, 2026-10-11: Amsterdam Water Supply Dunes at 15.14 km).
+    static float BikeLean(Vector3 a, Vector3 b, float speed)
+    {
+        float la = a.Length(), lb = b.Length();
+        if (la < 1f || lb < 1f)
+            return 0;
+        float turn = (-a).SignedAngleTo(b, Vector3.Up);
+        float curvature = turn / (la + lb);
+        return Mathf.Clamp(Mathf.Atan(speed * speed * curvature / 9.81f), -MaxLeanRad, MaxLeanRad);
     }
 
     // Ride puts a cyclist at distance d on the riding line, aside metres to
@@ -802,8 +906,7 @@ public partial class Main : Node3D
         float slope = (w.At(d + 2).Y - w.At(d - 2).Y) / 4;
         var a = (w.InLane(d - BendSpanM) - here) with { Y = 0 };
         var b = (w.InLane(d + BendSpanM) - here) with { Y = 0 };
-        float turn = a.LengthSquared() > 0 && b.LengthSquared() > 0 ? (-a).SignedAngleTo(b, Vector3.Up) : 0;
-        float lean = Mathf.Atan(speed * speed * turn / (2 * (float)BendSpanM) / 9.81f);
+        float lean = BikeLean(a, b, speed);
         var basis = Basis.LookingAt(f, Vector3.Up).Rotated(right, Mathf.Atan(slope)).Rotated(f, -lean);
         c.Node.Transform = new Transform3D(basis, here + right * aside);
     }
@@ -817,8 +920,9 @@ public partial class Main : Node3D
             var (st, status) = _core.Latest();
             if (st == null)
                 return status;
+            string sim = st.Simulated ? "simulated rider: made-up numbers, nothing recorded (s stops it)   " : "";
             if (_ride == null)
-                return Head.Controller.ControlText(st) is { Length: > 0 } ctl ? $"{ctl}   + / - step   x free riding   ? keys" : "free riding   m menu   ? keys";
+                return sim + (Head.Controller.ControlText(st) is { Length: > 0 } ctl ? $"{ctl}   + / - step   x free riding   ? keys" : "free riding   m menu   ? keys");
             if (_world == null || _world.Manifest.Course.Id != _ride.CourseId)
                 return $"{_ride.CourseName}: {(_worldStatus != "" ? _worldStatus : _loadingDir != "" || _swapIn != null ? "loading the 3D world" : "no 3D world")}";
             conn = _ride.Phase switch
@@ -869,16 +973,72 @@ public partial class Main : Node3D
     // Weather is a ride's light and air: the sun's height and direction,
     // how far the haze reaches, the sky's tint. Picked from a seed (the
     // day, or --seed), so rides vary and a seed repeats a look.
-    readonly record struct Weather(float SunHeight, float SunYaw, float HazeFrom, float HazeTo, float Tint)
+    // The sun's place comes from the world's latitude, the seed's day and
+    // a time of day from the seed (Solar; owner, 2026-10-15: the sun had
+    // stood high in the north-east over the Vosges, picked at random), so
+    // it is set when a world is shown (PlaceSun); until then at 48° N.
+    // The hour is picked for 48° N; another latitude moves the sun a few
+    // degrees, which keeps a low sun low.
+    readonly record struct Weather(float Hours, int Day, float HazeFrom, float HazeTo, float Tint)
     {
         public static Weather From(int seed)
         {
             var r = new Random(seed);
             float f(float lo, float hi) => lo + (float)r.NextDouble() * (hi - lo);
+            float hours = (float)Solar.RideHours(48, Solar.DayOfYear(seed), r.NextDouble(), r.NextDouble());
             // The haze is clear near the rider and full by 360-460 m: the
             // world ends 300 m from the road, so it must hide that edge.
-            return new Weather(f(22, 58), f(0, 360), f(60, 140), f(360, 460), f(-1, 1));
+            return new Weather(hours, Solar.DayOfYear(seed), f(60, 140), f(360, 460), f(-1, 1));
         }
+    }
+
+    // PlaceSun puts the sun where it stands at latitude lat for the
+    // weather's day and hour (at least 5° up: a ride is lit), warmer and
+    // dimmer when low.
+    void PlaceSun(double lat)
+    {
+        if (_sun == null)
+            return;
+        var (height, az) = Solar.Position(lat, _weather.Day, _weather.Hours);
+        height = Math.Max(5, height);
+        _sun.RotationDegrees = new Vector3(-(float)height, (float)Solar.LightYaw(az), 0);
+        _sun.LightEnergy = 0.9f + (float)height / 100f;
+        float warm = Math.Clamp((float)(20 - height) / 15f, 0, 1); // golden below 20°
+        _sun.LightColor = new Color(1, 1, 1).Lerp(new Color(1f, 0.78f, 0.55f), warm);
+    }
+
+    // Scale3D renders the 3D view at RenderScale's share of the window's
+    // height (the window's pixels: on a Retina screen, the panel's own).
+    void Scale3D()
+    {
+        var vp = GetViewport();
+        float s = RenderScale.Of(GetWindow().Size.Y);
+        vp.Scaling3DMode = s < 1 ? Viewport.Scaling3DModeEnum.Fsr : Viewport.Scaling3DModeEnum.Bilinear;
+        vp.Scaling3DScale = s;
+    }
+
+    // Reach sets how far the view goes for a world: one with distant
+    // terrain (far_m) is seen out to it, the haze thinning so its hills
+    // show and swallowing them only near its end; one without ends at its
+    // corridor, which the haze hides as before.
+    void Reach(double farM)
+    {
+        if (farM > 0)
+        {
+            // Haze as the air makes it: thinning the view evenly with
+            // distance (exponential), so the near hills keep their colour
+            // and the far ones fade into the sky.
+            _camera.Far = (float)farM + 1500;
+            _env.FogMode = Godot.Environment.FogModeEnum.Exponential;
+            _env.FogDensity = _hazeDensity;
+            return;
+        }
+        _camera.Far = 4000;
+        _env.FogMode = Godot.Environment.FogModeEnum.Depth;
+        _env.FogDensity = _depthDensity;
+        _env.FogDepthBegin = _weather.HazeFrom;
+        _env.FogDepthEnd = _weather.HazeTo;
+        _env.FogDepthCurve = 1.6f;
     }
 
     // Sky is a daylight sky, its haze by distance: clear up close (the
@@ -911,10 +1071,8 @@ public partial class Main : Node3D
         return new WorldEnvironment { Environment = env };
     }
 
-    static DirectionalLight3D Sun(Weather w) => new()
+    static DirectionalLight3D Sun() => new()
     {
-        RotationDegrees = new Vector3(-w.SunHeight, w.SunYaw, 0),
-        LightEnergy = 0.9f + w.SunHeight / 100f,
         ShadowEnabled = true,
         DirectionalShadowMaxDistance = 150,
     };

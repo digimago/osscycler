@@ -44,6 +44,7 @@ func main() {
 	to := flag.Float64("to", 0, "end of the stretch, m along the course (0: the end)")
 	out := flag.String("out", "", "directory to write the world to")
 	demDir := flag.String("dem", "", "AHN tile cache (e.g. _gpx/.dem); empty: no ground model")
+	engine := flag.String("builder", world.DefaultEngine, "world builder: classic or graph")
 	flag.Parse()
 	if *id == "" || *out == "" {
 		flag.Usage()
@@ -112,19 +113,27 @@ func main() {
 		o.Land.ByTheSea(cc, co.Distance)
 	}
 	if *demDir != "" {
-		a := &dem.AHN{CacheDir: *demDir, CellM: 5}
 		var ll []dem.LatLon
 		for at := 0.0; at <= cc.Distance; at += 20 {
 			lat, lon := cc.Position(at)
 			ll = append(ll, dem.LatLon{Lat: lat, Lon: lon})
 		}
-		m, err := a.Load(context.Background(), ll, 300+1.5*250) // the corridor and a chunk, as worlds.Builder
+		// The national ground models in turn, as worlds.Builder (AHN, then
+		// RGE ALTI), each with its country's style.
+		src := dem.Source{CacheDir: *demDir, CellM: 5}
+		ctx := context.Background()
+		m, err := (*dem.AHN)(&src).Load(ctx, ll, 300+1.5*250) // the corridor and a chunk, as worlds.Builder
+		o.TerrainSource, o.Region = "AHN DTM, 5 m", world.RegionNL
+		if errors.Is(err, dem.ErrOutside) {
+			m, err = (*dem.RGEAlti)(&src).Load(ctx, ll, 300+1.5*250)
+			o.TerrainSource, o.Region = "IGN RGE ALTI, 5 m", world.RegionFR
+		}
 		if err != nil {
 			log.Fatal(err)
 		}
-		o.Elevation, o.TerrainSource = m.Elevation, "AHN DTM, 5 m"
+		o.Elevation = m.Elevation
 	}
-	w, err := world.Build(cc, o)
+	w, err := world.BuildWith(*engine, cc, o)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -132,8 +141,8 @@ func main() {
 		log.Fatal(err)
 	}
 	r := w.Check()
-	fmt.Printf("%s %.0f-%.0f m: %d map elements, %d triangles; check: holes %.2f m² %v, land over road %.2f m² %v, off road %.0f m %v → %s\n",
-		*id, *from, end, len(d.Elements), w.Triangles, r.HolesM2, r.Holes, r.LandOverRoadM2, r.LandOverRoad, r.OffRoadM, r.OffRoad, *out)
+	fmt.Printf("%s %.0f-%.0f m: %d map elements, %d triangles; check: holes %.2f m² %v, land over road %.2f m² %v, off road %.0f m %v, path height steps at most %.2f m %v, sharpest turn %.0f° %v, pace %.2f → %s\n",
+		*id, *from, end, len(d.Elements), w.Triangles, r.HolesM2, r.Holes, r.LandOverRoadM2, r.LandOverRoad, r.OffRoadM, r.OffRoad, r.StepM, r.Steps, r.TurnDeg, r.Turns, r.PaceMax, *out)
 }
 
 // find is course id: an included one, or the .gpx of that name in dir.

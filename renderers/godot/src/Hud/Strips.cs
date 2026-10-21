@@ -25,12 +25,12 @@ public static class Strips
         int n = (int)(LookAheadM / CellM);
         var cells = new List<Cell>(n);
         double finish = c.DistanceM;
-        bool loop = c.Loop && finish > 0, finishLabelled = false;
+        bool loop = Laps.Lapped(c) && finish > 0, finishLabelled = false;
         for (int i = 0; i < n; i++)
         {
             double from = pos + i * CellM, to = from + CellM, mid = from + CellM / 2;
             bool onLabel = Math.Abs(i * CellM % LabelEveryM) < 1e-9;
-            if (loop && Math.Floor(from / finish) != Math.Floor(to / finish))
+            if (loop && Laps.Line(c, from, to))
             {
                 cells.Add(new(CellKind.Lap, Rgb.Hex(0xe0e0e0), "LAP", i % 2 == 0));
                 continue;
@@ -41,7 +41,7 @@ public static class Strips
                 finishLabelled = true;
                 continue;
             }
-            double g = GradeAt(c, loop ? mid % finish : mid);
+            double g = GradeAt(c, loop ? Laps.CoursePos(c, mid) : mid);
             cells.Add(new(CellKind.Grade, Palette.Grade(g), onLabel ? Format.Fixed(g, 0) + "%" : "", false));
         }
         double off = ghost - pos;

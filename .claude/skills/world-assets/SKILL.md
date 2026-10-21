@@ -9,7 +9,8 @@ The owner does no coding or modelling. Everything drawn in the 3D world is
 made by code from data (OpenStreetMap, a ground model, the course) and from
 real-world measures, and judged by the owner riding past it. This skill
 holds the rules for making such assets; CLAUDE.md holds what exists and
-what the owner decided about each one.
+the owner's verdicts still in force, docs/HISTORY.md how each asset came
+to be, with its numbers.
 
 ## Where an asset belongs
 
@@ -45,8 +46,17 @@ what the owner decided about each one.
   same every build and a change shows only what it changed.
 - **Low-poly, vertex-coloured.** Colours as linear floats via
   `srgbLinear(0xRRGGBB)` (`cover.go`) on a white material per kind
-  (`gltf.Material`, roughness by kind); no textures yet (the road has UVs
-  for later). Reuse the shape helpers before writing new ones: `cone`,
+  (`gltf.Material`, roughness by kind).
+- **Surface detail is drawn, not modelled** (owner, 2026-10-15: colour
+  textures and bump mapping over geometry for detail passed in seconds):
+  mortar, setts, rock, netting, asphalt grain, cracks, patches, grates
+  are `renderers/godot/shaders/surfaces.gdshader`, procedural (no image
+  files, no licences), a colour and a height per kind, the normal bumped
+  from the height's screen-space slopes (the meshes carry no tangents),
+  fading out before it would shimmer. The builder gives such a surface
+  its own material by name (`road`, `stone wall`, `rock`, `setts`,
+  `grate`; `World.SurfaceKind` maps it) and plain geometry (one row of a
+  wall, not its courses); UVs where the pattern must follow the road. Reuse the shape helpers before writing new ones: `cone`,
   `blob` (`vegetation.go`), `limb`, `blobAt` (`trees.go`), `box`
   (`bridges.go`), `beam`, `quad` (`fences.go`), `tri` (`road.go`),
   `smoothNormals` (`drape.go`).
@@ -79,6 +89,17 @@ what the owner decided about each one.
   before and after. Normals go as bytes (`KHR_mesh_quantization`);
   positions stay float.
 
+## Regional styles
+
+Places outside the Netherlands get their own style (`world/style.go`):
+what grows where, gardens, houses, road colours, fences, the trees by
+height. A style only chooses among shared shapes and placing; a new
+shape a region needs (a species, a fence) is made as any asset, its
+choice put in the style. A species only one region plants carries that
+region (`species.region`), so other worlds don't carry its template and
+stay byte-identical; check that with the Dutch worlds (Posbank Loop,
+figure 8, oval, both builders) after any change to a style.
+
 ## Outside assets and licences
 
 Prefer code. If an outside asset is needed (a font, a model that code
@@ -92,7 +113,11 @@ published); Copernicus GLO-30 free with a fixed notice on (modified)
 redistribution ("produced using Copernicus WorldDEM-30 © DLR e.V.
 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under
 COPERNICUS by the European Union and ESA; all rights reserved") plus a
-no-liability sentence. Check any imagery source before using it.
+no-liability sentence. IGN RGE ALTI (checked 2026-10-15 in IGN's own
+metadata, `data.geopf.fr/csw` record `IGNF_RGE-ALTI`): Licence Ouverte /
+Open Licence (Etalab 2.0, compatible with CC-BY), credit the source
+(`dem.RGEAltiAttribution` in the manifest). Check any imagery source
+before using it.
 
 ## Checks before calling it done
 
@@ -107,15 +132,30 @@ no-liability sentence. Check any imagery source before using it.
 3. Khronos glTF validator on the `.glb`: 0 errors, 0 warnings. npm
    `gltf-validator` in a `node:22-slim` container (no node on the dev
    box).
-4. Look at it. Screenshot from the rider's place:
+4. Look at it. With the `osscycler-view` MCP tools (`.mcp.json`;
+   `cmd/osscycler-mcp`): `view_open` on the world (a course id from
+   `_worlds/` or a directory) once, then `view_shot` with `m` and
+   `look_deg` for each look (a fraction of a second, the image returned
+   directly), `view_reload` after rebuilding, `view_stats` for the frame,
+   `view_close` at the end. Without them, a screenshot from the rider's
+   place by starting Godot each time (about 10 s):
    `godot --path renderers/godot -- --world "$PWD/_worlds/posbank" --from <m> --shot <scratchpad>/x.png --frames 120`
    (`--look DEG` turns the view sideways, `--seed` fixes the light); then
-   read the PNG. It opens a Godot window briefly on the desktop (headless
+   read the PNG. Either opens a Godot window on the desktop (headless
    has no renderer). Take shots at the km marks the owner named, before
    and after. From above: `_scratch/glbshade` (a hillshade of a `.glb`).
 5. 60 fps (vsync) on the Posbank Loop, through the forest at 5.3-6 km and
    in Rheden; the HUD shows fps.
 6. Report size, triangles, build time and fps against before.
+
+## Looking from a worktree
+
+The `osscycler-view` MCP tools find their source tree from the session's
+working directory: from a worktree they still launch the main checkout's
+renderer. Builder changes show (the world is rebuilt from the worktree),
+renderer changes (C#, shaders) don't: take those shots with the
+worktree's own Godot (`godot --headless --path renderers/godot --import`
+once, then `--shot`).
 
 ## Godot pitfalls (4.7)
 
@@ -139,7 +179,8 @@ no-liability sentence. Check any imagery source before using it.
 ## The owner's verdicts
 
 The owner looks at the result on a ride and reports by km mark. Record
-each verdict in CLAUDE.md under the step it belongs to, as
-"(owner, YYYY-MM-DD: reason)", with the km mark and the numbers before
-and after, so the rule survives the next change. Work on a branch from
+each verdict that sets a rule for later work in CLAUDE.md (under "Owner's
+verdicts on the world's look", as "(owner, YYYY-MM-DD: reason)"), so the
+rule survives the next change; the km mark and the numbers before and
+after go in docs/HISTORY.md, a dated entry at its end. Work on a branch from
 develop, as for any change.

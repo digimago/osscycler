@@ -170,3 +170,62 @@ func TestReplayLap(t *testing.T) {
 		t.Errorf("trace ends at %+v", last)
 	}
 }
+
+// A course whose end comes back to its start (course.Lapped) is ridden as
+// its run-in and then lap after lap until the rider stops (owner,
+// 2026-10-13): no finish; the first lap starts where the run-in ends, each
+// is timed there, and at the course's end the rider goes on a lap back.
+func TestRunInThenLaps(t *testing.T) {
+	m := 1 / 111195.0
+	k := m / math.Cos(52*math.Pi/180)
+	var pts []course.Point
+	add := func(e, n float64) { pts = append(pts, course.Point{Lat: 52 + n*m, Lon: 5 + e*k, Ele: 10}) }
+	// A 500 m run-in east, a 2 km square lap north of it, back west.
+	for _, seg := range [][4]float64{{0, 0, 500, 0}, {500, 0, 500, 500}, {500, 500, 1000, 500}, {1000, 500, 1000, 0}, {1000, 0, 500, 0}, {500, 0, 0, 0}} {
+		for i := range 50 {
+			f := float64(i) / 50
+			add(seg[0]+f*(seg[2]-seg[0]), seg[1]+f*(seg[3]-seg[1]))
+		}
+	}
+	add(0, 0)
+	raw, err := course.New("square", "Square", pts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := raw.Lapped()
+	if c.Lap == nil {
+		t.Fatal("not lapped")
+	}
+	hub := telemetry.NewHub()
+	s := NewSession(hub, &recordingTrainer{}, []*course.Course{c}, DefaultConfig(sim.DefaultParams(87, 9)), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err := s.Start(c.ID); err != nil {
+		t.Fatal(err)
+	}
+	t0 := time.Date(2026, 10, 13, 12, 0, 0, 0, time.UTC)
+	runIn := false
+	maxD := 0.0
+	at := pedal(s, hub, t0, 12*time.Minute, 300, func(r telemetry.Ride) {
+		if r.Phase == telemetry.RideFinished {
+			t.Fatal("a lapped course finished")
+		}
+		if r.Lap == 0 && r.LapDistanceM < -100 {
+			runIn = true // on the run-in: how far to the lap, negative
+		}
+		maxD = math.Max(maxD, r.DistanceM)
+	})
+	r := ride(hub)
+	if !runIn || !r.Loop || math.Abs(r.LapStartM-c.Lap.StartM) > 1e-6 || math.Abs(r.LapLengthM-c.Lap.Length()) > 1e-6 {
+		t.Errorf("run-in seen %v; ride %+v", runIn, r)
+	}
+	if r.LastLap.N < 1 || r.Lap != r.LastLap.N+1 {
+		t.Fatalf("after 12 min at 300 W: lap %d, last lap %+v", r.Lap, r.LastLap)
+	}
+	// A lap of 2 km at about 40 km/h: about 3 minutes.
+	if l := r.LastLap.Elapsed; l < 2*time.Minute || l > 5*time.Minute {
+		t.Errorf("a lap took %v", l)
+	}
+	if maxD > c.Distance || r.LapDistanceM < 0 || r.LapDistanceM > c.Lap.Length() {
+		t.Errorf("the rider went to %.0f m of %.0f, %.0f m into the lap", maxD, c.Distance, r.LapDistanceM)
+	}
+	_ = at
+}

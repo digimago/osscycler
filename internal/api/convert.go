@@ -43,6 +43,7 @@ func ToProto(s telemetry.State) *pb.State {
 		PausedSinceUnixMs: unixMs(s.PausedSince),
 		Announcement:      announcement(s),
 		Heads:             uint32(s.Heads),
+		Simulated:         s.Simulated,
 		Control: &pb.TrainerControl{
 			Mode:   pb.ControlMode(s.Control.Mode) + 1, // proto reserves 0 for unspecified
 			Target: s.Control.Target, ChangedNs: int64(s.Control.Changed),
@@ -77,6 +78,9 @@ func rideToProto(r telemetry.Ride) *pb.Ride {
 		LongitudeDeg:    r.Lon,
 		Ghost:           ghostToProto(r.Ghost),
 		Loop:            r.Loop,
+		LapStartM:       r.LapStartM,
+		LapLengthM:      r.LapLengthM,
+		LapDistanceM:    r.LapDistanceM,
 		Lap:             uint32(r.Lap),
 		LapElapsedS:     r.LapElapsed.Seconds(),
 		LastLap:         lapToProto(r.LastLap),
@@ -84,6 +88,7 @@ func rideToProto(r telemetry.Ride) *pb.Ride {
 		TrainerYielded:  r.Yielded,
 		Paused:          r.Paused,
 		LapPaused:       r.LapPaused,
+		Untimed:         r.Untimed,
 	}
 }
 
@@ -112,8 +117,8 @@ func profileToProto(p telemetry.Profile) *pb.RiderProfile {
 		Complete: p.Complete, WeightKg: p.WeightKg, FtpW: p.FTPW, DifficultyPct: p.DifficultyPct,
 		WeightForced: p.WeightForced, FtpForced: p.FTPForced, DifficultyForced: p.DifficultyForced,
 		Path: p.Path, SuggestedFtpW: p.SuggestedFTPW,
-		HeightCm: p.HeightCm, Cda: p.CdA, HeightForced: p.HeightForced, CdaForced: p.CdAForced,
-		View: p.View,
+		HeightCm: p.HeightCm, MaxHrBpm: p.MaxHRBpm, Cda: p.CdA, HeightForced: p.HeightForced, CdaForced: p.CdAForced,
+		View: p.View, WorldBuild: p.WorldBuild, WorldFetch: p.WorldFetch,
 	}
 	if p.NeedWeight {
 		out.Missing = append(out.Missing, "weight_kg")
@@ -135,7 +140,7 @@ func ghostToProto(g telemetry.RideGhost) *pb.RideGhost {
 	if g.Label == "" {
 		return nil
 	}
-	return &pb.RideGhost{Label: g.Label, DistanceM: g.DistanceM, GapS: g.Gap.Seconds(), TimeS: g.Elapsed.Seconds()}
+	return &pb.RideGhost{Label: g.Label, DistanceM: g.DistanceM, GapS: g.Gap.Seconds(), TimeS: g.Elapsed.Seconds(), SpeedMps: g.SpeedMPS}
 }
 
 // CourseToProto converts a course with its full profile and track, and
@@ -157,6 +162,9 @@ func CourseToProto(c *course.Course, sc *scenery.Scenery) *pb.Course {
 		ProfileGradePct:   make([]float32, len(grade)),
 		ProfileEastM:      make([]float32, len(east)),
 		ProfileNorthM:     make([]float32, len(north)),
+	}
+	if l := c.Lap; l != nil {
+		pc.LapStartM, pc.LapEndM = l.StartM, l.EndM
 	}
 	for i := range ele {
 		pc.ProfileElevationM[i], pc.ProfileGradePct[i] = float32(ele[i]), float32(grade[i])

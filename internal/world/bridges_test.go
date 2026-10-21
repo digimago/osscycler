@@ -1,6 +1,11 @@
 package world
 
-import "testing"
+import (
+	"math"
+	"testing"
+
+	"github.com/digimago/osscycler/internal/course"
+)
 
 func TestMarkDecks(t *testing.T) {
 	// A road 10 m up crossing one on the ground, and a road alongside
@@ -15,7 +20,7 @@ func TestMarkDecks(t *testing.T) {
 		return l
 	}
 	upper, lower, beside := line(0, 0, 1, 0, 10), line(0, 0, 0, 1, 0), line(7, 0, 0, 1, -1)
-	markDecks([]*roadLine{upper, lower, beside}, 0)
+	markDecks([]*roadLine{upper, lower, beside}, 0, false)
 	var from, to float64
 	n := 0
 	for _, s := range upper.samples {
@@ -38,3 +43,52 @@ func TestMarkDecks(t *testing.T) {
 		}
 	}
 }
+
+// A deck's edge beams are closed at the deck's ends (owner, 2026-10-12:
+// the figure 8's overpass showed them open, their faces with nothing
+// across): on each end of a full deck, a 0.4 m wide face across each beam
+// from the abutment's top to the beam's, in both builders.
+func TestDeckBeamEndsAreClosed(t *testing.T) {
+	c := course.Tracks()[1]
+	for _, engine := range []string{EngineClassic, EngineGraph} {
+		w, err := BuildWith(engine, c, Options{Generator: "test"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ends := 0
+		for _, p := range w.prims {
+			if w.doc.MaterialName(p.Material) != "bridge" {
+				continue
+			}
+			for i := 0; i+2 < len(p.Indices); i += 3 {
+				var v [3][3]float64
+				for k := range 3 {
+					j := p.Indices[i+k]
+					v[k] = [3]float64{float64(p.Positions[3*j]), float64(p.Positions[3*j+1]), float64(p.Positions[3*j+2])}
+				}
+				u, q := sub3(v[1], v[0]), sub3(v[2], v[0])
+				n := cross(u, q)
+				l := math.Sqrt(dot3(n, n))
+				if l == 0 || math.Abs(n[1])/l > 0.1 {
+					continue // not a vertical face
+				}
+				lo, hi := math.Inf(1), math.Inf(-1)
+				var across float64
+				for a := range 3 {
+					lo, hi = math.Min(lo, v[a][1]), math.Max(hi, v[a][1])
+					for b := range 3 {
+						across = math.Max(across, math.Hypot(v[a][0]-v[b][0], v[a][2]-v[b][2]))
+					}
+				}
+				if across > edgeBeamW-0.05 && across < edgeBeamW+0.05 && hi-lo > edgeBeamH && hi-lo < edgeBeamH+0.05 {
+					ends++
+				}
+			}
+		}
+		if ends < 8 { // two ends, two beams, two triangles each
+			t.Errorf("%s: %d triangles across the beams' ends, want 8 or more", engine, ends)
+		}
+	}
+}
+
+func sub3(a, b [3]float64) [3]float64 { return [3]float64{a[0] - b[0], a[1] - b[1], a[2] - b[2]} }

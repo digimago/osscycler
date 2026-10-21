@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -23,16 +24,24 @@ import (
 
 // BuilderVersion goes up when a change to the builder should rebuild the
 // worlds riders have (a fix they'd ride into, not every commit).
-const BuilderVersion = 6
+const BuilderVersion = 63
+
+// GraphVersion is BuilderVersion for the graph builder (world.EngineGraph),
+// which goes its own way: it goes up when that builder changes what it
+// builds.
+const GraphVersion = 72
 
 // Builder builds worlds.
 type Builder struct {
-	// Ground is "auto" (AHN inside the Netherlands, else the profile),
-	// "ahn" or "none".
+	// Ground is "auto" (the national ground model where there is one
+	// (Grounds), else the profile), one of Grounds by name, or "none".
 	Ground   string
-	DEMCache string  // AHN tile cache
-	DEMCellM float64 // AHN resolution to fetch, m (default 5)
-	Fetch    bool    // fetch what the caches lack
+	DEMCache string // ground model tile cache
+	// BuildingsCache: France's BD TOPO buildings (default: .bdtopo beside
+	// DEMCache).
+	BuildingsCache string
+	DEMCellM       float64 // ground model resolution to fetch, m (default 5)
+	Fetch          bool    // fetch what the caches lack
 	// Maps is the map data (OpenStreetMap); nil builds without.
 	Maps *scenery.Store
 	// Options are the world's settings (cell, chunk, corridor, road width,
@@ -49,7 +58,53 @@ type Builder struct {
 	// time left (Progress); Timing keeps this machine's build rate for it.
 	Progress func(Progress)
 	Timing   *Timing
+	// Engine is the builder (world.Engines): "" the default (the graph
+	// builder), world.EngineGraph or world.EngineClassic. A preview is
+	// always the classic builder's. When the builder asked for fails, the
+	// classic one builds the world instead (Result.FellBack), with the
+	// stamp of the one asked for, so it isn't tried again and again.
+	Engine string
+	// Stamp, when set, is the world's stamp instead of EngineStamp's: a
+	// fallback build by osscycler-world keeps the stamp of the builder
+	// asked for.
+	Stamp string
+	// Complete builds only from complete data: with Fetch off, a ground
+	// model tile, a stretch of map data or the coastline missing from the
+	// caches is ErrIncomplete rather than a world with grass there, which
+	// would be stamped current and never get its data (a renderer building
+	// worlds ahead of a ride from the caches only, owner 2026-10-13).
+	Complete bool
 }
+
+// grounds are the national ground models, tried in this order by "auto",
+// with the style of the country each covers (world.Options.Region).
+var grounds = []struct {
+	name, source, attribution, region string
+	load                              func(context.Context, dem.Source, []dem.LatLon, float64) (*dem.Mosaic, error)
+}{
+	{"ahn", "AHN DTM", dem.AHNAttribution, world.RegionNL, func(ctx context.Context, s dem.Source, pts []dem.LatLon, r float64) (*dem.Mosaic, error) {
+		a := dem.AHN(s)
+		return a.Load(ctx, pts, r)
+	}},
+	{"rgealti", "IGN RGE ALTI", dem.RGEAltiAttribution, world.RegionFR, func(ctx context.Context, s dem.Source, pts []dem.LatLon, r float64) (*dem.Mosaic, error) {
+		a := dem.RGEAlti(s)
+		return a.Load(ctx, pts, r)
+	}},
+}
+
+// Grounds names the ground models Builder.Ground takes besides "auto" and
+// "none".
+func Grounds() []string {
+	var n []string
+	for _, g := range grounds {
+		n = append(n, g.name)
+	}
+	return n
+}
+
+// ErrIncomplete: Builder.Complete, and data the world needs is missing
+// from the caches.
+var ErrIncomplete = errors.New("worlds: not all the data is cached")
 
 // Phases a build goes through, for its status.
 const (
@@ -64,8 +119,9 @@ const (
 
 // Result is a built world with what went into it.
 type Result struct {
-	World   *world.World
-	MapInfo string // "1234 map elements", "no map data", ...
+	World    *world.World
+	MapInfo  string // "1234 map elements", "no map data", ...
+	FellBack bool   // the builder asked for failed; the classic one built it
 }
 
 // Build builds course c's world; phase reports progress.
@@ -79,7 +135,10 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 	}
 	o := b.Options
 	o.Attribution = append([]string(nil), o.Attribution...)
-	o.Stamp = Stamp(c)
+	o.Stamp = EngineStamp(c, b.Engine)
+	if b.Stamp != "" {
+		o.Stamp = b.Stamp
+	}
 	if b.Preview {
 		o.Stamp = PreviewStamp(c)
 	}
@@ -104,7 +163,7 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 		if cell <= 0 {
 			cell = 5
 		}
-		a := &dem.AHN{CacheDir: b.DEMCache, Fetch: b.Fetch, CellM: cell, Log: log, UserAgent: b.UserAgent,
+		src := dem.Source{CacheDir: b.DEMCache, Fetch: b.Fetch, CellM: cell, Log: log, UserAgent: b.UserAgent,
 			Progress: func(done, total int) { tr.step(done, total, float64(done)/float64(max(1, total))) }}
 		var pts []dem.LatLon
 		for d := 0.0; d <= c.Distance; d += 20 {
@@ -119,16 +178,53 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 			chunk = 250
 		}
 		// The corridor plus a chunk: every terrain vertex is inside.
-		m, err := a.Load(ctx, pts, corridor+1.5*chunk)
+		radius := corridor + 1.5*chunk
+		var (
+			m   *dem.Mosaic
+			err = dem.ErrOutside
+		)
+		// The national ground models in turn (auto), or the one asked for.
+		for _, g := range grounds {
+			if b.Ground != "auto" && b.Ground != g.name || !errors.Is(err, dem.ErrOutside) {
+				continue
+			}
+			if m, err = g.load(ctx, src, pts, radius); err == nil {
+				o.Elevation = m.Elevation
+				o.TerrainSource = fmt.Sprintf("%s, %g m", g.source, cell)
+				o.Attribution = append(o.Attribution, g.attribution)
+				o.Region = g.region
+			}
+		}
+		// The distant terrain's coarse ground model, where the region's
+		// style has one (mountains): the same source at 50 m, out to its
+		// reach. Missing it is no reason to stop; the world just ends at
+		// its corridor.
+		if far := world.FarM(o.Region); err == nil && far > 0 {
+			fsrc := src
+			fsrc.CellM, fsrc.Progress = 50, nil
+			for _, g := range grounds {
+				if g.region != o.Region || b.Ground != "auto" && b.Ground != g.name {
+					continue
+				}
+				fm, ferr := g.load(ctx, fsrc, pts, far+fsrc.CellM)
+				switch {
+				case ferr == nil:
+					o.FarElevation, o.FarM = fm.Elevation, far
+				case errors.Is(ferr, dem.ErrNotCached) && b.Complete:
+					return Result{}, fmt.Errorf("%w: distant ground model: %v", ErrIncomplete, ferr)
+				default:
+					log.Warn("no distant terrain", "course", c.ID, "err", ferr)
+				}
+				break
+			}
+		}
 		switch {
 		case errors.Is(err, dem.ErrOutside) && b.Ground == "auto":
 			log.Info("no ground model for this area: terrain from the course profile", "course", c.ID)
+		case errors.Is(err, dem.ErrNotCached) && b.Complete:
+			return Result{}, fmt.Errorf("%w: ground model: %v", ErrIncomplete, err)
 		case err != nil:
 			return Result{}, err
-		default:
-			o.Elevation = m.Elevation
-			o.TerrainSource = fmt.Sprintf("AHN DTM, %g m", cell)
-			o.Attribution = append(o.Attribution, dem.AHNAttribution)
 		}
 	}
 	mapInfo := "no map data"
@@ -151,6 +247,9 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 			if ctx.Err() != nil {
 				return Result{}, ctx.Err()
 			}
+			if b.Complete {
+				return Result{}, fmt.Errorf("%w: map data: %v", ErrIncomplete, err)
+			}
 			log.Warn("map data incomplete", "course", c.ID, "err", err)
 		}
 		if len(d.Elements) > 0 {
@@ -160,6 +259,27 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 			o.Attribution = append(o.Attribution, scenery.Attribution+" (ODbL)")
 		}
 		mapInfo = fmt.Sprintf("%d map elements", len(d.Elements))
+		// France's own buildings, measured (BD TOPO), where they can be had.
+		if o.Region == world.RegionFR {
+			cache := b.BuildingsCache
+			if cache == "" {
+				cache = filepath.Join(filepath.Dir(b.DEMCache), ".bdtopo")
+			}
+			bt := &scenery.BDTopo{CacheDir: cache, Fetch: b.Fetch, UserAgent: b.UserAgent, Log: log}
+			fps, err := bt.Footprints(ctx, c)
+			switch {
+			case err == nil && len(fps) > 0:
+				o.Buildings = fps
+				o.Attribution = append(o.Attribution, scenery.BDTopoAttribution)
+				mapInfo += fmt.Sprintf(", %d buildings from BD TOPO", len(fps))
+			case err != nil && ctx.Err() != nil:
+				return Result{}, ctx.Err()
+			case errors.Is(err, scenery.ErrNoBDTopo) && b.Complete:
+				return Result{}, fmt.Errorf("%w: buildings: %v", ErrIncomplete, err)
+			case err != nil:
+				log.Warn("BD TOPO buildings: keeping OpenStreetMap's", "course", c.ID, "err", err)
+			}
+		}
 	}
 	if b.Preview && !c.Builtin {
 		t := scenery.Countryside(c)
@@ -176,6 +296,9 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 		if err != nil {
 			if ctx.Err() != nil {
 				return Result{}, ctx.Err()
+			}
+			if b.Complete && !b.Preview {
+				return Result{}, fmt.Errorf("%w: coastline: %v", ErrIncomplete, err)
 			}
 			log.Warn("coastline incomplete", "course", c.ID, "err", err)
 		}
@@ -195,20 +318,35 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 		o.Fences = t.Fences
 		mapInfo = fmt.Sprintf("%d made-up map elements", len(t.Data.Elements))
 	}
+	// Farmland sown as fields: ploughed, or a crop (the 3D world only).
+	o.Land.Fields()
 	if c.Credit != "" {
 		o.Attribution = append(o.Attribution, "route: "+c.Credit)
 	}
 	enter(PhaseBuild)
 	o.Progress = func(f float64) { tr.step(0, 0, f) }
 	buildAt := time.Now()
-	w, err := world.Build(c, o)
+	engine := b.Engine
+	if engine == "" {
+		engine = world.DefaultEngine
+	}
+	if b.Preview {
+		engine = world.EngineClassic
+	}
+	w, err := world.BuildWith(engine, c, o)
+	fellBack := false
+	if err != nil && engine != world.EngineClassic && ctx.Err() == nil {
+		log.Warn("the builder failed; building with the classic builder instead", "course", c.ID, "builder", engine, "err", err)
+		w, err = world.BuildWith(world.EngineClassic, c, o)
+		fellBack = true
+	}
 	if err == nil && !b.Preview && c.Distance > 1000 {
 		b.Timing.learn(time.Since(buildAt).Seconds() / (c.Distance / 1000))
 	}
 	if err != nil {
 		return Result{}, err
 	}
-	return Result{World: w, MapInfo: mapInfo}, nil
+	return Result{World: w, MapInfo: mapInfo, FellBack: fellBack}, nil
 }
 
 // Anchor is the regional frame's origin for a course starting at lat, lon:
@@ -225,14 +363,46 @@ func Anchor(lat, lon float64) (float64, float64) {
 // PreviewStamp is the stamp of course c's preview world.
 func PreviewStamp(c *course.Course) string { return "preview-" + Stamp(c) }
 
+// EngineStamp is Stamp for the named builder ("" the default): the classic
+// builder's is Stamp itself (as the worlds built before there were two),
+// the graph builder's has its own version and a "g" in front, so a world
+// from one is never taken for the other's (a classic world where the graph
+// builder's should be is stale, and rebuilt).
+func EngineStamp(c *course.Course, engine string) string {
+	if engine == "" {
+		engine = world.DefaultEngine
+	}
+	if engine == world.EngineClassic {
+		return Stamp(c)
+	}
+	return fmt.Sprintf("%s%d-%s", engine[:1], GraphVersion, stampHash(c, engine+" "+strconv.Itoa(GraphVersion)))
+}
+
+// Dir is where course id's world from the named builder ("" the default)
+// goes in the worlds directory out: the default builder's in out/id, the
+// others' in out/.<engine>/id (the classic builder's in out/.classic/id
+// since the graph builder became the default), so both can be kept and
+// compared.
+func Dir(out, id, engine string) string {
+	if engine == "" || engine == world.DefaultEngine {
+		return filepath.Join(out, id)
+	}
+	return filepath.Join(out, "."+engine, id)
+}
+
 // Stamp identifies what course c's world is built from: the course as
 // loaded (its line every 10 m, its profile, its name and length) and the
 // builder's version. A GPX edited or a builder that builds differently
 // gives another stamp.
 func Stamp(c *course.Course) string {
+	return fmt.Sprintf("%d-%s", BuilderVersion, stampHash(c, strconv.Itoa(BuilderVersion)))
+}
+
+// stampHash hashes course c as loaded, with the builder's version.
+func stampHash(c *course.Course, version string) string {
 	h := sha256.New()
 	put := func(v float64) { h.Write(strconv.AppendFloat(nil, math.Round(v*1e6)/1e6, 'g', -1, 64)) }
-	fmt.Fprintf(h, "osscycler world %d\x00%s\x00%s\x00%t\x00", BuilderVersion, c.ID, c.Name, c.Loop)
+	fmt.Fprintf(h, "osscycler world %s\x00%s\x00%s\x00%t\x00", version, c.ID, c.Name, c.Loop)
 	put(c.Distance)
 	for d := 0.0; d <= c.Distance; d += 10 {
 		lat, lon := c.Position(d)
@@ -241,5 +411,5 @@ func Stamp(c *course.Course) string {
 		ele, _ := c.At(d)
 		put(ele)
 	}
-	return fmt.Sprintf("%d-%s", BuilderVersion, hex.EncodeToString(h.Sum(nil))[:16])
+	return hex.EncodeToString(h.Sum(nil))[:16]
 }

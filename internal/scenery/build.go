@@ -26,6 +26,12 @@ const (
 	LandDuneGrass //
 	LandDuneScrub //
 	LandBeach     //
+	// The 3D world's arable fields (fields.go): what grows on one,
+	// never in the API (the TUI keeps LandFarmland).
+	LandPloughed
+	LandMaize
+	LandWheat
+	LandPotatoes
 )
 
 // BuildingKind matches the API's BuildingKind.
@@ -205,8 +211,10 @@ func (m *LandMap) Size(id int) (area, outline float64) {
 // still tells inside from outside.
 type polygon struct {
 	land                   Land
-	leaf                   string // OpenStreetMap's leaf_type (forests)
-	natural                string // its natural tag (ByTheSea tells dunes by it)
+	leaf                   string  // OpenStreetMap's leaf_type (forests)
+	natural                string  // its natural tag (ByTheSea tells dunes by it)
+	osm                    int64   // the map element's ID (Fields seeds by it)
+	rows                   float64 // a sown field's rows (Fields, RowDir)
 	edges                  [][4]float64
 	minX, minY, maxX, maxY float64
 	area                   float64 // of the bounding box; smaller wins
@@ -249,7 +257,7 @@ func polygons(c *course.Course, d *Data) []*polygon {
 		if land == LandNone {
 			continue
 		}
-		p := &polygon{land: land, leaf: el.Tags["leaf_type"], natural: el.Tags["natural"], minX: math.Inf(1), minY: math.Inf(1), maxX: math.Inf(-1), maxY: math.Inf(-1)}
+		p := &polygon{land: land, leaf: el.Tags["leaf_type"], natural: el.Tags["natural"], osm: el.ID, minX: math.Inf(1), minY: math.Inf(1), maxX: math.Inf(-1), maxY: math.Inf(-1)}
 		add := func(ring []LatLon) {
 			for j := 1; j < len(ring); j++ {
 				x0, y0 := c.Project(ring[j-1].Lat, ring[j-1].Lon)

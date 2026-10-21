@@ -23,7 +23,13 @@ sealed class Calls : ICommands
     }
 
     public Task StopRide() => Add("stop ride");
+    public async Task<string> TurnAround()
+    {
+        await Add("turn round");
+        return "posbank-reverse";
+    }
     public Task SetPaused(bool paused) => Add($"paused {paused}");
+    public Task SetSimulated(bool on) => Add($"simulated {on}");
     public Task SetDifficulty(double pct) => Add($"difficulty {pct}");
     public Task StopWorkout() => Add("stop workout");
     public Task SkipSegment() => Add("skip");
@@ -41,7 +47,7 @@ sealed class Calls : ICommands
     public List<Activity> Activities = new()
     {
         new Activity { Name = "2026-10-09-120000.fit", StartUnixMs = 1_760_000_000_000 },
-        new Activity { Name = "2026-10-08-090000.fit", StartUnixMs = 1_759_900_000_000 },
+        new Activity { Name = "2026-10-08-090000.fit", StartUnixMs = 1_759_900_000_000, HeldMaxHeartRateBpm = 176 },
     };
     public List<WorkoutDef> Workouts = new() { new WorkoutDef { Id = "intervals", Name = "Intervals", DurationS = 1800 } };
 
@@ -54,7 +60,14 @@ sealed class Calls : ICommands
     {
         View = view;
         var t = Add("view " + view); // answered at once, as the other calls: no thread in between
-        return t.IsFaulted ? Task.FromException<RiderProfile>(t.Exception!.GetBaseException()) : Task.FromResult(new RiderProfile { View = view });
+        return t.IsFaulted ? Task.FromException<RiderProfile>(t.Exception!.GetBaseException())
+            : Task.FromResult(new RiderProfile { View = view, WorldBuild = Profile.WorldBuild, WorldFetch = Profile.WorldFetch });
+    }
+    public Task<RiderProfile> SetChoice(string name, string value)
+    {
+        var t = Add($"choice {name} {value}");
+        return t.IsFaulted ? Task.FromException<RiderProfile>(t.Exception!.GetBaseException())
+            : Task.FromResult(new RiderProfile { View = View, WorldBuild = name == "world_build" ? value : "idle", WorldFetch = name == "world_fetch" ? value : "cached" });
     }
     public WorkoutDef? SavedWorkout;
     public Task<string> SaveWorkout(string id, WorkoutDef w)
@@ -74,12 +87,13 @@ sealed class Calls : ICommands
     public Task StartCalibration() => Add("calibrate");
     public Task CancelCalibration() => Add("cancel calibration");
     public RiderProfile Profile = new() { SuggestedFtpW = 190 };
-    public Task<RiderProfile> SetProfile(double? weightKg, double? ftpW, double? heightCm)
+    public Task<RiderProfile> SetProfile(double? weightKg, double? ftpW, double? heightCm, double? maxHrBpm)
     {
-        Add($"profile {weightKg} {ftpW} {heightCm}");
+        Add($"profile {weightKg} {ftpW} {heightCm}" + (maxHrBpm is double m ? $" hr {m}" : ""));
         if (weightKg is double w) Profile.WeightKg = w;
         if (ftpW is double f) Profile.FtpW = f;
         if (heightCm is double h) Profile.HeightCm = h;
+        if (maxHrBpm is double hr) Profile.MaxHrBpm = hr;
         return Task.FromResult(Profile.Clone());
     }
     public Task<string> EndActivity(bool discard)
@@ -91,6 +105,33 @@ sealed class Calls : ICommands
     {
         Add("save " + name);
         return Task.FromResult("/tmp/" + name);
+    }
+    // The activity being recorded (null: none), and summaries by name.
+    public GetActivityHistoryResponse? History;
+    public Dictionary<string, ActivitySummary> Summaries = new();
+    public readonly List<uint> HistoryCalls = new(); // fetches, not commands: kept apart from Sent
+    public Task<GetActivityHistoryResponse> ActivityHistory(string name, uint since)
+    {
+        lock (HistoryCalls)
+            HistoryCalls.Add(since);
+        if (History == null)
+            return Task.FromException<GetActivityHistoryResponse>(new InvalidOperationException("no ride is being recorded"));
+        var r = new GetActivityHistoryResponse { Name = History.Name, FromS = since };
+        r.PowerW.AddRange(History.PowerW.Skip((int)since));
+        r.HeartRateBpm.AddRange(History.HeartRateBpm.Skip((int)since));
+        return Task.FromResult(r);
+    }
+    public ActivitySummary? Ride;
+    public Task<ActivitySummary> RideSummary()
+    {
+        Add("ride summary");
+        return Ride != null ? Task.FromResult(Ride) : Task.FromException<ActivitySummary>(new InvalidOperationException("no course ride"));
+    }
+    public Task<ActivitySummary> ActivitySummary(string name)
+    {
+        Add("summary " + name);
+        return Summaries.TryGetValue(name, out var s) ? Task.FromResult(s)
+            : Task.FromException<ActivitySummary>(new InvalidOperationException("no such activity"));
     }
 }
 
@@ -127,6 +168,71 @@ public class HeadTests
         Assert.Equal("press x again to end the ride", h.Asking(20));
         h.Key("x", Riding(loop: true), 20 + Controller.AbortConfirmS + 1); // too late: asks again
         Assert.Single(c.Sent);
+    }
+
+    static State OnCourse(string id, double at, bool lapped = false) => new()
+    {
+        Ride = new Ride
+        {
+            Phase = RidePhase.Riding, CourseId = id, CourseDistanceM = 29730, DistanceM = at,
+            Loop = lapped, LapStartM = lapped ? 2320 : 0, LapLengthM = lapped ? 27310 : 0,
+        },
+    };
+
+    // r during a course ride asks, r again turns round (owner, 2026-10-20:
+    // r r as x x, since the ride so far no longer counts).
+    [Fact]
+    public void TurningRoundNeedsTwoPresses()
+    {
+        var c = new Calls();
+        var h = new Controller(c);
+        var st = OnCourse("posbank", 9000, lapped: true);
+        h.Key("r", st, 10);
+        Assert.Empty(c.Sent);
+        Assert.StartsWith("press r again to turn round", h.Asking(11));
+        h.Key("r", st, 12);
+        Assert.Equal(new[] { "turn round" }, c.Sent);
+
+        // Each key confirms only itself: x then r turns nothing round.
+        h.Key("x", st, 20);
+        h.Key("r", st, 21);
+        Assert.Single(c.Sent);
+        Assert.StartsWith("press r again", h.Asking(21));
+
+        // Reading the question takes a while: a second r 5 s later counts.
+        h.Key("r", st, 40);
+        h.Key("r", st, 45);
+        Assert.Equal(2, c.Sent.Count(s => s == "turn round"));
+
+        // On the run-in out it says why not, and asks nothing.
+        var runIn = OnCourse("posbank", 1000, lapped: true);
+        h.Key("r", runIn, 60);
+        h.Key("r", runIn, 61);
+        Assert.Equal(2, c.Sent.Count(s => s == "turn round"));
+        Assert.Equal("", h.Asking(61));
+        Assert.Contains("once you're on the lap", h.Notice(61));
+    }
+
+    // A course the list has no other way for: r asks nothing, and the key
+    // map leaves r r out.
+    [Fact]
+    public void ACourseWithoutAnOtherWayCantBeTurnedRound()
+    {
+        var list = new List<Course> { new() { Id = "posbank" } };
+        Assert.Empty(Controller.HelpFor(OnCourse("posbank", 9000), list).Item2.Where(e => e.Item1 == "r r"));
+        Assert.Contains(Controller.HelpFor(OnCourse("posbank", 9000, lapped: true)).Item2, e => e.Item1 == "r r");
+        Assert.Null(Controller.OtherWay(OnCourse("posbank", 9000).Ride, list));
+        list.Add(new Course { Id = "posbank-reverse" });
+        Assert.Equal("posbank-reverse", Controller.OtherWay(OnCourse("posbank", 9000).Ride, list));
+        Assert.Equal("posbank", Controller.OtherWay(OnCourse("posbank-reverse", 9000).Ride, list));
+    }
+
+    [Fact]
+    public void AnUntimedRideSaysSo()
+    {
+        var st = OnCourse("posbank-reverse", 9000);
+        st.Ride.Untimed = true;
+        Assert.Equal("NOT TIMED", Tiles.Make("time", st, null).Label);
     }
 
     [Fact]
@@ -338,6 +444,14 @@ public class SetupTests
         h.Key("5", st, 0);
         h.Key("enter", st, 0);
         Settle();
+        // The maximum heart rate: optional too, and the last step here; the
+        // highest held in the rides is told, not filled in.
+        var d = h.Dialog(st, 0)!;
+        Assert.Equal("Your maximum heart rate: _ bpm", d.Big);
+        Assert.Contains(d.Lines, l => l.Contains("held for 10 s in your rides: 176 bpm"));
+        Assert.All(d.Lines, l => Assert.True(l.Length < 80, l)); // they fit the panel
+        Assert.Contains(d.Lines, l => l.Contains("not medical advice"));
+        h.Key("enter", st, 0); // skipped
         Assert.Null(h.Dialog(st, 0));
         Assert.Equal(new[] { "profile 75  ", "profile  195 " }, c.Sent);
         Assert.Equal("profile saved", h.Notice(1));
@@ -402,7 +516,7 @@ public class SetupTests
         h.Key("e", st, 10);
         h.Key("enter", st, 10);
         Settle();
-        Assert.Equal("end save", c.Sent[^1]);
+        Assert.Equal(new[] { "end save", "summary ride.fit" }, c.Sent.Skip(1)); // saved: its summary
     }
 
     [Fact]
@@ -449,7 +563,7 @@ public class LayoutTests
             var l = h.List()!;
             Assert.Equal("COURSE RIDE", l.Subtitle);
             Assert.Equal(new[] { "1", "2", "3", "4", "5" }, l.Rows.Take(5).Select(r => r.Key));
-            Assert.Equal(Layout.Labels[Layout.LookAhead], l.Rows[^2].Label);
+            Assert.Equal(Layout.Labels[Layout.LookAhead], l.Rows[^4].Label); // then the profile, the graph and the minimap
             // Climbed (hidden, the 9th choice) to the second place; power
             // down one; grade hidden; the look-ahead strip hidden.
             for (int i = 0; i < 8; i++)
@@ -464,6 +578,8 @@ public class LayoutTests
             h.Key(" ", st, 0); // grade
             for (int i = 0; i < 20; i++)
                 h.Key("down", st, 0);
+            h.Key("up", st, 0);
+            h.Key("up", st, 0);
             h.Key("up", st, 0);
             h.Key(" ", st, 0); // the look-ahead
             h.Key("z", st, 0);
@@ -760,12 +876,89 @@ public class ViewTests
         h.Key("enter", st, 0); // height, empty: skipped
         h.Key("enter", st, 0); // FTP
         Thread.Sleep(30);
+        Assert.StartsWith("Your maximum heart rate", h.Dialog(st, 0)!.Big);
+        foreach (var k in new[] { "2", "5", "0", "enter" })
+            h.Key(k, st, 0);
+        Assert.Contains("100 to 230", h.Notice(0)); // out of range: caught here
+        foreach (var k in new[] { "backspace", "backspace", "backspace", "1", "8", "8", "enter" })
+            h.Key(k, st, 0);
+        Thread.Sleep(30);
+        Assert.Equal("profile    hr 188", c.Sent[^1]);
         Assert.Contains("behind the rider", h.Dialog(st, 0)!.Big);
         h.Key("right", st, 0);
         h.Key("enter", st, 0);
         Thread.Sleep(30);
         Assert.Equal("view eyes", c.Sent[^1]);
         Assert.Null(h.Dialog(st, 1));
+    }
+
+    // A course ride ends at its line with its own summary, its result as
+    // the heading; closing it ends the ride (owner, 2026-10-13). A loop's
+    // laps go on: no summary.
+    [Fact]
+    public void FinishedRideOpensItsSummaryAndClosingItEndsTheRide()
+    {
+        var c = new Calls { Ride = new ActivitySummary { TimerS = 754, DistanceM = 6000, AvgPowerW = 245 } };
+        var h = new Controller(c);
+        State At(RidePhase p) => new()
+        {
+            Profile = new RiderProfile { WeightKg = 75, FtpW = 200 },
+            Ride = new Ride { Phase = p, CourseId = "hill", CourseName = "Hill Test", ElapsedS = 754, Ghost = new RideGhost { GapS = -3.2, Label = "PB 7 Oct" } },
+        };
+        h.Tick(At(RidePhase.Riding), 0);
+        h.Tick(At(RidePhase.Finished), 1);
+        Assert.Contains("ride summary", c.Sent);
+        Assert.NotNull(h.Summary);
+        Assert.Equal("FINISHED  Hill Test  12:34   NEW PB  3.2 s faster", h.SummaryHeading);
+        h.Key("x", At(RidePhase.Finished), 2);
+        Thread.Sleep(30);
+        Assert.Null(h.Summary);
+        Assert.Equal("stop ride", c.Sent[^1]);
+
+        var loop = new Calls { Ride = new ActivitySummary() };
+        var hl = new Controller(loop);
+        State OnLoop(RidePhase p) => new() { Ride = new Ride { Phase = p, CourseId = "oval", Loop = true } };
+        hl.Tick(OnLoop(RidePhase.Riding), 0);
+        hl.Tick(OnLoop(RidePhase.Finished), 1);
+        Assert.DoesNotContain("ride summary", loop.Sent);
+    }
+
+    // Building worlds ahead is set in the profile, after the view (owner,
+    // 2026-10-13), when the core keeps it.
+    [Fact]
+    public void ProfileEditGoesOnToBuildingWorldsAhead()
+    {
+        var c = new Calls();
+        c.Profile.View = "chase";
+        c.Profile.WorldBuild = "idle";
+        c.Profile.WorldFetch = "cached";
+        var h = new Controller(c);
+        var st = new State { Profile = new RiderProfile { WeightKg = 75, FtpW = 200, View = "chase", WorldBuild = "idle", WorldFetch = "cached" } };
+        h.Key("m", st, 0);
+        h.Key("p", st, 0);
+        h.Key("enter", st, 0); // weight
+        Thread.Sleep(30);
+        h.Key("enter", st, 0); // height: skipped
+        h.Key("enter", st, 0); // FTP
+        Thread.Sleep(30);
+        h.Key("enter", st, 0); // maximum heart rate: skipped
+        Assert.Contains("behind the rider", h.Dialog(st, 0)!.Big);
+        Assert.Contains("of 7", h.Dialog(st, 0)!.Hint);
+        h.Key("enter", st, 0); // the view as it is
+        Thread.Sleep(30);
+        var d = h.Dialog(st, 0)!;
+        Assert.Equal("Build worlds ahead: ▸ while not riding ◂   also while riding", d.Big);
+        Assert.Contains("step 6 of 7", d.Hint);
+        h.Key("right", st, 0);
+        h.Key("enter", st, 0);
+        Thread.Sleep(30);
+        Assert.Equal("choice world_build always", c.Sent[^1]);
+        Assert.Equal("Downloads for them: ▸ cached only ◂   allowed", h.Dialog(st, 0)!.Big);
+        h.Key("enter", st, 0);
+        Thread.Sleep(30);
+        Assert.Equal("choice world_fetch cached", c.Sent[^1]);
+        Assert.Null(h.Dialog(st, 1));
+        Assert.Contains("profile saved", h.Notice(1));
     }
 }
 

@@ -1,20 +1,30 @@
-# Checks every push and pull request: make check (gofmt, vet, staticcheck,
-# race tests), the 3D view's tests (dotnet test) and actionlint on the
-# workflows. No secrets: the test that
-# looks for the ANT+ network key in the source skips here (the release
-# workflow runs it with the key), so pull requests from forks are safe to
-# check. The job name "check" is what a branch ruleset can require.
+# Checks pull requests and pushes to develop and main. Pushes to other
+# branches aren't checked on their own: their pull request checks them
+# (twice was the same work).
 #
-# Copies of the repository elsewhere (a private one for work not yet
-# public) check pull requests and manual runs only, not every push: their
-# Actions minutes are limited.
+#   lint     gofmt, actionlint, go vet, staticcheck: cheap, so they come
+#            first, and the tests only run on code that passes them.
+#   go       the race tests. Go reuses the result of every package whose
+#            code and files are unchanged since the last cached run
+#            (scripts/ci-mtimes.sh), so a change outside the world
+#            builder skips its long tests.
+#   dotnet   the 3D view's tests.
+#   check    passes when all three passed: the job the rulesets require.
+#
+# No secrets: the test that looks for the ANT+ network key in the source
+# skips here (the release workflow runs it with the key), so pull
+# requests from forks are safe to check.
+#
+# Go's caches are saved per commit and restored from the newest earlier
+# one (a pull request reads its base branch's), also after a failed run:
+# only passing tests are cached.
 #
 # The actions are pinned to commits, as in release.yml.
 name: check
 
 on:
   push:
-    branches: ["**"]
+    branches: [develop, main]
   pull_request:
   workflow_dispatch:
 
@@ -26,20 +36,90 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check:
-    if: github.event_name != 'push' || github.repository == 'digimago/osscycler'
+  lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+          cache: false
 
-      - name: make check
-        run: make check
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/.cache/staticcheck
+            ~/go/pkg/mod
+          key: go-lint-${{ runner.os }}-${{ github.sha }}
+          restore-keys: go-lint-${{ runner.os }}-
+
+      - name: gofmt
+        run: make fmt
+
+      - name: actionlint
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+
+      - name: go vet
+        run: make vet
+
+      - name: staticcheck
+        run: make lint
+
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always()
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/.cache/staticcheck
+            ~/go/pkg/mod
+          key: go-lint-${{ runner.os }}-${{ github.sha }}
+
+  go:
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-race-${{ runner.os }}-${{ github.sha }}
+          restore-keys: go-race-${{ runner.os }}-
+
+      - name: File times from their content
+        run: scripts/ci-mtimes.sh
+
+      - name: Race tests
+        run: make race RACE_FLAGS=
+
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always()
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-race-${{ runner.os }}-${{ github.sha }}
+
+  dotnet:
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
@@ -48,5 +128,16 @@ jobs:
       - name: The 3D view's tests
         run: dotnet test renderers/godot/tests/Hud
 
-      - name: actionlint
-        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+  check:
+    needs: [lint, go, dotnet]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: All checks passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "lint, go, dotnet: $RESULTS"
+          for r in $RESULTS; do
+            [[ $r == success ]] || exit 1
+          done

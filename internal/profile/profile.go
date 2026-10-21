@@ -21,12 +21,21 @@ type Profile struct {
 	WeightKg float64 `json:"weight_kg,omitempty"`
 	FTPW     float64 `json:"ftp_w,omitempty"`
 	// HeightCm sizes the rider's drag; optional (zero: unknown).
-	HeightCm      float64 `json:"height_cm,omitempty"`
+	HeightCm float64 `json:"height_cm,omitempty"`
+	// MaxHRBpm sets the heart rate zones; optional (zero: unknown).
+	MaxHRBpm      float64 `json:"max_hr_bpm,omitempty"`
 	DifficultyPct float64 `json:"difficulty_pct"`
 	BikeKg        float64 `json:"bike_kg"`
 	// View is how a 3D renderer shows the ride (ViewChase, ViewEyes; ""
 	// is the default, ViewChase).
 	View string `json:"view,omitempty"`
+	// WorldBuild is when a 3D renderer builds courses' worlds ahead of a
+	// ride (WorldBuildIdle, WorldBuildAlways); WorldFetch whether it may
+	// download what a course not yet ridden needs (WorldFetchCached,
+	// WorldFetchAllowed). "" is the default, the first. Preferences in the
+	// profile so they follow the rider to any screen (owner, 2026-10-13).
+	WorldBuild string `json:"world_build,omitempty"`
+	WorldFetch string `json:"world_fetch,omitempty"`
 }
 
 // Views a 3D renderer offers: behind and above the rider, or the rider's
@@ -36,37 +45,94 @@ const (
 	ViewEyes  = "eyes"
 )
 
-// ViewOrDefault is the view in effect.
-func (p Profile) ViewOrDefault() string {
-	if p.View == ViewEyes {
-		return ViewEyes
-	}
-	return ViewChase
+// When worlds are built ahead: only while nothing is ridden, or also
+// during rides (at the lowest priority); and whether that may download
+// what a course lacks or uses the caches only.
+const (
+	WorldBuildIdle    = "idle"
+	WorldBuildAlways  = "always"
+	WorldFetchCached  = "cached"
+	WorldFetchAllowed = "allowed"
+)
+
+// Choices are the profile's settings with a fixed set of values, by their
+// names in the API (SetProfileRequest's fields); the first value is the
+// default.
+var Choices = map[string][]string{
+	"view":        {ViewChase, ViewEyes},
+	"world_build": {WorldBuildIdle, WorldBuildAlways},
+	"world_fetch": {WorldFetchCached, WorldFetchAllowed},
 }
 
-// CheckView validates a view.
-func CheckView(v string) error {
-	if v != ViewChase && v != ViewEyes {
-		return rangeError(fmt.Sprintf("view %q: want %q or %q", v, ViewChase, ViewEyes))
+// field is choice name's place in p.
+func (p *Profile) field(name string) *string {
+	switch name {
+	case "view":
+		return &p.View
+	case "world_build":
+		return &p.WorldBuild
+	case "world_fetch":
+		return &p.WorldFetch
 	}
 	return nil
 }
 
-// SetView changes the view and saves the profile; the profile in effect.
-func (m *Manager) SetView(v string) (Profile, error) {
-	if err := CheckView(v); err != nil {
+// Choice is choice name's value in effect (its default when unset or
+// unknown).
+func (p Profile) Choice(name string) string {
+	vs := Choices[name]
+	if f := p.field(name); f != nil {
+		for _, v := range vs {
+			if *f == v {
+				return v
+			}
+		}
+	}
+	if len(vs) == 0 {
+		return ""
+	}
+	return vs[0]
+}
+
+// CheckChoice validates a value for choice name.
+func CheckChoice(name, v string) error {
+	vs, ok := Choices[name]
+	if !ok {
+		return rangeError(fmt.Sprintf("no setting %q", name))
+	}
+	for _, w := range vs {
+		if v == w {
+			return nil
+		}
+	}
+	return rangeError(fmt.Sprintf("%s %q: want one of %q", name, v, vs))
+}
+
+// SetChoice changes choice name and saves the profile; the profile in
+// effect.
+func (m *Manager) SetChoice(name, v string) (Profile, error) {
+	if err := CheckChoice(name, v); err != nil {
 		return Profile{}, err
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	next := m.saved
-	next.View = v
+	*next.field(name) = v
 	if err := m.save(next); err != nil {
 		return m.effective(), err
 	}
 	m.saved = next
 	return m.effective(), nil
 }
+
+// ViewOrDefault is the view in effect.
+func (p Profile) ViewOrDefault() string { return p.Choice("view") }
+
+// CheckView validates a view.
+func CheckView(v string) error { return CheckChoice("view", v) }
+
+// SetView changes the view and saves the profile; the profile in effect.
+func (m *Manager) SetView(v string) (Profile, error) { return m.SetChoice("view", v) }
 
 // Defaults are a new rider's settings before onboarding: Zwift's trainer
 // difficulty and a road bike.
@@ -80,6 +146,8 @@ const (
 	MaxFTPW     = 600
 	MinHeightCm = 120
 	MaxHeightCm = 220
+	MinMaxHRBpm = 100
+	MaxMaxHRBpm = 230
 )
 
 // Complete reports whether onboarding has what it needs.
@@ -93,6 +161,7 @@ const (
 	FTP
 	Difficulty
 	Height
+	MaxHR
 	numFields
 )
 
@@ -168,6 +237,8 @@ func field(p *Profile, f Field) *float64 {
 		return &p.FTPW
 	case Height:
 		return &p.HeightCm
+	case MaxHR:
+		return &p.MaxHRBpm
 	}
 	return &p.DifficultyPct
 }
@@ -198,6 +269,10 @@ func Check(f Field, v float64) error {
 	case Height:
 		if v < MinHeightCm || v > MaxHeightCm {
 			return rangeError(fmt.Sprintf("height %.0f cm: want %d to %d cm", v, MinHeightCm, MaxHeightCm))
+		}
+	case MaxHR:
+		if v < MinMaxHRBpm || v > MaxMaxHRBpm {
+			return rangeError(fmt.Sprintf("maximum heart rate %.0f bpm: want %d to %d bpm", v, MinMaxHRBpm, MaxMaxHRBpm))
 		}
 	case Difficulty:
 		if v < 0 || v > 100 {

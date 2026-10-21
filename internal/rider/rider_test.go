@@ -83,7 +83,7 @@ func TestOnboarding(t *testing.T) {
 
 	// Weight first: rides may start; the trainer has the weight, and the
 	// ride is simulated with rider plus bike.
-	p, err := f.svc.SetProfile(context.Background(), ptr(87), nil, nil, nil)
+	p, err := f.svc.SetProfile(context.Background(), ptr(87), nil, nil, nil, nil)
 	if err != nil || p.NeedWeight || !p.NeedFTP || p.SuggestedFTPW != 220 {
 		t.Fatalf("after weight: %+v, %v", p, err)
 	}
@@ -99,7 +99,7 @@ func TestOnboarding(t *testing.T) {
 
 	// Then FTP: complete, and workouts pass the gate (this one isn't in
 	// the library).
-	p, _ = f.svc.SetProfile(context.Background(), nil, ptr(265), nil, nil)
+	p, _ = f.svc.SetProfile(context.Background(), nil, ptr(265), nil, nil, nil)
 	if !p.Complete || f.state() != p {
 		t.Errorf("after FTP: %+v (published %+v)", p, f.state())
 	}
@@ -127,25 +127,25 @@ func TestDragFromSize(t *testing.T) {
 		st, _ := f.hub.Latest()
 		return st.Ride.Sim.CdA
 	}
-	f.svc.SetProfile(context.Background(), ptr(75), ptr(200), nil, nil)
+	f.svc.SetProfile(context.Background(), ptr(75), ptr(200), nil, nil, nil)
 	if got := cda(); got != sim.DefaultCdA {
 		t.Errorf("without a height: %.4f, want the reference %.2f", got, sim.DefaultCdA)
 	}
-	p, err := f.svc.SetProfile(context.Background(), nil, nil, ptr(195), nil)
+	p, err := f.svc.SetProfile(context.Background(), nil, nil, ptr(195), nil, nil)
 	if err != nil || p.HeightCm != 195 || p.CdA != sim.CdAFor(1.95, 75) {
 		t.Fatalf("height 195: %+v, %v", p, err)
 	}
 	if got := cda(); got != sim.CdAFor(1.95, 75) {
 		t.Errorf("ride after height: %.4f, want %.4f", got, sim.CdAFor(1.95, 75))
 	}
-	f.svc.SetProfile(context.Background(), ptr(90), nil, nil, nil)
+	f.svc.SetProfile(context.Background(), ptr(90), nil, nil, nil, nil)
 	if got := cda(); got != sim.CdAFor(1.95, 90) {
 		t.Errorf("ride after weight: %.4f, want %.4f", got, sim.CdAFor(1.95, 90))
 	}
 	if m, _ := profile.Open(f.path); m.Get().HeightCm != 195 {
 		t.Error("height not saved")
 	}
-	if _, err := f.svc.SetProfile(context.Background(), nil, nil, ptr(300), nil); !errors.Is(err, profile.ErrOutOfRange) {
+	if _, err := f.svc.SetProfile(context.Background(), nil, nil, ptr(300), nil, nil); !errors.Is(err, profile.ErrOutOfRange) {
 		t.Errorf("300 cm: %v", err)
 	}
 	f.svc.FixCdA(0.25)
@@ -154,9 +154,25 @@ func TestDragFromSize(t *testing.T) {
 	}
 }
 
+// The maximum heart rate is optional, saved and published; summaries take
+// their heart rate zones from it.
+func TestMaxHeartRate(t *testing.T) {
+	f := setup(t, nil)
+	p, err := f.svc.SetProfile(context.Background(), nil, nil, nil, ptr(188), nil)
+	if err != nil || p.MaxHRBpm != 188 || f.state().MaxHRBpm != 188 {
+		t.Fatalf("max HR 188: %+v, %v; published %+v", p, err, f.state())
+	}
+	if m, _ := profile.Open(f.path); m.Get().MaxHRBpm != 188 {
+		t.Error("max HR not saved")
+	}
+	if _, err := f.svc.SetProfile(context.Background(), nil, nil, nil, ptr(260), nil); !errors.Is(err, profile.ErrOutOfRange) {
+		t.Errorf("260 bpm: %v", err)
+	}
+}
+
 func TestSetProfileChecksFirst(t *testing.T) {
 	f := setup(t, nil)
-	if _, err := f.svc.SetProfile(context.Background(), ptr(80), ptr(5000), nil, nil); !errors.Is(err, profile.ErrOutOfRange) {
+	if _, err := f.svc.SetProfile(context.Background(), ptr(80), ptr(5000), nil, nil, nil); !errors.Is(err, profile.ErrOutOfRange) {
 		t.Fatalf("FTP 5000 W: %v", err)
 	}
 	if p := f.state(); p.WeightKg != 0 || len(f.tr.users) != 0 {
@@ -196,7 +212,7 @@ func TestViewPreference(t *testing.T) {
 		t.Fatalf("default view %q, want chase", v)
 	}
 	eyes := profile.ViewEyes
-	p, err := f.svc.SetProfile(context.Background(), nil, nil, nil, &eyes)
+	p, err := f.svc.SetProfile(context.Background(), nil, nil, nil, nil, map[string]string{"view": eyes})
 	if err != nil || p.View != profile.ViewEyes || f.state().View != profile.ViewEyes {
 		t.Fatalf("eyes: %+v, %v", p, err)
 	}
@@ -204,7 +220,7 @@ func TestViewPreference(t *testing.T) {
 		t.Error("view not saved")
 	}
 	bad := "drone"
-	if _, err := f.svc.SetProfile(context.Background(), ptr(80), nil, nil, &bad); !errors.Is(err, profile.ErrOutOfRange) {
+	if _, err := f.svc.SetProfile(context.Background(), ptr(80), nil, nil, nil, map[string]string{"view": bad}); !errors.Is(err, profile.ErrOutOfRange) {
 		t.Fatalf("view drone: %v", err)
 	}
 	if p := f.state(); p.WeightKg != 0 || p.View != profile.ViewEyes {

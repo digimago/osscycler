@@ -10,6 +10,9 @@ namespace Osscycler.Head;
 public interface ICommands
 {
     Task StopRide();
+    // TurnAround turns the rider round onto the course's other way; the
+    // course ridden on now, "" when the ride ended instead (on a run-in).
+    Task<string> TurnAround();
     Task SetDifficulty(double pct);
     Task StopWorkout();
     Task SkipSegment();
@@ -29,12 +32,18 @@ public interface ICommands
     // SetPaused parks the core or carries on (it holds rides, workouts and
     // the trainer; a start carries on).
     Task SetPaused(bool paused);
+    // SetSimulated puts a simulated rider in place of the trainer, or
+    // takes it away.
+    Task SetSimulated(bool on);
     Task SetFtp(double watts);
     Task SetGrade(double pct);
     Task SetLevel(double pct);
     Task ReleaseControl();
     // SetProfile saves what is given (null: unchanged); the profile now.
-    Task<RiderProfile> SetProfile(double? weightKg, double? ftpW, double? heightCm);
+    Task<RiderProfile> SetProfile(double? weightKg, double? ftpW, double? heightCm, double? maxHrBpm);
+    // SetChoice saves one of the profile's settings with a fixed set of
+    // values (world_build, world_fetch; SetProfileRequest's field names).
+    Task<RiderProfile> SetChoice(string name, string value);
     // SetView saves the rider's view in a 3D renderer ("chase" or "eyes").
     Task<RiderProfile> SetView(string view);
     // EndActivity saves (or discards) the recording; the file saved.
@@ -43,6 +52,14 @@ public interface ICommands
     Task CancelCalibration();
     // SaveActivity saves a recording's FIT file on this machine; the path.
     Task<string> SaveActivity(string name);
+    // ActivityHistory is an activity's samples from riding second since on:
+    // the one being recorded (name "") or a finished one.
+    Task<GetActivityHistoryResponse> ActivityHistory(string name, uint since);
+    // ActivitySummary sums an activity up, named as for ActivityHistory.
+    Task<ActivitySummary> ActivitySummary(string name);
+    // RideSummary sums up the last course ride of the activity being
+    // recorded: from its start to its finish.
+    Task<ActivitySummary> RideSummary();
 }
 
 // Controller is the renderer as a head (owner, 2026-10-09: a full
@@ -59,6 +76,7 @@ public sealed partial class Controller
     readonly ICommands _cmds;
     readonly object _mu = new();
     double _abortUntil = double.NegativeInfinity;
+    string _confirmKey = "";
     string _asking = "";
     string _notice = "";
     double _noticeFrom = double.NaN; // when it was first shown (NaN: not yet)
@@ -83,7 +101,7 @@ public sealed partial class Controller
     // picker, a prompt, the layout editor, the workout form, onboarding,
     // the end-ride question, a spin-down's countdown): keys of the
     // renderer's own (the debug mark's space) are only for then.
-    public bool Free => Help == null && _arranging == null && _form == null && _onboard == null && !_ending
+    public bool Free => Help == null && _arranging == null && _form == null && _onboard == null && !_ending && !_hardwareUp && Summary == null
         && double.IsNaN(_countdownTo) && _prompt == null && _screen == Screen.None && !_quitting;
 
     // Note shows a notice from the renderer itself (a mark made).
@@ -118,14 +136,18 @@ public sealed partial class Controller
             Help = _prompt != null ? ("TYPING", new() { ("0-9 . -", "the value"), ("backspace", "delete"), ("enter", "set it"), ("esc", "cancel") })
                 : _form != null ? WorkoutForm.Help
                 : _arranging != null ? ArrangeHelp
-                : _screen != Screen.None ? ScreenHelp() : HelpFor(st);
+                : _screen != Screen.None ? ScreenHelp() : HelpFor(st, _courses);
             return;
         }
+        if (SummaryKey(key))
+            return;
         if (_arranging != null)
         {
             ArrangeKey(key);
             return;
         }
+        if (HardwareKey(key, st))
+            return;
         if (_form != null)
         {
             FormKey(key, now);
@@ -145,7 +167,7 @@ public sealed partial class Controller
             MenuKey(key, st, now);
             return;
         }
-        if (OpenKey(key, st) || LayoutKey(key, st))
+        if (OpenKey(key, st) || LayoutKey(key, st) || GraphKey(key))
             return;
         var r = st?.Ride;
         var w = st?.Workout;
@@ -165,7 +187,7 @@ public sealed partial class Controller
                     Run("skip", _cmds.SkipSegment);
                     return;
                 case "x":
-                    Confirm(now, "press x again to abort the workout", () => Run("abort workout", _cmds.StopWorkout));
+                    Confirm(now, "x", "press x again to abort the workout", () => Run("abort workout", _cmds.StopWorkout));
                     return;
             }
             return;
@@ -188,7 +210,10 @@ public sealed partial class Controller
                     Run("set difficulty", () => _cmds.SetDifficulty(want));
                     return;
                 case "x":
-                    Confirm(now, r!.Loop ? "press x again to end the ride" : "press x again to abort the ride", () => Run("abort ride", _cmds.StopRide));
+                    Confirm(now, "x", r!.Loop ? "press x again to end the ride" : "press x again to abort the ride", () => Run("abort ride", _cmds.StopRide));
+                    return;
+                case "r":
+                    TurnKey(now, r!);
                     return;
             }
             return;
@@ -197,16 +222,72 @@ public sealed partial class Controller
             Run("close ride", _cmds.StopRide);
     }
 
-    void Confirm(double now, string question, Action act)
+    // Confirm asks for key again (x x, r r): the second press within
+    // waitS seconds (AbortConfirmS unless given) acts; another key's first
+    // press doesn't count for it.
+    void Confirm(double now, string key, string question, Action act, double waitS = AbortConfirmS)
     {
-        if (now < _abortUntil)
+        if (now < _abortUntil && _confirmKey == key)
         {
             _abortUntil = double.NegativeInfinity;
             act();
             return;
         }
-        (_abortUntil, _asking) = (now + AbortConfirmS, question);
+        (_abortUntil, _asking, _confirmKey) = (now + waitS, question, key);
     }
+
+    // TurnConfirmS is how long a first r waits for the second: longer than
+    // x x's, as its question takes a while to read (owner, 2026-10-20: a
+    // second r after reading it only asked again).
+    public const double TurnConfirmS = 6;
+
+    const string RunInHint = "no way back along the course from the run-in: turn round once you're on the lap";
+
+    // TurnKey is r during a course ride: r again turns round onto the
+    // course's other way, untimed until a timing line (owner, 2026-10-20:
+    // r r, as x x, since the ride so far no longer counts; tui/turn.go).
+    void TurnKey(double now, Ride r)
+    {
+        if (OtherWay(r, _courses) == null)
+        {
+            Say("this course can't be ridden the other way");
+            return;
+        }
+        if (OnRunIn(r))
+        {
+            Say(RunInHint);
+            return;
+        }
+        Confirm(now, "r", "press r again to turn round (this ride won't count; timed again from the next line)",
+            () => Run("turn round", () => _cmds.TurnAround()), TurnConfirmS);
+    }
+
+    // ReverseSuffix ends a reversed course's ID (course.ReverseSuffix).
+    const string ReverseSuffix = "-reverse";
+
+    // OtherWay is the course that rides r's the other way: its reverse, or
+    // the forward course of a reverse; null when the course list has none.
+    // Without the list, the core has the last word.
+    public static string? OtherWay(Ride r, IList<Course>? courses)
+    {
+        string id = r.CourseId;
+        string other = id.EndsWith(ReverseSuffix, StringComparison.Ordinal) ? id[..^ReverseSuffix.Length] : id + ReverseSuffix;
+        if (courses == null)
+            return other;
+        foreach (var c in courses)
+            if (c.Id == other)
+                return other;
+        return null;
+    }
+
+    // TurnHelp is r r's line in the key map; none on a test track.
+    static List<(string, string)> TurnHelp(Ride r, IList<Course>? courses) => OtherWay(r, courses) == null
+        ? new()
+        : new() { ("r r", OnRunIn(r) ? "turn round, once you're on the lap (none from the run-in)" : "turn round: on along the course the other way, untimed until its next timing line") };
+
+    // OnRunIn: on a lapped course's run-in out, which the other way has no
+    // way back along: no turning round there.
+    public static bool OnRunIn(Ride r) => r.Loop && r.LapLengthM > 0 && r.DistanceM < r.LapStartM;
 
     // Run sends a command; a failure shows as a notice.
     void Run(string what, Func<Task> call)
@@ -238,13 +319,14 @@ public sealed partial class Controller
     }
 
     // HelpFor is the key map for what is on now (tui/help.go).
-    public static (string, List<(string, string)>) HelpFor(State? st)
+    public static (string, List<(string, string)>) HelpFor(State? st, IList<Course>? courses = null)
     {
         var r = st?.Ride;
         var w = st?.Workout;
         var common = new List<(string, string)>
         {
             ("o", "arrange the tiles and strips of this screen"), ("z", "digit size: large or medium"),
+            ("t", "the graph of power and heart rate over the ride: show or hide"),
             ("v", "the view: from the rider's eyes, or from behind the rider"),
             ("? h F1", "this help (any key closes it)"), ("q", "the menu (pauses what is under way); quit from there"),
         };
@@ -265,7 +347,7 @@ public sealed partial class Controller
             {
                 ("+ / -", $"trainer difficulty in 10 % steps (now {r.DifficultyPct:F0} %)"),
                 ("x x", r.Loop ? "end the ride (each lap is kept; your best lap is the ghost)" : "abort the ride (still recorded; only a finished ride counts as a ghost)"),
-            }, Concat(pause, common)));
+            }, Concat(TurnHelp(r, courses), Concat(pause, common))));
         if (r?.Phase is RidePhase.Finished or RidePhase.Aborted || w?.Phase is WorkoutPhase.Finished or WorkoutPhase.Aborted)
             return ("RESULT", Concat(new() { ("x  enter", "close") }, common));
         if (st?.Control?.Mode is ControlMode.Power or ControlMode.Grade or ControlMode.Level)

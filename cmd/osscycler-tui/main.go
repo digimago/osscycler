@@ -172,6 +172,11 @@ func (c commands) StopRide(ctx context.Context) error {
 	return err
 }
 
+func (c commands) TurnAround(ctx context.Context) (string, error) {
+	resp, err := c.c.TurnAround(ctx, &pb.TurnAroundRequest{})
+	return resp.GetCourseId(), err
+}
+
 func (c commands) SetDifficulty(ctx context.Context, pct float64) (float64, error) {
 	resp, err := c.c.SetDifficulty(ctx, &pb.SetDifficultyRequest{DifficultyPct: pct})
 	return resp.GetDifficultyPct(), err
@@ -252,9 +257,28 @@ func defaultExportDir() string {
 	return home
 }
 
-func (c commands) SetProfile(ctx context.Context, weightKg, ftpW, heightCm *float64) (*pb.RiderProfile, error) {
-	resp, err := c.c.SetProfile(ctx, &pb.SetProfileRequest{WeightKg: weightKg, FtpW: ftpW, HeightCm: heightCm})
+func (c commands) SetSimulated(ctx context.Context, on bool) error {
+	_, err := c.c.SetSimulated(ctx, &pb.SetSimulatedRequest{Simulated: on})
+	return err
+}
+
+func (c commands) SetProfile(ctx context.Context, weightKg, ftpW, heightCm, maxHR *float64) (*pb.RiderProfile, error) {
+	resp, err := c.c.SetProfile(ctx, &pb.SetProfileRequest{WeightKg: weightKg, FtpW: ftpW, HeightCm: heightCm, MaxHrBpm: maxHR})
 	return resp.GetProfile(), err
+}
+
+func (c commands) ActivityHistory(ctx context.Context, name string, since uint32) (*pb.GetActivityHistoryResponse, error) {
+	return c.c.GetActivityHistory(ctx, &pb.GetActivityHistoryRequest{Name: name, SinceS: since})
+}
+
+func (c commands) ActivitySummary(ctx context.Context, name string) (*pb.ActivitySummary, error) {
+	resp, err := c.c.GetActivitySummary(ctx, &pb.GetActivitySummaryRequest{Name: name})
+	return resp.GetSummary(), err
+}
+
+func (c commands) RideSummary(ctx context.Context) (*pb.ActivitySummary, error) {
+	resp, err := c.c.GetActivitySummary(ctx, &pb.GetActivitySummaryRequest{LastRide: true})
+	return resp.GetSummary(), err
 }
 
 func (c commands) ListResults(ctx context.Context) ([]*pb.RideResult, error) {

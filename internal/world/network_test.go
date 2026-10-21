@@ -69,7 +69,7 @@ func TestRoadsFromTheMap(t *testing.T) {
 	if network != 2 || routeBuilt != 0 {
 		t.Fatalf("%d map roads and %d built along the route, want 2 and 0", network, routeBuilt)
 	}
-	ps := networkPatches(n.lines, ways)
+	ps := networkPatches(n.lines, ways, 0)
 	if len(ps) != 1 || !inPoly(ps[0].poly, e0, 500) || !inPoly(ps[0].poly, e0+5, 500) {
 		t.Fatalf("junctions %+v, want one at the crossing", ps)
 	}
@@ -325,7 +325,7 @@ func TestJunctionCoversRoadsJoining(t *testing.T) {
 	}
 	main := line([2]float64{0, 0}, [2]float64{0, 200}, 100)
 	join := line([2]float64{10, 0}, [2]float64{0, 100}, math.Hypot(10, 100))
-	ps := networkPatches([]*roadLine{main, join}, nil)
+	ps := networkPatches([]*roadLine{main, join}, nil, 0)
 	if len(ps) != 1 {
 		t.Fatalf("%d junctions, want 1", len(ps))
 	}
@@ -554,7 +554,7 @@ func TestJunctionCutsRoadsAlongsideAbreast(t *testing.T) {
 	service := line([2]float64{-200, -7}, [2]float64{26, -7}, 2.5, map[int64]float64{3: 205, 4: 220})
 	side := line([2]float64{5, -7}, [2]float64{5, -100}, 2.5, map[int64]float64{3: 0})
 	link := line([2]float64{20, 0}, [2]float64{20, -7}, 2.5, map[int64]float64{2: 0, 4: 7})
-	ps := networkPatches([]*roadLine{main, service, side, link}, nil)
+	ps := networkPatches([]*roadLine{main, service, side, link}, nil, 0)
 	var j *patch
 	for k := range ps {
 		if inPoly(ps[k].poly, 5, -7) {
@@ -567,6 +567,55 @@ func TestJunctionCutsRoadsAlongsideAbreast(t *testing.T) {
 	for e := -2.5; e <= 15; e += 2.5 {
 		if !inPoly(j.poly, e, -4) {
 			t.Errorf("at e %.1f the strip between the roads is not on the junction", e)
+		}
+	}
+}
+
+// The rider never changes onto a road metres below the one they are on
+// (Amsterdam Water Supply Dunes at 10.0 km: the course was matched to the
+// beach access road 8 m below the boulevard at Zandvoort, and the rider
+// dropped 7.5 m in 5 m onto it and climbed back up). Here the course is
+// matched to a road in a cutting 12 m beside the main road it rides,
+// joining it 60 m before and after.
+func TestRiderNeverDropsOntoARoadBelow(t *testing.T) {
+	var pts []course.Point
+	for i := range 101 {
+		pts = append(pts, course.Point{Lat: 52 + float64(i)*10/111195, Lon: 5, Ele: 16})
+	}
+	c, err := course.New("cut", "Cutting", pts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ground := func(lat, lon float64) (float64, bool) {
+		// Below the boulevard to the east, rising to it at 600-660 m.
+		e, n := c.Project(lat, lon)
+		if e < 2 {
+			return 16, true
+		}
+		return 16 - 8*math.Min(1, math.Max(0, (660-n)/60)), true
+	}
+	ways := []scenery.Way{
+		// One-way the other way, as the boulevard there: the course takes
+		// the road down where it can.
+		{Line: [][2]float64{{0, 1060}, {0, 660}, {0, -60}}, Nodes: []int64{2, 6, 1}, Name: "Boulevard", Class: "tertiary", WidthM: 7, Oneway: 1},
+		// From the beach below, alongside, up to the boulevard: it meets
+		// the boulevard only at its north end.
+		{Line: [][2]float64{{60, 380}, {12, 400}, {12, 600}, {0, 660}}, Nodes: []int64{7, 3, 4, 6}, Name: "Strandafgang", Class: "service", WidthM: 4},
+	}
+	on := make([]int, 201)
+	for i := range on {
+		if d := float64(i) * 5; d >= 400 && d <= 660 {
+			on[i] = 1
+		}
+	}
+	w, err := Build(c, Options{Generator: "test", Elevation: ground, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	xyz := w.Manifest.Path.XYZ
+	for i := 1; 3*i < len(xyz); i++ {
+		if dz := math.Abs(xyz[3*i+1] - xyz[3*i-2]); dz > 2 {
+			t.Fatalf("at %.0f m the rider's height steps %.1f m in one %.0f m step", float64(i)*pathStep, dz, pathStep)
 		}
 	}
 }

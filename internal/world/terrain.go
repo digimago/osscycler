@@ -12,6 +12,13 @@ import (
 
 // terrain shapes the ground in square chunks along the route.
 type terrain struct {
+	// walls are the retaining walls' footprints (e, n), from the face's
+	// foot to the coping's back: no grass grows there (the ground map's
+	// clearance).
+	walls [][][2]float64
+	// exact are the water areas drawn from their own outline (waters.go):
+	// the cells leave their water out.
+	exact        map[int]bool
 	o            Options
 	c            *course.Course
 	fine, coarse []sample
@@ -42,6 +49,10 @@ type terrain struct {
 	// once the roads are final.
 	lodOf   *lod
 	lodOnce sync.Once
+	// landAt, when set, is the land's height anywhere (the graph builder's
+	// land, graph_terrain.go): what surface.at and surface.ground give,
+	// in place of this terrain's grid.
+	landAt func(e, n float64) float64
 }
 
 // lod is the grid's level of detail.
@@ -141,7 +152,7 @@ func (t *terrain) chunk(key [2]int, material, waterMaterial int) (ground, water 
 		nx, ny, nz := -dhde, 1.0, dhdn
 		ln := math.Sqrt(nx*nx + ny*ny + nz*nz)
 		p.Normals = append(p.Normals, float32(nx/ln), float32(ny/ln), float32(nz/ln))
-		c := landColors[land[hj*side+hi]]
+		c := styleFor(t.o.Region).landColour(land[hj*side+hi])
 		p.Colors = append(p.Colors, c[0], c[1], c[2])
 		return v
 	}
@@ -197,7 +208,7 @@ func (t *terrain) chunk(key [2]int, material, waterMaterial int) (ground, water 
 		for i := range n {
 			id := -1
 			for _, k := range [4]int{(j+1)*side + i + 1, (j+1)*side + i + 2, (j+2)*side + i + 1, (j+2)*side + i + 2} {
-				if land[k] == scenery.LandWater && waterID[k] >= 0 {
+				if land[k] == scenery.LandWater && waterID[k] >= 0 && !t.exact[waterID[k]] {
 					id = waterID[k]
 					break
 				}
@@ -249,7 +260,15 @@ func (t *terrain) vertex(e, n float64, segs []int, near []sample) (float64, scen
 	if rn.d < rn.edge+verge {
 		land = verdure
 	}
-	if land == scenery.LandWater && (rn.d >= rn.flat || t.cut && rn.d >= rn.edge) {
+	switch {
+	case land == scenery.LandWater && t.exact[id]:
+		// Water drawn from its outline has a bed of its own and the land
+		// under it is cut away: the land stands just over the level, so the
+		// cells across its shore meet the water at or above it (lowered, they
+		// sloped under it at the outline, and from the road the eye looked
+		// under the water's edge: owner, 2026-10-11, 0.3-1.4 km of a new course).
+		h = math.Max(h, t.cover.level(t, id, e, n)+exactShoreM)
+	case land == scenery.LandWater && (rn.d >= rn.flat || t.cut && rn.d >= rn.edge):
 		h = math.Min(h, t.cover.level(t, id, e, n)-bedM)
 	}
 	return h, land, id
@@ -499,8 +518,11 @@ func (t *terrain) roadGap(e, n float64, _ []int, skip int) float64 {
 // left): its carriageway, and its sidewalk there or its reach over to a
 // road alongside.
 func sideEdge(s sample, side int) float64 {
+	if s.terrace[side] > 0 {
+		return s.terrace[side] // the terrace's slab (terrace.go) is the road's edge there
+	}
 	if s.walk[side] {
-		return s.hw + walkM
+		return s.hw + s.walkWidth(side)
 	}
 	return s.hw + s.wide[side]
 }
@@ -515,7 +537,10 @@ func (t *terrain) markAloft(ls []*roadLine) {
 			s := &l.samples[i]
 			var near []sample
 			g.within(s.e, s.n, 400, func(k int) { near = append(near, t.coarse[k]) })
-			if z, ok := t.model(s.e, s.n, near); ok && math.Abs(z-s.ele) > bridgeM {
+			// Above the model: a bridge. Below it: a cutting, a tunnel, an
+			// underpass (the course's own way under a viaduct, graph builder,
+			// 2026-10-12: taken for a deck, it got a slab and the land over it).
+			if z, ok := t.model(s.e, s.n, near); ok && s.ele-z > bridgeM {
 				s.aloft = true
 			}
 		}

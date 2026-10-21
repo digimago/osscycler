@@ -53,3 +53,26 @@ func TestAPausedRideIsMarkedInTheResults(t *testing.T) {
 		t.Errorf("the result of a paused ride isn't marked: %+v", rs[0])
 	}
 }
+
+// A simulated rider is never recorded: no activity opens for it, and one
+// already open waits, its timer stopped, as when parked.
+func TestSimulatedRiderIsNotRecorded(t *testing.T) {
+	r := newRecorder(t)
+	sim := func(int) telemetry.State {
+		st := state(200, 90, 8)
+		st.Simulated = true
+		return st
+	}
+	play(r, []step{{60, sim}})
+	if r.a != nil {
+		t.Fatal("an activity opened for the simulated rider")
+	}
+	r2 := newRecorder(t)
+	play(r2, []step{{30, func(int) telemetry.State { return state(200, 90, 8) }}, {400, sim}})
+	if r2.a == nil || r2.a.running {
+		t.Fatalf("the activity under way: %v (want it open, its timer stopped)", r2.a)
+	}
+	if got := r2.a.session.timer; got > 31*time.Second {
+		t.Errorf("timer %v: the simulated minutes counted", got)
+	}
+}

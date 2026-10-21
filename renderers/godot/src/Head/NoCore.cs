@@ -12,7 +12,9 @@ public sealed class NoCore : ICommands
     static Task None() => Task.FromException(new InvalidOperationException("no core (start the renderer with --core)"));
 
     public Task StopRide() => None();
+    public Task<string> TurnAround() => Task.FromException<string>(new InvalidOperationException("no core (start the renderer with --core)"));
     public Task SetPaused(bool paused) => None();
+    public Task SetSimulated(bool on) => None();
     public Task SetDifficulty(double pct) => None();
     public Task StopWorkout() => None();
     public Task SkipSegment() => None();
@@ -30,10 +32,14 @@ public sealed class NoCore : ICommands
     public Task SetGrade(double pct) => None();
     public Task SetLevel(double pct) => None();
     public Task ReleaseControl() => None();
-    public Task<RiderProfile> SetProfile(double? weightKg, double? ftpW, double? heightCm) => Task.FromException<RiderProfile>(new InvalidOperationException("no core"));
+    public Task<RiderProfile> SetProfile(double? weightKg, double? ftpW, double? heightCm, double? maxHrBpm) => Task.FromException<RiderProfile>(new InvalidOperationException("no core"));
     public Task<RiderProfile> SetView(string view) => Task.FromException<RiderProfile>(new InvalidOperationException("no core"));
+    public Task<RiderProfile> SetChoice(string name, string value) => Task.FromException<RiderProfile>(new InvalidOperationException("no core"));
     public Task<string> EndActivity(bool discard) => Task.FromException<string>(new InvalidOperationException("no core"));
     public Task StartCalibration() => None();
     public Task CancelCalibration() => None();
     public Task<string> SaveActivity(string name) => Task.FromException<string>(new InvalidOperationException("no core"));
+    public Task<GetActivityHistoryResponse> ActivityHistory(string name, uint since) => Task.FromException<GetActivityHistoryResponse>(new InvalidOperationException("no core"));
+    public Task<ActivitySummary> ActivitySummary(string name) => Task.FromException<ActivitySummary>(new InvalidOperationException("no core"));
+    public Task<ActivitySummary> RideSummary() => Task.FromException<ActivitySummary>(new InvalidOperationException("no core"));
 }

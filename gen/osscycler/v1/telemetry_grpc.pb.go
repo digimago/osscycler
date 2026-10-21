@@ -25,6 +25,7 @@ const (
 	TelemetryService_ListCourses_FullMethodName           = "/osscycler.v1.TelemetryService/ListCourses"
 	TelemetryService_StartRide_FullMethodName             = "/osscycler.v1.TelemetryService/StartRide"
 	TelemetryService_StopRide_FullMethodName              = "/osscycler.v1.TelemetryService/StopRide"
+	TelemetryService_TurnAround_FullMethodName            = "/osscycler.v1.TelemetryService/TurnAround"
 	TelemetryService_SetDifficulty_FullMethodName         = "/osscycler.v1.TelemetryService/SetDifficulty"
 	TelemetryService_ListWorkouts_FullMethodName          = "/osscycler.v1.TelemetryService/ListWorkouts"
 	TelemetryService_SaveWorkout_FullMethodName           = "/osscycler.v1.TelemetryService/SaveWorkout"
@@ -38,10 +39,13 @@ const (
 	TelemetryService_SetProfile_FullMethodName            = "/osscycler.v1.TelemetryService/SetProfile"
 	TelemetryService_ListActivities_FullMethodName        = "/osscycler.v1.TelemetryService/ListActivities"
 	TelemetryService_ExportActivity_FullMethodName        = "/osscycler.v1.TelemetryService/ExportActivity"
+	TelemetryService_GetActivityHistory_FullMethodName    = "/osscycler.v1.TelemetryService/GetActivityHistory"
+	TelemetryService_GetActivitySummary_FullMethodName    = "/osscycler.v1.TelemetryService/GetActivitySummary"
 	TelemetryService_GetCourseFile_FullMethodName         = "/osscycler.v1.TelemetryService/GetCourseFile"
 	TelemetryService_SetTrainerControl_FullMethodName     = "/osscycler.v1.TelemetryService/SetTrainerControl"
 	TelemetryService_ReleaseTrainerControl_FullMethodName = "/osscycler.v1.TelemetryService/ReleaseTrainerControl"
 	TelemetryService_SetPaused_FullMethodName             = "/osscycler.v1.TelemetryService/SetPaused"
+	TelemetryService_SetSimulated_FullMethodName          = "/osscycler.v1.TelemetryService/SetSimulated"
 	TelemetryService_Announce_FullMethodName              = "/osscycler.v1.TelemetryService/Announce"
 )
 
@@ -73,6 +77,16 @@ type TelemetryServiceClient interface {
 	StartRide(ctx context.Context, in *StartRideRequest, opts ...grpc.CallOption) (*StartRideResponse, error)
 	// StopRide aborts a ride under way, or dismisses a finished one.
 	StopRide(ctx context.Context, in *StopRideRequest, opts ...grpc.CallOption) (*StopRideResponse, error)
+	// TurnAround turns the rider round during a course ride (owner,
+	// 2026-10-20): the ride so far ends without a result, and the rider
+	// rides on from the same spot along the course's other way (its
+	// reverse, or the forward course of a reverse), untimed until a timing
+	// line: a lap's line starts a timed lap; a one-way course's finish ends
+	// the ride, not timed. FAILED_PRECONDITION without a course ride under
+	// way, on a course with no other way, or on a lapped course's run-in
+	// out, where the other way has no way back to the start (turn round
+	// once on the lap).
+	TurnAround(ctx context.Context, in *TurnAroundRequest, opts ...grpc.CallOption) (*TurnAroundResponse, error)
 	// SetDifficulty sets the share of climbs the trainer applies, 0-100 %,
 	// clamped. It applies to the ride under way and the ones after it.
 	SetDifficulty(ctx context.Context, in *SetDifficultyRequest, opts ...grpc.CallOption) (*SetDifficultyResponse, error)
@@ -116,6 +130,15 @@ type TelemetryServiceClient interface {
 	// another machine can save it: the first message carries the size,
 	// then chunks follow in order. Unknown names are NOT_FOUND.
 	ExportActivity(ctx context.Context, in *ExportActivityRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ExportActivityResponse], error)
+	// An activity's samples, one a second of riding time, for a graph of
+	// power and heart rate: the activity being recorded (name empty) or a
+	// finished one. NOT_FOUND for an unknown name, FAILED_PRECONDITION when
+	// no activity is being recorded.
+	GetActivityHistory(ctx context.Context, in *GetActivityHistoryRequest, opts ...grpc.CallOption) (*GetActivityHistoryResponse, error)
+	// What an activity took: averages, the best power over set durations
+	// and the time in each power and heart rate zone. Errors as
+	// GetActivityHistory.
+	GetActivitySummary(ctx context.Context, in *GetActivitySummaryRequest, opts ...grpc.CallOption) (*GetActivitySummaryResponse, error)
 	// GetCourseFile returns a course's GPX file, so a client can build the
 	// course's 3D world where it draws it (the core, perhaps a Pi by the
 	// trainer, builds none). Built-in tracks and included routes have no
@@ -137,6 +160,11 @@ type TelemetryServiceClient interface {
 	// that was paused keeps its riding time but is never a personal best or
 	// a ghost. Starting a ride, a workout or manual control carries on.
 	SetPaused(ctx context.Context, in *SetPausedRequest, opts ...grpc.CallOption) (*SetPausedResponse, error)
+	// SetSimulated puts a simulated rider in place of the trainer and the
+	// heart rate strap, or takes it away (State.simulated): for riding on
+	// without the hardware at hand. Nothing is recorded meanwhile.
+	// UNIMPLEMENTED for a core without a stick to stand in for (-fake).
+	SetSimulated(ctx context.Context, in *SetSimulatedRequest, opts ...grpc.CallOption) (*SetSimulatedResponse, error)
 	// Announce puts a short message on every screen for a while (State.
 	// announcement): a script running a session, a coach on another screen.
 	// Empty text takes the current one off.
@@ -214,6 +242,16 @@ func (c *telemetryServiceClient) StopRide(ctx context.Context, in *StopRideReque
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(StopRideResponse)
 	err := c.cc.Invoke(ctx, TelemetryService_StopRide_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *telemetryServiceClient) TurnAround(ctx context.Context, in *TurnAroundRequest, opts ...grpc.CallOption) (*TurnAroundResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TurnAroundResponse)
+	err := c.cc.Invoke(ctx, TelemetryService_TurnAround_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -359,6 +397,26 @@ func (c *telemetryServiceClient) ExportActivity(ctx context.Context, in *ExportA
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type TelemetryService_ExportActivityClient = grpc.ServerStreamingClient[ExportActivityResponse]
 
+func (c *telemetryServiceClient) GetActivityHistory(ctx context.Context, in *GetActivityHistoryRequest, opts ...grpc.CallOption) (*GetActivityHistoryResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetActivityHistoryResponse)
+	err := c.cc.Invoke(ctx, TelemetryService_GetActivityHistory_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *telemetryServiceClient) GetActivitySummary(ctx context.Context, in *GetActivitySummaryRequest, opts ...grpc.CallOption) (*GetActivitySummaryResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetActivitySummaryResponse)
+	err := c.cc.Invoke(ctx, TelemetryService_GetActivitySummary_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *telemetryServiceClient) GetCourseFile(ctx context.Context, in *GetCourseFileRequest, opts ...grpc.CallOption) (*GetCourseFileResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetCourseFileResponse)
@@ -393,6 +451,16 @@ func (c *telemetryServiceClient) SetPaused(ctx context.Context, in *SetPausedReq
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SetPausedResponse)
 	err := c.cc.Invoke(ctx, TelemetryService_SetPaused_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *telemetryServiceClient) SetSimulated(ctx context.Context, in *SetSimulatedRequest, opts ...grpc.CallOption) (*SetSimulatedResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetSimulatedResponse)
+	err := c.cc.Invoke(ctx, TelemetryService_SetSimulated_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -437,6 +505,16 @@ type TelemetryServiceServer interface {
 	StartRide(context.Context, *StartRideRequest) (*StartRideResponse, error)
 	// StopRide aborts a ride under way, or dismisses a finished one.
 	StopRide(context.Context, *StopRideRequest) (*StopRideResponse, error)
+	// TurnAround turns the rider round during a course ride (owner,
+	// 2026-10-20): the ride so far ends without a result, and the rider
+	// rides on from the same spot along the course's other way (its
+	// reverse, or the forward course of a reverse), untimed until a timing
+	// line: a lap's line starts a timed lap; a one-way course's finish ends
+	// the ride, not timed. FAILED_PRECONDITION without a course ride under
+	// way, on a course with no other way, or on a lapped course's run-in
+	// out, where the other way has no way back to the start (turn round
+	// once on the lap).
+	TurnAround(context.Context, *TurnAroundRequest) (*TurnAroundResponse, error)
 	// SetDifficulty sets the share of climbs the trainer applies, 0-100 %,
 	// clamped. It applies to the ride under way and the ones after it.
 	SetDifficulty(context.Context, *SetDifficultyRequest) (*SetDifficultyResponse, error)
@@ -480,6 +558,15 @@ type TelemetryServiceServer interface {
 	// another machine can save it: the first message carries the size,
 	// then chunks follow in order. Unknown names are NOT_FOUND.
 	ExportActivity(*ExportActivityRequest, grpc.ServerStreamingServer[ExportActivityResponse]) error
+	// An activity's samples, one a second of riding time, for a graph of
+	// power and heart rate: the activity being recorded (name empty) or a
+	// finished one. NOT_FOUND for an unknown name, FAILED_PRECONDITION when
+	// no activity is being recorded.
+	GetActivityHistory(context.Context, *GetActivityHistoryRequest) (*GetActivityHistoryResponse, error)
+	// What an activity took: averages, the best power over set durations
+	// and the time in each power and heart rate zone. Errors as
+	// GetActivityHistory.
+	GetActivitySummary(context.Context, *GetActivitySummaryRequest) (*GetActivitySummaryResponse, error)
 	// GetCourseFile returns a course's GPX file, so a client can build the
 	// course's 3D world where it draws it (the core, perhaps a Pi by the
 	// trainer, builds none). Built-in tracks and included routes have no
@@ -501,6 +588,11 @@ type TelemetryServiceServer interface {
 	// that was paused keeps its riding time but is never a personal best or
 	// a ghost. Starting a ride, a workout or manual control carries on.
 	SetPaused(context.Context, *SetPausedRequest) (*SetPausedResponse, error)
+	// SetSimulated puts a simulated rider in place of the trainer and the
+	// heart rate strap, or takes it away (State.simulated): for riding on
+	// without the hardware at hand. Nothing is recorded meanwhile.
+	// UNIMPLEMENTED for a core without a stick to stand in for (-fake).
+	SetSimulated(context.Context, *SetSimulatedRequest) (*SetSimulatedResponse, error)
 	// Announce puts a short message on every screen for a while (State.
 	// announcement): a script running a session, a coach on another screen.
 	// Empty text takes the current one off.
@@ -532,6 +624,9 @@ func (UnimplementedTelemetryServiceServer) StartRide(context.Context, *StartRide
 }
 func (UnimplementedTelemetryServiceServer) StopRide(context.Context, *StopRideRequest) (*StopRideResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method StopRide not implemented")
+}
+func (UnimplementedTelemetryServiceServer) TurnAround(context.Context, *TurnAroundRequest) (*TurnAroundResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method TurnAround not implemented")
 }
 func (UnimplementedTelemetryServiceServer) SetDifficulty(context.Context, *SetDifficultyRequest) (*SetDifficultyResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetDifficulty not implemented")
@@ -572,6 +667,12 @@ func (UnimplementedTelemetryServiceServer) ListActivities(context.Context, *List
 func (UnimplementedTelemetryServiceServer) ExportActivity(*ExportActivityRequest, grpc.ServerStreamingServer[ExportActivityResponse]) error {
 	return status.Error(codes.Unimplemented, "method ExportActivity not implemented")
 }
+func (UnimplementedTelemetryServiceServer) GetActivityHistory(context.Context, *GetActivityHistoryRequest) (*GetActivityHistoryResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetActivityHistory not implemented")
+}
+func (UnimplementedTelemetryServiceServer) GetActivitySummary(context.Context, *GetActivitySummaryRequest) (*GetActivitySummaryResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetActivitySummary not implemented")
+}
 func (UnimplementedTelemetryServiceServer) GetCourseFile(context.Context, *GetCourseFileRequest) (*GetCourseFileResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetCourseFile not implemented")
 }
@@ -583,6 +684,9 @@ func (UnimplementedTelemetryServiceServer) ReleaseTrainerControl(context.Context
 }
 func (UnimplementedTelemetryServiceServer) SetPaused(context.Context, *SetPausedRequest) (*SetPausedResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetPaused not implemented")
+}
+func (UnimplementedTelemetryServiceServer) SetSimulated(context.Context, *SetSimulatedRequest) (*SetSimulatedResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetSimulated not implemented")
 }
 func (UnimplementedTelemetryServiceServer) Announce(context.Context, *AnnounceRequest) (*AnnounceResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Announce not implemented")
@@ -705,6 +809,24 @@ func _TelemetryService_StopRide_Handler(srv interface{}, ctx context.Context, de
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(TelemetryServiceServer).StopRide(ctx, req.(*StopRideRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _TelemetryService_TurnAround_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TurnAroundRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TelemetryServiceServer).TurnAround(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TelemetryService_TurnAround_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TelemetryServiceServer).TurnAround(ctx, req.(*TurnAroundRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -936,6 +1058,42 @@ func _TelemetryService_ExportActivity_Handler(srv interface{}, stream grpc.Serve
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type TelemetryService_ExportActivityServer = grpc.ServerStreamingServer[ExportActivityResponse]
 
+func _TelemetryService_GetActivityHistory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetActivityHistoryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TelemetryServiceServer).GetActivityHistory(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TelemetryService_GetActivityHistory_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TelemetryServiceServer).GetActivityHistory(ctx, req.(*GetActivityHistoryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _TelemetryService_GetActivitySummary_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetActivitySummaryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TelemetryServiceServer).GetActivitySummary(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TelemetryService_GetActivitySummary_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TelemetryServiceServer).GetActivitySummary(ctx, req.(*GetActivitySummaryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _TelemetryService_GetCourseFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetCourseFileRequest)
 	if err := dec(in); err != nil {
@@ -1008,6 +1166,24 @@ func _TelemetryService_SetPaused_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _TelemetryService_SetSimulated_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetSimulatedRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TelemetryServiceServer).SetSimulated(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TelemetryService_SetSimulated_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TelemetryServiceServer).SetSimulated(ctx, req.(*SetSimulatedRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _TelemetryService_Announce_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(AnnounceRequest)
 	if err := dec(in); err != nil {
@@ -1052,6 +1228,10 @@ var TelemetryService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "StopRide",
 			Handler:    _TelemetryService_StopRide_Handler,
+		},
+		{
+			MethodName: "TurnAround",
+			Handler:    _TelemetryService_TurnAround_Handler,
 		},
 		{
 			MethodName: "SetDifficulty",
@@ -1102,6 +1282,14 @@ var TelemetryService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _TelemetryService_ListActivities_Handler,
 		},
 		{
+			MethodName: "GetActivityHistory",
+			Handler:    _TelemetryService_GetActivityHistory_Handler,
+		},
+		{
+			MethodName: "GetActivitySummary",
+			Handler:    _TelemetryService_GetActivitySummary_Handler,
+		},
+		{
 			MethodName: "GetCourseFile",
 			Handler:    _TelemetryService_GetCourseFile_Handler,
 		},
@@ -1116,6 +1304,10 @@ var TelemetryService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetPaused",
 			Handler:    _TelemetryService_SetPaused_Handler,
+		},
+		{
+			MethodName: "SetSimulated",
+			Handler:    _TelemetryService_SetSimulated_Handler,
 		},
 		{
 			MethodName: "Announce",

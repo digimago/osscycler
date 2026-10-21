@@ -51,10 +51,14 @@ if [[ ${WITH_3D:-} == 1 ]]; then
 	cat renderers/godot/fonts/OFL.txt
 fi
 
-section "Data in the ready-built worlds"
+section "Data in the included routes and the ready-built worlds"
 cat <<'DATA'
 Map data © OpenStreetMap contributors, available under the Open Database
 License (ODbL) 1.0: https://www.openstreetmap.org/copyright
 Heights: Actueel Hoogtebestand Nederland (AHN), CC0 1.0.
 The Posbank Loop route follows OpenStreetMap roads (ODbL).
+The La Bresse – Hohneck loop route follows OpenStreetMap roads (ODbL); its
+heights are from IGN, RGE ALTI® (retrieved October 2026), under the
+Licence Ouverte / Open Licence 2.0 (Etalab):
+https://www.etalab.gouv.fr/licence-ouverte-open-licence/
 DATA

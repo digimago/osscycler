@@ -57,6 +57,10 @@ type Parking struct {
 	// (course.Project), the first point not repeated.
 	Outline [][2]float64
 	Surface Surface
+	// Apron: a paved area mapped as a highway (area=yes: a junction's
+	// apron, a turning area), a surface the roads through it keep running
+	// over, rather than a car park whose aisles are its own.
+	Apron bool
 }
 
 // PlaceSign is a place-name sign where the route enters a built-up area
@@ -128,6 +132,9 @@ func roadsOf(c *course.Course, d *Data) []*road {
 		case "motorway", "trunk", "primary", "secondary", "tertiary", "unclassified", "residential", "living_street", "service", "road":
 		default:
 			continue
+		}
+		if yes(el.Tags["area"]) {
+			continue // a paved area, not a road along its outline: a car park to the world (parking)
 		}
 		r := &road{id: el.ID, nodes: el.Nodes, name: el.Tags["name"], class: class, widthM: roadWidth(class, el.Tags), tags: el.Tags}
 		// Motorways never meet a ride on the level: they are fetched for
@@ -541,16 +548,25 @@ func parkings(c *course.Course, d *Data, r []routePt, roads []*road, east, north
 	var entrances []Junction
 	for _, el := range d.Elements {
 		t := el.Tags
-		if t["amenity"] != "parking" {
+		// A paved area mapped as a highway (highway=* area=yes: a
+		// junction's apron, a turning area, the Hohneck col's apron at
+		// 16.1 km of the Route des Américains) is a car park to the world:
+		// a paved surface the land is laid round, not a road along its
+		// outline (drawn as one, its ring put snow poles in a cluster
+		// across the junction).
+		apron := t["highway"] != "" && yes(t["area"])
+		if t["amenity"] != "parking" && !apron {
 			continue
 		}
-		switch t["parking"] {
-		case "street_side", "lane", "on_street", "layby", "underground", "multi-storey", "rooftop", "sheds", "carports", "garage_boxes":
-			continue
-		}
-		switch t["access"] {
-		case "private", "no", "customers", "permit", "delivery", "residents":
-			continue
+		if !apron {
+			switch t["parking"] {
+			case "street_side", "lane", "on_street", "layby", "underground", "multi-storey", "rooftop", "sheds", "carports", "garage_boxes":
+				continue
+			}
+			switch t["access"] {
+			case "private", "no", "customers", "permit", "delivery", "residents":
+				continue
+			}
 		}
 		ring := el.Geometry
 		if el.Type == "relation" {
@@ -575,7 +591,7 @@ func parkings(c *course.Course, d *Data, r []routePt, roads []*road, east, north
 			cx, cy = cx+xs[i]/float64(len(xs)), cy+ys[i]/float64(len(xs))
 		}
 		area = math.Abs(area) / 2
-		if area < parkingMinM2 {
+		if area < parkingMinM2 && !apron {
 			continue
 		}
 		nearest := math.Inf(1)
@@ -602,7 +618,7 @@ func parkings(c *course.Course, d *Data, r []routePt, roads []*road, east, north
 			off = math.Copysign(buildingClearM+depth/2, off)
 		}
 		lot := Parking{DistanceM: float64(i)*c.Spacing + (a0+a1)/2, OffsetM: off, LengthM: a1 - a0, DepthM: depth, Name: t["name"],
-			Surface: surfaceOf(t["surface"], "")}
+			Surface: surfaceOf(t["surface"], ""), Apron: apron}
 		for k := range xs {
 			if k == len(xs)-1 && xs[k] == xs[0] && ys[k] == ys[0] {
 				break // the ring's closing point

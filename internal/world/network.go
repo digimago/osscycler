@@ -44,6 +44,63 @@ type chainPoint struct {
 	reversed bool
 }
 
+// trimLinesInLots takes the roads' samples inside a car park or a paved
+// area (scenery.Parking) out of the network: the car park is the surface
+// there, its aisles and a road's last metres inside it are no roads to
+// draw or to match the course onto (owner, 2026-10-17: the Hohneck's
+// summit car park, a loop ridden in it; matched onto the service way
+// through it, the loop came out as a hairpin on that line). A line is
+// cut into its pieces outside the lots; pieces shorter than minLineM go.
+// Not inside an apron (a paved junction area): its roads run on over it.
+func trimLinesInLots(ls []*roadLine, lots []scenery.Parking) []*roadLine {
+	if len(lots) == 0 {
+		return ls
+	}
+	inLot := func(e, n float64) bool {
+		for _, lot := range lots {
+			if !lot.Apron && inPoly(lot.Outline, e, n) {
+				return true
+			}
+		}
+		return false
+	}
+	var out []*roadLine
+	for _, l := range ls {
+		if l.route {
+			out = append(out, l)
+			continue
+		}
+		var piece []sample
+		cutBefore := false // the piece starts at a lot
+		flush := func(cutAfter bool) {
+			if len(piece) >= 2 && (piece[len(piece)-1].d-piece[0].d >= minLineM || len(piece) == len(l.samples)) {
+				c := *l
+				c.samples = piece
+				// Its ends at a lot (owner, 2026-10-18, the Hohneck's
+				// summit car park at 17.52 km: the road stood 6-9 cm over
+				// the car park where it entered it, its end open, and from
+				// the car park one looked under the road).
+				c.samples[0].lotEnd = cutBefore
+				c.samples[len(c.samples)-1].lotEnd = cutAfter
+				out = append(out, &c)
+			}
+			piece = nil
+		}
+		for _, s := range l.samples {
+			if inLot(s.e, s.n) {
+				if len(piece) > 0 {
+					flush(true)
+				}
+				cutBefore = true
+				continue
+			}
+			piece = append(piece, s)
+		}
+		flush(false)
+	}
+	return out
+}
+
 // drawable says whether way k is drawn: motorways (viaducts and tunnels
 // come later), driveways, and tunnels the route doesn't ride are left
 // out. Bridges are drawn, on decks (bridges.go).
@@ -163,7 +220,12 @@ func networkLines(ws []scenery.Way, ridden map[int]bool, near func(e, n float64)
 	// rider crossed the grass under it, 1.62 km into a course).
 	touch := map[int64]int{}
 	for k, w := range ws {
-		if len(w.Line) >= 2 && len(w.Nodes) == len(w.Line) && drawable(w, ridden[k]) {
+		// A roundabout's ring counts: it isn't drawn as a road (the
+		// roundabout draws itself), but a short link onto it links (owner,
+		// 2026-10-11: a residential street's two short links onto the
+		// roundabout on the polder ride, 10.2 km, were left out, and the road
+		// stopped short of the ring with grass between).
+		if len(w.Line) >= 2 && len(w.Nodes) == len(w.Line) && (drawable(w, ridden[k]) || w.Roundabout) {
 			for _, n := range w.Nodes {
 				touch[n]++
 			}
@@ -287,7 +349,10 @@ func (g *routeGrid) within(e, n, r float64, f func(i int)) {
 	for gx := cx - 1; gx <= cx+1; gx++ {
 		for gy := cy - 1; gy <= cy+1; gy++ {
 			for _, i := range g.cells[[2]int{gx, gy}] {
-				if math.Hypot(g.fine[i].e-e, g.fine[i].n-n) <= r {
+				// The squared distance rules most out cheaply; the
+				// hypotenuse decides, as before, so nothing moves.
+				de, dn := g.fine[i].e-e, g.fine[i].n-n
+				if de*de+dn*dn <= r*r*1.001 && math.Hypot(de, dn) <= r {
 					f(i)
 				}
 			}
@@ -302,6 +367,13 @@ func (g *routeGrid) within(e, n, r float64, f func(i int)) {
 // bridge spans straight between its ends (the ground model has the river
 // under it). Without a ground model the ground is the route's profile.
 func heights(l *roadLine, t *terrain, ws []scenery.Way) {
+	heightsStraight(l, t, ws, func(w scenery.Way) bool { return w.Bridge }, false)
+}
+
+// heightsStraight is heights with the ways straight sets spanning straight
+// from end to end (heights: bridges; the graph builder: tunnels too, which
+// keep low under what lies over them).
+func heightsStraight(l *roadLine, t *terrain, ws []scenery.Way, straight func(scenery.Way) bool, byDistance bool) {
 	ss := l.samples
 	base := make([]float64, len(ss))
 	lists := map[[2]int]chunkLists{}
@@ -316,7 +388,7 @@ func heights(l *roadLine, t *terrain, ws []scenery.Way) {
 	}
 	// Bridges first, on the raw ground: straight from end to end (the
 	// smoothing would pull their ends down into what they cross).
-	bridge := func(i int) bool { return ss[i].way >= 0 && ss[i].way < len(ws) && ws[ss[i].way].Bridge }
+	bridge := func(i int) bool { return ss[i].way >= 0 && ss[i].way < len(ws) && straight(ws[ss[i].way]) }
 	for i := 0; i < len(ss); {
 		if !bridge(i) {
 			i++
@@ -333,11 +405,45 @@ func heights(l *roadLine, t *terrain, ws []scenery.Way) {
 		}
 		i = j
 	}
+	if byDistance {
+		smoothByDistance(ss, base)
+		return
+	}
 	span := max(1, int(math.Round(heightSpanM/fineStep)))
 	for i := range ss {
 		var b, bw float64
 		for k := max(0, i-span); k <= min(len(ss)-1, i+span); k++ {
 			wt := float64(span + 1 - abs(k-i))
+			b += wt * base[k]
+			bw += wt
+		}
+		ss[i].ele = b / bw
+	}
+}
+
+// smoothByDistance sets each sample's height to base smoothed over
+// heightSpanM each way along the road, a triangle in metres, each sample
+// weighed by the stretch it stands for. Samples aren't evenly spaced
+// (finishRoad adds them through bends and at cuts): counted in samples,
+// the smoothing shrank to a few metres where they crowd, and a short lane
+// climbing beside the Rue du Hohneck (owner, 2026-10-16, 1.34 km of the
+// Route des Américains) kept the ground model's wall as a 40 % ramp.
+func smoothByDistance(ss []sample, base []float64) {
+	n := len(ss)
+	w := make([]float64, n) // the stretch each sample stands for
+	for i := range ss {
+		lo, hi := ss[max(0, i-1)].d, ss[min(n-1, i+1)].d
+		w[i] = math.Max((hi-lo)/2, 1e-3)
+	}
+	r := heightSpanM + fineStep
+	a := 0
+	for i := range ss {
+		for a < i && ss[i].d-ss[a].d >= r {
+			a++
+		}
+		var b, bw float64
+		for k := a; k < n && ss[k].d-ss[i].d < r; k++ {
+			wt := w[k] * (r - math.Abs(ss[k].d-ss[i].d))
 			b += wt * base[k]
 			bw += wt
 		}
@@ -391,7 +497,7 @@ func routeLines(c *course.Course, line *smoothLine, roads []scenery.RoadStretch,
 // at a node other than where a road simply goes on. A patch takes the
 // surface of its main road: the highest class (ws: the map's ways), then
 // the widest.
-func networkPatches(ls []*roadLine, ws []scenery.Way) []patch {
+func networkPatches(ls []*roadLine, ws []scenery.Way, levelM float64) []patch {
 	type inc = patchInc
 	at := map[int64][]inc{}
 	for _, l := range ls {
@@ -414,6 +520,21 @@ func networkPatches(ls []*roadLine, ws []scenery.Way) []patch {
 		nodes = append(nodes, n)
 	}
 	sort.Slice(nodes, func(i, j int) bool { return nodes[i] < nodes[j] })
+	// Where along each line the junctions are.
+	junctionsOn := map[*roadLine][]float64{}
+	for _, node := range nodes {
+		is := at[node]
+		count := 0
+		for _, i := range is {
+			count += 1 + boolInt(i.middle)
+		}
+		if count < 2 || len(is) < 2 {
+			continue
+		}
+		for _, i := range is {
+			junctionsOn[i.l] = append(junctionsOn[i.l], i.at)
+		}
+	}
 	for _, node := range nodes {
 		is := at[node]
 		count := 0
@@ -440,7 +561,22 @@ func networkPatches(ls []*roadLine, ws []scenery.Way) []patch {
 		}
 		p := patch{arms: arms, surface: surface, rank: mainRank}
 		for k, i := range is {
-			lo, hi := overlapReach(is[k].l, i.at, -1, widest+apronAlongM, is, k), overlapReach(is[k].l, i.at, 1, widest+apronAlongM, is, k)
+			// Along roads side by side the junction reaches on, but not up
+			// to the next junction on the road: that one is a junction of
+			// its own (owner, 2026-10-11: a carriageway split's junction
+			// reached up to the side street crossing on the polder ride, 10.4 km,
+			// merged with it, and its outline paved a triangle of verge).
+			stop := func(dir float64) float64 {
+				lim := mergeReachM
+				for _, n := range junctionsOn[i.l] {
+					if d := (n - i.at) * dir; d > 1 && d-(widest+apronAlongM) < lim {
+						lim = math.Max(widest+apronAlongM, d-(widest+apronAlongM)-fineStep)
+					}
+				}
+				return lim
+			}
+			lo := math.Min(overlapReach(is[k].l, i.at, -1, widest+apronAlongM, is, k, levelM), stop(-1))
+			hi := math.Min(overlapReach(is[k].l, i.at, 1, widest+apronAlongM, is, k, levelM), stop(1))
 			first, last := i.l.samples[0].d, i.l.samples[len(i.l.samples)-1].d
 			p.spans = append(p.spans, patchSpan{i.l, math.Max(first, i.at-lo), math.Min(last, i.at+hi), i.at, i.at, i.at})
 		}
@@ -449,18 +585,24 @@ func networkPatches(ls []*roadLine, ws []scenery.Way) []patch {
 		p.nodes = [][2]float64{p.node}
 		out = append(out, p)
 	}
-	ps := mergePatches(out)
-	for changed := true; changed; {
+	ps := mergePatchesApart(out, true)
+	// abreast reaches spans out and merging keeps junctions a street apart
+	// as two by trimming them back: they can undo each other, so a few
+	// rounds at most.
+	for round, changed := 0, true; changed && round < abreastRounds; round++ {
 		changed = false
 		for k := range ps {
-			changed = abreast(&ps[k]) || changed
+			changed = abreast(&ps[k], levelM) || changed
 		}
 		if changed {
-			ps = mergePatches(ps)
+			ps = mergePatchesApart(ps, true)
 		}
 	}
 	return shapePatches(ps)
 }
+
+// abreastRounds bounds the rounds of abreast and merging in networkPatches.
+const abreastRounds = 8
 
 // abreast cuts roads of one junction that run alongside each other abreast
 // (owner, 2026-10-10: at 3.0 km on the Velp loop a service road's junction
@@ -469,8 +611,10 @@ func networkPatches(ls []*roadLine, ws []scenery.Way) []patch {
 // ground between two road surfaces): where one road's cut (with its reach
 // over to the other, joinAlongside's) lies within mergeGapM of another's
 // edge, that road's span reaches out to it, so the
-// junction's outline spans the strip between them. True if it changed p.
-func abreast(p *patch) bool {
+// junction's outline spans the strip between them. With levelM over 0,
+// not to a road more than levelM above or below (a level of its own,
+// behind a wall). True if it changed p.
+func abreast(p *patch, levelM float64) bool {
 	const reachM = 30.0 // a span grows at most this far
 	changed := false
 	for i := range p.spans {
@@ -486,6 +630,9 @@ func abreast(p *patch) bool {
 				d, off, hw := lineNearest(b.l, e.e, e.n)
 				first, last := b.l.samples[0].d, b.l.samples[len(b.l.samples)-1].d
 				if off >= e.hw+math.Max(e.wide[0], e.wide[1])+hw+mergeGapM || d <= first+0.5 || d >= last-0.5 {
+					continue
+				}
+				if levelM > 0 && math.Abs(sampleBetween(b.l, d).ele-e.ele) >= levelM {
 					continue
 				}
 				be, bn, _ := b.l.smooth.heading(d)
@@ -520,8 +667,11 @@ const (
 // overlapReach is how far from the junction, one way (dir) along a
 // road, the patch reaches: at least base, and on while the road still
 // overlaps another road meeting there (two carriageways joining, a
-// slip road), so where they overlap they are one surface.
-func overlapReach(l *roadLine, at, dir, base float64, is []patchInc, self int) float64 {
+// slip road), so where they overlap they are one surface. With levelM
+// over 0, only on while the two are within levelM in height: a road
+// beside another a step higher is a level of its own, behind a wall
+// (the style's junctionLevelM).
+func overlapReach(l *roadLine, at, dir, base float64, is []patchInc, self int, levelM float64) float64 {
 	reach := base
 	for d := base; d <= mergeReachM; d += fineStep {
 		s := sampleAt(l, at+dir*d)
@@ -534,7 +684,7 @@ func overlapReach(l *roadLine, at, dir, base float64, is []patchInc, self int) f
 				continue
 			}
 			for _, t := range o.l.samples {
-				if math.Abs(t.d-o.at) <= mergeReachM+20 && math.Hypot(t.e-s.e, t.n-s.n) < s.hw+t.hw+mergeGapM {
+				if math.Abs(t.d-o.at) <= mergeReachM+20 && math.Hypot(t.e-s.e, t.n-s.n) < s.hw+t.hw+mergeGapM && (levelM <= 0 || math.Abs(t.ele-s.ele) < levelM) {
 					over = true
 					break
 				}
@@ -622,6 +772,14 @@ func newNetwork(c *course.Course, o Options, line *smoothLine, route []sample, t
 		n.lines = networkLines(sc.Ways, ridden, near)
 		for _, l := range n.lines {
 			finishRoad(l.samples, o.CellM)
+			heights(l, t, sc.Ways)
+		}
+		joinHeights(n.lines)
+		// After the heights (smoothed over the whole road, so a road's end
+		// at a car park's edge keeps its grade), the roads inside car parks
+		// are taken out: the car park is the surface there.
+		n.lines = trimLinesInLots(n.lines, sc.Parking)
+		for _, l := range n.lines {
 			for i, s := range l.samples {
 				drawn[s.way] = true
 				n.byWay[s.way] = append(n.byWay[s.way], sampleRef{l, i})
@@ -630,10 +788,6 @@ func newNetwork(c *course.Course, o Options, line *smoothLine, route []sample, t
 		course := courseRoads(route, mapOn, drawn, n.lines, sc.Ways)
 		fineD := c.Distance / float64(len(route)-1)
 		n.on = func(d float64) int { return course[max(0, min(int(math.Round(d/fineD)), len(course)-1))] }
-		for _, l := range n.lines {
-			heights(l, t, sc.Ways)
-		}
-		joinHeights(n.lines)
 	}
 	if !hasWays {
 		// No map roads: the road is the route's, as it always was.
@@ -699,10 +853,64 @@ func (n *network) openRuns(d, x, y []float64, rbs []roundabout) ([]float64, bool
 			grid[k] = append(grid[k], sampleRef{l, i})
 		}
 	}
+	// Where drawn roads meet, a junction is drawn later: a path across its
+	// corner is on it, not on open ground (owner, 2026-10-11: a route
+	// cutting a junction's corner got a road of its own laid over the
+	// corner, under the junction's sidewalk and onto the grass, and the
+	// rider rode the sidewalk). A point counts within the widest road
+	// there plus apronAlongM of a node two or more lines share.
+	type joint struct{ e, n, r float64 }
+	var joints []joint
+	{
+		seen := map[int64][]sample{}
+		var ids []int64
+		for _, l := range n.lines {
+			for id, ds := range l.nodes {
+				for _, dd := range ds {
+					if dd < l.samples[0].d-0.5 || dd > l.samples[len(l.samples)-1].d+0.5 {
+						continue
+					}
+					if _, ok := seen[id]; !ok {
+						ids = append(ids, id)
+					}
+					seen[id] = append(seen[id], sampleAt(l, dd))
+				}
+			}
+		}
+		sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+		for _, id := range ids {
+			ss := seen[id]
+			if len(ss) < 2 {
+				continue
+			}
+			widest := 0.0
+			for _, sm := range ss {
+				widest = math.Max(widest, sm.hw)
+			}
+			joints = append(joints, joint{ss[0].e, ss[0].n, widest + apronAlongM})
+		}
+	}
+	jgrid := map[[2]int][]joint{}
+	for _, j := range joints {
+		k := key(j.e, j.n)
+		jgrid[k] = append(jgrid[k], j)
+	}
 	on := func(e, no float64) bool {
 		for _, rb := range rbs {
 			if math.Hypot(e-rb.c[0], no-rb.c[1]) < rb.outer()+gapRbM {
 				return true
+			}
+		}
+		{
+			k := key(e, no)
+			for gx := k[0] - 2; gx <= k[0]+2; gx++ {
+				for gy := k[1] - 2; gy <= k[1]+2; gy++ {
+					for _, j := range jgrid[[2]int{gx, gy}] {
+						if math.Hypot(e-j.e, no-j.n) < j.r {
+							return true
+						}
+					}
+				}
 			}
 		}
 		k := key(e, no)
@@ -1705,6 +1913,15 @@ func (n *network) path() (d, x, y, z, w, onRoadF []float64) {
 				t := math.Abs(gap-step) * 2
 				if cd.line != pc.line || cd.road != pc.road {
 					t += 4 // a change of road
+					// Onto a road metres above or below: roads that meet
+					// share their node's height (joinHeights), so this is
+					// one passing over or under the other, never a turn
+					// (owner, 2026-10-10: at Zandvoort the rider dropped
+					// 7.5 m in 5 m onto the beach access road below the
+					// boulevard and climbed back up it).
+					if math.Abs(cd.ele-pc.ele) > maxStepUpM+maxStepGrade*step {
+						t += unridableCost
+					}
 				}
 				if v := acc[i-1][k] + t; v < bestCost {
 					bestCost, bestK = v, k
@@ -1780,6 +1997,16 @@ func (n *network) ownHeight(d, e, no float64) float64 {
 // lies this close to it (a cycle path beside it is further than the road's
 // own wobble).
 const snapM = sidepathM + 5
+
+// A change of road between two path points climbs or drops at most
+// maxStepUpM plus maxStepGrade of a step along the course (not of the hop
+// sideways, which can be tens of metres onto a road below); more costs
+// unridableCost (not forbidden, so the match always has a way through).
+const (
+	maxStepUpM    = 0.5
+	maxStepGrade  = 0.25
+	unridableCost = 1000.0
+)
 
 // wrongWayCost: a one-way road against the route's direction costs more
 // than the bonus for the course's road and any offset within parallelM.
@@ -1986,6 +2213,17 @@ func evenPace(x, y, z, w, lane []float64, loop bool) {
 // the map road there. Runs shorter than coveredMinSamples either way are
 // smoothed out, so a way isn't cut into slivers.
 func dropCovered(ls []*roadLine, rbs []roundabout) []*roadLine {
+	return dropCoveredStubs(ls, rbs, stubM, false, nil)
+}
+
+// dropCoveredStubs is dropCovered with stubs shorter than stub dropped (0:
+// none), and with keepEnds the covered stretches at a way's ends kept: the
+// graph builder keeps both, as the course rides them, and its own ways
+// meet the roads they join there (dropped, they stopped a metre short of
+// the road with grass between). over, when given, says that map sample a
+// passes over the route's sample s (a bridge well above it) and so
+// doesn't cover it.
+func dropCoveredStubs(ls []*roadLine, rbs []roundabout, stub float64, keepEnds bool, over func(a, s sample) bool) []*roadLine {
 	const cellM = 10.0
 	type ref struct{ l, i int }
 	grid := map[[2]int][]ref{}
@@ -2030,7 +2268,11 @@ func dropCovered(ls []*roadLine, rbs []roundabout) []*roadLine {
 						if l2 := de*de + dn*dn; l2 > 0 {
 							f = math.Max(0, math.Min(1, ((s.e-a.e)*de+(s.n-a.n)*dn)/l2))
 						}
-						if math.Hypot(s.e-a.e-f*de, s.n-a.n-f*dn) < a.hw+0.5*s.hw {
+						slack := 0.5 * s.hw
+						if keepEnds && !alongside(ss, i, de, dn) {
+							slack = 0
+						}
+						if math.Hypot(s.e-a.e-f*de, s.n-a.n-f*dn) < a.hw+slack && (over == nil || !over(a, s)) {
 							covered[i] = true
 							break
 						}
@@ -2038,7 +2280,22 @@ func dropCovered(ls []*roadLine, rbs []roundabout) []*roadLine {
 				}
 			}
 		}
-		flipShortRuns(covered, coveredMinSamples)
+		if keepEnds {
+			// A short stretch between two roads the way crosses (the
+			// median of a dual road) keeps its way: handed to the roads, it
+			// was grass under the rider (the Dunes course at 15.27 km).
+			flipShortRunsOf(covered, coveredMinSamples, true)
+		} else {
+			flipShortRuns(covered, coveredMinSamples)
+		}
+		if keepEnds {
+			for i := 0; i < len(covered) && covered[i]; i++ {
+				covered[i] = false
+			}
+			for i := len(covered) - 1; i >= 0 && covered[i]; i-- {
+				covered[i] = false
+			}
+		}
 		any := false
 		for _, c := range covered {
 			any = any || c
@@ -2055,14 +2312,23 @@ func dropCovered(ls []*roadLine, rbs []roundabout) []*roadLine {
 			// A short stub between covered stretches (a few metres of cycle
 			// path from a roundabout to the road beside it) would only make
 			// slivers: the rider keeps to the roads there.
-			stub := i > 0 && j < len(ss) && ss[j-1].d-ss[i].d < stubM
-			if !covered[i] && j-i >= 2 && !stub {
+			isStub := i > 0 && j < len(ss) && ss[j-1].d-ss[i].d < stub
+			if !covered[i] && j-i >= 2 && !isStub {
 				out = append(out, &roadLine{samples: append([]sample(nil), ss[i:j]...), smooth: l.smooth, route: true, ways: l.ways})
 			}
 			i = j
 		}
 	}
 	return out
+}
+
+// alongside tells whether the map road's direction de, dn runs along the
+// route's own way at sample i (within about 45°) rather than across it.
+func alongside(ss []sample, i int, de, dn float64) bool {
+	a, b := ss[max(0, i-1)], ss[min(len(ss)-1, i+1)]
+	re, rn := b.e-a.e, b.n-a.n
+	l := math.Hypot(re, rn) * math.Hypot(de, dn)
+	return l == 0 || math.Abs(re*de+rn*dn)/l > math.Sqrt2/2
 }
 
 // stubM: a stretch of the route's own way shorter than this between
@@ -2090,6 +2356,23 @@ func flipShortRuns(b []bool, min int) {
 	}
 }
 
+// flipShortRunsOf flips the runs of value v shorter than min samples that
+// lie between runs of the other value, leaving the other value's alone.
+func flipShortRunsOf(b []bool, min int, v bool) {
+	for i := 0; i < len(b); {
+		j := i
+		for j < len(b) && b[j] == b[i] {
+			j++
+		}
+		if b[i] == v && i > 0 && j < len(b) && j-i < min {
+			for k := i; k < j; k++ {
+				b[k] = !b[k]
+			}
+		}
+		i = j
+	}
+}
+
 // joinAlongside makes one surface of two map roads running alongside with
 // less than mergeGapM between their edges (owner, 2026-10-09: a dual road
 // whose carriageways the map draws apart, as the Beekhuizenseweg up to the
@@ -2100,7 +2383,10 @@ func flipShortRuns(b []bool, min int) {
 // and where they don't touch it reaches over to the other's edge on that
 // side, unless it has a sidewalk there. Further apart, the strip between
 // them is verge. Junctions merge roads near their nodes the same way.
-func joinAlongside(ls []*roadLine, cell float64) {
+// With levelM over 0, roads more than levelM apart in height stay two
+// (a lane a step above the road beside it, behind a wall: the style's
+// junctionLevelM).
+func joinAlongside(ls []*roadLine, cell, levelM float64) {
 	const cellM = 10.0
 	type ref struct{ l, i int }
 	grid := map[[2]int][]ref{}
@@ -2129,6 +2415,12 @@ func joinAlongside(ls []*roadLine, cell float64) {
 		ss := l.samples
 		target := make([]float64, len(ss))
 		joined := make([]bool, len(ss))
+		// apart: a road within mergeGapM on that side, but a level of its
+		// own: the join's taper stops short of it (the taper had reached
+		// partway over to a road a step higher, a sliver with nothing drawn
+		// between the two; the terrace or the bank between them is the
+		// land's, terrace.go and bankBetween).
+		apart := make([][2]bool, len(ss))
 		for i := range ss {
 			s := &ss[i]
 			de, dn := dir(ss, i)
@@ -2150,18 +2442,27 @@ func joinAlongside(ls []*roadLine, cell float64) {
 						f := math.Max(0, math.Min(1, ((s.e-a.e)*ae+(s.n-a.n)*an)/(al*al)))
 						pe, pn := a.e+f*ae, a.n+f*an
 						gap := math.Hypot(s.e-pe, s.n-pn) - s.hw - (a.hw + f*(b.hw-a.hw))
-						if gap < bestGap {
-							side := 1 // right of the way this road runs
-							if de*(pn-s.n)-dn*(pe-s.e) > 0 {
-								side = 0
+						side := 1 // right of the way this road runs
+						if de*(pn-s.n)-dn*(pe-s.e) > 0 {
+							side = 0
+						}
+						if levelM > 0 && math.Abs(a.ele+f*(b.ele-a.ele)-s.ele) > levelM {
+							if gap < mergeGapM {
+								apart[i][side] = true
 							}
+							continue // a level of its own
+						}
+						if gap < bestGap {
 							bestGap, bestEle, bestSide, bestLine = gap, a.ele+f*(b.ele-a.ele), side, r.l
 						}
 					}
 				}
 			}
-			if bestLine < 0 || bestGap >= mergeGapM {
-				continue
+			if bestLine < 0 || bestGap >= mergeGapM || apart[i][bestSide] {
+				continue // (apart: a level candidate a sample behind, found across the diagonal)
+			}
+			if !s.walk[bestSide] {
+				s.butt[bestSide] = true
 			}
 			if bestGap > 0 && !s.walk[bestSide] {
 				s.wide[bestSide] = bestGap + 0.1 // just under the other's edge
@@ -2180,7 +2481,7 @@ func joinAlongside(ls []*roadLine, cell float64) {
 				w[i] = ss[i].wide[side]
 			}
 			for i := range ss {
-				if ss[i].walk[side] {
+				if ss[i].walk[side] || apart[i][side] {
 					continue
 				}
 				best := w[i]
@@ -2232,3 +2533,82 @@ const joinEaseSamples = 5
 // joinTaperM: where roads alongside part, the reach over to the other
 // narrows this much a sample (2 m).
 const joinTaperM = 0.3
+
+// deepSkirtMaxM: an edge's skirt goes down at most this far to a lower
+// road beside it (higher is a retaining wall's); never under a deck.
+const deepSkirtMaxM = 3.0
+
+// deepSkirts sets each road edge's skirt down past a lower road lying
+// just beyond it (within 1 m of the edge): two roads a level apart, side
+// by side, met edge to edge with only the higher one's 0.3 m skirt
+// between them, and one looked into the gap under it (owner,
+// 2026-10-18, 19.05 km of the Hohneck loop: the Chemin de Schmargult
+// dropping away beside the Route des Crêtes, a slit under the shoulder).
+func deepSkirts(ls []*roadLine) {
+	type ref struct{ l, i int }
+	const cellM = 10.0
+	grid := map[[2]int][]ref{}
+	key := func(e, n float64) [2]int { return [2]int{int(math.Floor(e / cellM)), int(math.Floor(n / cellM))} }
+	for li, l := range ls {
+		for i := range l.samples {
+			grid[key(l.samples[i].e, l.samples[i].n)] = append(grid[key(l.samples[i].e, l.samples[i].n)], ref{li, i})
+		}
+	}
+	// lowest is the lowest road surface (other than line self) at e, n,
+	// and whether there is one.
+	lowest := func(self int, e, n float64) (float64, bool) {
+		k := key(e, n)
+		best, found := math.Inf(1), false
+		for gx := k[0] - 1; gx <= k[0]+1; gx++ {
+			for gy := k[1] - 1; gy <= k[1]+1; gy++ {
+				for _, r := range grid[[2]int{gx, gy}] {
+					ss := ls[r.l].samples
+					if r.l == self || r.i+1 >= len(ss) || ss[r.i].again {
+						continue
+					}
+					a, b := ss[r.i], ss[r.i+1]
+					de, dn := b.e-a.e, b.n-a.n
+					l2 := de*de + dn*dn
+					if l2 == 0 {
+						continue
+					}
+					f := math.Max(0, math.Min(1, ((e-a.e)*de+(n-a.n)*dn)/l2))
+					if math.Hypot(e-a.e-f*de, n-a.n-f*dn) <= a.hw+f*(b.hw-a.hw)+math.Max(a.wide[0], a.wide[1]) {
+						if h := a.ele + f*(b.ele-a.ele); h < best {
+							best, found = h, true
+						}
+					}
+				}
+			}
+		}
+		return best, found
+	}
+	for li, l := range ls {
+		ss := l.samples
+		for i := range ss {
+			s := &ss[i]
+			if s.aloft || s.again {
+				continue // a deck stays open beneath (the N348 over the cycle tunnel, 26.78 km of the Posbank Loop)
+			}
+			a, b := ss[max(0, i-1)], ss[min(len(ss)-1, i+1)]
+			de, dn := b.e-a.e, b.n-a.n
+			d := math.Hypot(de, dn)
+			if d == 0 {
+				continue
+			}
+			rx, rn := dn/d, -de/d
+			for side, sign := range []float64{-1, 1} {
+				if s.walk[side] || s.butt[side] {
+					continue
+				}
+				edge := s.hw + s.wide[side]
+				for _, off := range []float64{0.3, 1} {
+					e, n := s.e+sign*rx*(edge+off), s.n+sign*rn*(edge+off)
+					if h, ok := lowest(li, e, n); ok && s.ele-h > skirtM-0.1 {
+						s.skirt[side] = math.Max(s.skirt[side], math.Min(deepSkirtMaxM, s.ele-h+0.15))
+					}
+				}
+			}
+		}
+	}
+}

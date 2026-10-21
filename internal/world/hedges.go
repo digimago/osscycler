@@ -2,6 +2,7 @@ package world
 
 import (
 	"math"
+	"sort"
 
 	"github.com/digimago/osscycler/internal/gltf"
 	"github.com/digimago/osscycler/internal/scenery"
@@ -25,6 +26,10 @@ type hedgeKind struct {
 	bump         float64 // how irregular the clipped faces are
 	colour       uint32
 	mottle, dark float64 // colour variation; shade at the foot (light gets in less)
+	// region: the style whose worlds have it ("" every world); wall: a
+	// low garden wall with a railing rather than a clipped hedge.
+	region string
+	wall   bool
 }
 
 var hedgeKinds = []hedgeKind{
@@ -32,6 +37,15 @@ var hedgeKinds = []hedgeKind{
 	hHornbeamTall: {name: "hedge tall", drawM: 350, h: 1.8, base: 0.42, top: 0.32, shoulder: 0.1, bump: 0.03, colour: 0x587c34, mottle: 0.2, dark: 0.65},
 	hConifer:      {name: "hedge conifer", drawM: 350, h: 1.9, base: 0.45, top: 0.3, shoulder: 0.2, bump: 0.02, colour: 0x37542c, mottle: 0.12, dark: 0.75},
 	hIvy:          {name: "hedge ivy", drawM: 350, h: 1.7, base: 0.2, top: 0.18, shoulder: 0.04, bump: 0.045, colour: 0x2b4621, mottle: 0.3, dark: 0.8},
+	// A French front garden's (owner's shot of the Rue Paul Claudel): a
+	// rendered wall 0.6 m with a coping, a white railing to 1.2 m.
+	hWall: {name: "garden wall", drawM: 250, h: 1.2, colour: 0xd6d0c2, region: RegionFR, wall: true},
+	// Its pillars (at its ends, its steps and either side of a gate) and
+	// its gate, a white steel one between two pillars (owner, 2026-10-16,
+	// La Bresse: walls along the whole property, a column at either end,
+	// some with a gate between two).
+	hPillar: {name: "garden pillar", drawM: 250, h: 1.4, colour: 0xd6d0c2, region: RegionFR, wall: true},
+	hGate:   {name: "garden gate", drawM: 250, h: 1.2, colour: 0xeceae4, region: RegionFR, wall: true},
 }
 
 const (
@@ -39,6 +53,10 @@ const (
 	hHornbeamTall
 	hConifer
 	hIvy
+	hWall
+	hPillar
+	hGate
+	hedgeKindCount
 )
 
 const (
@@ -51,18 +69,32 @@ const (
 	// Front gardens: plots this long along the road, each its own hedge
 	// or none, where a building stands within gardenDepthM behind the
 	// hedge line.
-	gardenPlotM  = 11.0
-	gardenDepthM = 25.0
+	gardenPlotM = 11.0
+	// gardenWallDepthM: a garden wall only where the house stands within
+	// this behind it.
+	gardenWallDepthM = 10.0
+	gardenDepthM     = 25.0
 )
 
 // gardenMix: the share of front-garden plots with each kind of hedge;
 // the rest have none (an open lawn, a fence, a wall).
-var gardenMix = [...]float64{hHornbeam: 0.3, hHornbeamTall: 0.12, hConifer: 0.14, hIvy: 0.08}
+var gardenMix = [hedgeKindCount]float64{hHornbeam: 0.3, hHornbeamTall: 0.12, hConifer: 0.14, hIvy: 0.08}
 
 // hedgeTemplate is a segment of clipped hedge along x, standing on y = 0
 // (its foot 0.2 m into the ground), irregular as clipped hedges are, light
 // on top and darker towards the foot.
 func hedgeTemplate(p *gltf.Primitive, k hedgeKind) {
+	switch {
+	case k.wall && k.name == "garden pillar":
+		gardenPillarTemplate(p, k)
+		return
+	case k.wall && k.name == "garden gate":
+		gardenGateTemplate(p, k)
+		return
+	case k.wall:
+		gardenWallTemplate(p, k)
+		return
+	}
 	mid := (k.base + k.top) / 2
 	// The cross-section, z across and y up, from one foot over the top to
 	// the other.
@@ -154,6 +186,7 @@ func hedgeTemplate(p *gltf.Primitive, k hedgeKind) {
 // hedges places the hedges along the roads: in the strip between two
 // roads side by side, and along front gardens in built-up land.
 func hedges(t *terrain, s *surface, sp *spots, wp *wayPlaces) []plant {
+	sty := styleFor(t.o.Region)
 	var out []plant
 	heading := func(i int) (float64, float64) {
 		a, b := t.fine[max(0, i-1)], t.fine[min(len(t.fine)-1, i+1)]
@@ -174,7 +207,7 @@ func hedges(t *terrain, s *surface, sp *spots, wp *wayPlaces) []plant {
 		// A centimetre or two between neighbours, so overlapping faces
 		// never lie in one plane.
 		scale *= 0.985 + 0.03*unit(h)
-		out = append(out, plant{kind: kHedge + kind, x: float32(e), y: float32(s.at(e, n)), z: float32(-n),
+		out = append(out, plant{kind: kHedge + kind, x: float32(e), y: float32(s.stand(e, n)), z: float32(-n),
 			s: float32(scale), yaw: float32(math.Atan2(dn, de))})
 	}
 	free := func(e, n, margin float64) bool {
@@ -187,6 +220,15 @@ func hedges(t *terrain, s *surface, sp *spots, wp *wayPlaces) []plant {
 		plot int64
 	}
 	plots := map[plotKey]int{}
+	houseOf := map[plotKey]int{}
+	// Wall plots' points, laid out per property after (propertyWalls).
+	type wallPt struct {
+		key         uint64
+		side, house int
+		along, e, n float64
+		de, dn      float64
+	}
+	var wallPts []wallPt
 
 	for i := 0; i+1 < len(t.fine); i++ {
 		a, b := t.fine[i], t.fine[i+1]
@@ -220,7 +262,7 @@ func hedges(t *terrain, s *surface, sp *spots, wp *wayPlaces) []plant {
 				}
 			}
 			if gap >= 0 {
-				if a.walk[side] {
+				if a.walk[side] || !sty.medianHedges {
 					continue // the strip is the sidewalk's verge
 				}
 				// One of the two roads plants the strip: the one whose way
@@ -261,7 +303,7 @@ func hedges(t *terrain, s *surface, sp *spots, wp *wayPlaces) []plant {
 			// verge's width off the road.
 			off := a.hw + a.wide[side] + 1.2
 			if a.walk[side] {
-				off = a.hw + a.wide[side] + walkM + 0.6
+				off = a.hw + a.wide[side] + a.walkWidth(side) + 0.6
 			}
 			for k := math.Ceil(math.Min(sa, sb) / hedgeStepM); k*hedgeStepM < math.Max(sa, sb); k++ {
 				along := k * hedgeStepM
@@ -270,26 +312,38 @@ func hedges(t *terrain, s *surface, sp *spots, wp *wayPlaces) []plant {
 				pk := plotKey{key, wside, plot}
 				kind, seen := plots[pk]
 				if !seen {
-					kind = gardenKind(hp)
+					kind = gardenKind(sty.gardens, hp)
 					if kind >= 0 {
 						// A house behind the plot's middle, on this side of
 						// any other road.
 						me, mn := at(((float64(plot)+0.5)*gardenPlotM-sa)/(sb-sa), rx, rn, off)
-						house := false
-						for r := 1.5; r <= gardenDepthM && !house; r += 1.5 {
+						house, depth := -1, 0.0
+						for r := 1.5; r <= gardenDepthM && house < 0; r += 1.5 {
 							pe, pn := me+rx*r, mn+rn*r
 							if sp.roadNear(pe, pn, 0, -1) >= 0 {
 								break
 							}
-							house = sp.inBuilding(pe, pn)
+							house, depth = sp.buildingAt(pe, pn), r
 						}
-						if !house {
+						// A wall fronts the house just behind it, not a
+						// meadow with a house far back (owner's mark at
+						// 5.34 km, 2026-10-16).
+						if house < 0 || kind == hWall && depth > gardenWallDepthM {
 							kind = -1
 						}
+						houseOf[pk] = house
 					}
 					plots[pk] = kind
 				}
 				if kind < 0 {
+					continue
+				}
+				if kind == hWall {
+					// A wall runs along the whole property; its gate is its own.
+					e, n := at((along-sa)/(sb-sa), rx, rn, off)
+					if l, _ := sp.landAt(e, n); l == scenery.LandBuilt && free(e, n, 0.4) {
+						wallPts = append(wallPts, wallPt{key, wside, houseOf[pk], along, e, n, de, dn})
+					}
 					continue
 				}
 				// Most plots have a gate or a drive at their start.
@@ -308,17 +362,179 @@ func hedges(t *terrain, s *surface, sp *spots, wp *wayPlaces) []plant {
 			}
 		}
 	}
+	// The walls, property by property: a run of points along one way's
+	// side with one house behind them.
+	sort.SliceStable(wallPts, func(i, j int) bool {
+		a, b := wallPts[i], wallPts[j]
+		if a.key != b.key {
+			return a.key < b.key
+		}
+		if a.side != b.side {
+			return a.side < b.side
+		}
+		return a.along < b.along
+	})
+	for i := 0; i < len(wallPts); {
+		j := i
+		for j+1 < len(wallPts) {
+			a, b := wallPts[j], wallPts[j+1]
+			if a.key != b.key || a.side != b.side || a.house != b.house || b.along-a.along > 1.5*hedgeStepM {
+				break
+			}
+			j++
+		}
+		run := make([]wallSpot, 0, j-i+1)
+		for _, w := range wallPts[i : j+1] {
+			run = append(run, wallSpot{e: w.e, n: w.n, de: w.de, dn: w.dn, ground: s.stand(w.e, w.n)})
+		}
+		h := splitmix(wallPts[i].key ^ uint64(wallPts[i].side)<<1 ^ uint64(int64(wallPts[i].along*10))<<2 ^ 0x3a11)
+		for _, p := range propertyWall(run, h) {
+			out = append(out, plant{kind: kHedge + p.kind, x: float32(p.e), y: float32(p.y), z: float32(-p.n), s: 1, yaw: float32(p.yaw)})
+		}
+		i = j + 1
+	}
+	return out
+}
+
+// wallSpot is a point of a property's frontage, a metre apart: where,
+// which way the road runs, the ground there.
+type wallSpot struct{ e, n, de, dn, ground float64 }
+
+// wallPiece is a placed piece of a property wall.
+type wallPiece struct {
+	kind    int // hWall, hPillar, hGate
+	e, n, y float64
+	yaw     float64
+}
+
+const (
+	wallMinM     = 3.0  // a property's frontage shorter than this has none
+	wallGateM    = 3.0  // a gate's width between its pillars
+	wallGateFrac = 0.55 // the share of properties with a gate
+	// The wall's top stays level, its base sunk into the ground or
+	// standing on a footing out of it, within these (m); past them it
+	// steps, a pillar at the step.
+	wallSinkM, wallRaiseM = 0.3, 0.6
+)
+
+// propertyWall lays a property's wall along run (a point a metre apart,
+// hedgeStepM): pillars at both ends, a gate between two pillars in some
+// (seeded h), the segments between at a level that steps where the ground
+// climbs or falls too far (owner, 2026-10-16: the walls stood as facades
+// at the ground's every slope, with no end).
+func propertyWall(run []wallSpot, h uint64) []wallPiece {
+	if float64(len(run)-1)*hedgeStepM < wallMinM {
+		return nil
+	}
+	yaw := func(i int) float64 { return math.Atan2(run[i].dn, run[i].de) }
+	var out []wallPiece
+	pillar := func(i int, y float64) {
+		out = append(out, wallPiece{hPillar, run[i].e, run[i].n, y, yaw(i)})
+	}
+	// The gate: its pillars at points g0 and g0+3, clear of the ends.
+	g0, g1 := -1, -1
+	gate := int(math.Round(wallGateM / hedgeStepM))
+	if unit(h) < wallGateFrac && len(run) >= gate+5 {
+		g0 = 2 + int(unit(h>>16)*float64(len(run)-gate-4))
+		g1 = g0 + gate
+	}
+	level := run[0].ground + 0.1
+	pillar(0, level)
+	for i := 0; i < len(run); i++ {
+		g := run[i].ground
+		if i > 0 && (level-g > wallRaiseM || g-level > wallSinkM) {
+			// A step: a pillar at the step, the next stretch at its own level.
+			level = g + 0.1
+			pillar(i, level)
+		}
+		switch {
+		case i == g0:
+			pillar(i, level)
+			mid := (g0 + g1) / 2
+			if g1 < len(run) {
+				me, mn := (run[g0].e+run[g1].e)/2, (run[g0].n+run[g1].n)/2
+				out = append(out, wallPiece{hGate, me, mn, level, yaw(mid)})
+			}
+		case i > g0 && i < g1:
+			continue // the gateway
+		case i == g1:
+			pillar(i, level)
+		}
+		if i == g0 || i+1 >= len(run) {
+			continue
+		}
+		// A segment from here to the next point (its 1.25 m overlaps the
+		// next a little).
+		out = append(out, wallPiece{hWall, (run[i].e + run[i+1].e) / 2, (run[i].n + run[i+1].n) / 2, level, yaw(i)})
+	}
+	pillar(len(run)-1, level)
 	return out
 }
 
 // gardenKind is the hedge (if any: -1) a front-garden plot seeded h has.
-func gardenKind(h uint64) int {
+func gardenKind(gardens [hedgeKindCount]float64, h uint64) int {
 	r := unit(h)
-	for k, share := range gardenMix {
+	for k, share := range gardens {
 		if r < share {
 			return k
 		}
 		r -= share
 	}
 	return -1
+}
+
+// solidBox adds a closed box (its four sides and top) of colour c.
+func solidBox(p *gltf.Primitive, xa, xb, ya, yb, za, zb float64, c [3]float32) {
+	q := func(a, b, cc, d, n [3]float64) { quad(p, a, b, cc, d, n, c) }
+	q([3]float64{xa, ya, zb}, [3]float64{xb, ya, zb}, [3]float64{xb, yb, zb}, [3]float64{xa, yb, zb}, [3]float64{0, 0, 1})
+	q([3]float64{xb, ya, za}, [3]float64{xa, ya, za}, [3]float64{xa, yb, za}, [3]float64{xb, yb, za}, [3]float64{0, 0, -1})
+	q([3]float64{xa, yb, zb}, [3]float64{xb, yb, zb}, [3]float64{xb, yb, za}, [3]float64{xa, yb, za}, [3]float64{0, 1, 0})
+	q([3]float64{xa, ya, za}, [3]float64{xa, ya, zb}, [3]float64{xa, yb, zb}, [3]float64{xa, yb, za}, [3]float64{-1, 0, 0})
+	q([3]float64{xb, ya, zb}, [3]float64{xb, ya, za}, [3]float64{xb, yb, za}, [3]float64{xb, yb, zb}, [3]float64{1, 0, 0})
+}
+
+// gardenWallTemplate is a segment of garden wall along x, hedgeSegM long
+// (neighbours overlap a little): a rendered wall 0.6 m high and 0.25
+// thick under a coping, a closed solid, its footing reaching 1 m down (it
+// stands level, so the ground falls away under it in places), and a white
+// railing on it, bars every 12 cm to a top rail at k.h.
+func gardenWallTemplate(p *gltf.Primitive, k hedgeKind) {
+	wall, cope, rail := srgbLinear(k.colour), srgbLinear(0xb8b2a6), srgbLinear(0xeceae4)
+	x0, x1 := -hedgeSegM/2, hedgeSegM/2
+	box := func(xa, xb, ya, yb, za, zb float64, c [3]float32) { solidBox(p, xa, xb, ya, yb, za, zb, c) }
+	box(x0, x1, -1.0, 0.6, -0.125, 0.125, wall)
+	box(x0, x1, 0.6, 0.66, -0.16, 0.16, cope)
+	for x := x0 + 0.06; x < x1; x += 0.12 {
+		box(x-0.01, x+0.01, 0.66, k.h, -0.01, 0.01, rail)
+	}
+	box(x0, x1, k.h-0.03, k.h, -0.025, 0.025, rail)
+	box(x0, x1, 0.74, 0.77, -0.015, 0.015, rail)
+}
+
+// gardenPillarTemplate is a wall's pillar: 0.4 m square, rendered, its
+// footing 1 m down, to 1.3 m under a cap 0.5 m across.
+func gardenPillarTemplate(p *gltf.Primitive, k hedgeKind) {
+	wall, cope := srgbLinear(k.colour), srgbLinear(0xb8b2a6)
+	solidBox(p, -0.2, 0.2, -1.0, k.h-0.1, -0.2, 0.2, wall)
+	solidBox(p, -0.25, 0.25, k.h-0.1, k.h, -0.25, 0.25, cope)
+}
+
+// gardenGateTemplate is a white steel gate between a wall's pillars, along
+// x, wallGateM between their middles: two leaves of bars every 12 cm
+// between rails, from just over the ground to k.h, its frame heavier.
+func gardenGateTemplate(p *gltf.Primitive, k hedgeKind) {
+	c := srgbLinear(k.colour)
+	half := wallGateM/2 - 0.22 // to the pillars' faces
+	for _, side := range []float64{-1, 1} {
+		xa, xb := math.Min(side*0.01, side*half), math.Max(side*0.01, side*half)
+		solidBox(p, xa, xb, 0.08, 0.13, -0.025, 0.025, c)
+		solidBox(p, xa, xb, k.h-0.05, k.h, -0.025, 0.025, c)
+		solidBox(p, xa, xb, 0.55, 0.59, -0.02, 0.02, c)
+		for _, x := range []float64{xa, xb - 0.04} {
+			solidBox(p, x, x+0.04, 0.08, k.h, -0.03, 0.03, c)
+		}
+		for x := xa + 0.12; x < xb-0.06; x += 0.12 {
+			solidBox(p, x-0.01, x+0.01, 0.13, k.h-0.05, -0.01, 0.01, c)
+		}
+	}
 }

@@ -64,6 +64,7 @@ type Session struct {
 	cfg    Config
 	run    *run
 	target *command // nil: leave the trainer alone
+	cad    cadenceAvg
 }
 
 type run struct {
@@ -110,7 +111,7 @@ func (s *Session) Start(id string) error {
 	for i := len(segs) - 1; i >= 0; i-- {
 		r.blockAt[segs[i].Block] = segs[i].Start
 	}
-	s.run = r
+	s.run, s.cad = r, cadenceAvg{}
 	s.target = s.commandAt(r)
 	s.publish(r)
 	s.log.Info("workout armed", "workout", w.Name, "duration", w.Duration().Round(time.Second), "ftp_w", s.cfg.FTPW)
@@ -220,6 +221,7 @@ func (s *Session) tick(now time.Time) {
 	if r == nil || !r.phase.Active() {
 		return
 	}
+	s.cad.add(now, float64(st.Trainer.CadenceRPM.V), st.Trainer.CadenceRPM.OK)
 	if st.Paused {
 		// The core is parked: the workout holds where it is, the trainer
 		// flat; it carries on when pedalling resumes after the pause.
@@ -319,6 +321,12 @@ func (s *Session) publish(r *run) {
 			w.TargetW = s.watts(frac)
 		}
 		w.TargetCadence = seg.Cadence
+		if rpm, ok := s.cad.value(); ok {
+			w.CadenceAvg = roundRPM(rpm)
+			if r.phase == telemetry.WorkoutRunning {
+				w.CadenceCheck = checkCadence(rpm, ok, seg.Cadence)
+			}
+		}
 		if i+1 < len(r.segs) {
 			next := r.segs[i+1]
 			w.NextLabel, w.NextFree = next.Label, next.Kind == workout.KindFree

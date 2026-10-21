@@ -13,6 +13,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+
+	pb "github.com/digimago/osscycler/gen/osscycler/v1"
 )
 
 // The rider arranges the tiles of the dashboard, the course ride and the
@@ -52,6 +54,8 @@ type Layout struct {
 	Tiles map[string][]string `json:"tiles,omitempty"`
 	// Digits is "medium" to keep the numbers medium-sized; large otherwise.
 	Digits string `json:"digits,omitempty"`
+	// Graph is "off" to hide the ride graph (t); shown otherwise.
+	Graph string `json:"graph,omitempty"`
 }
 
 // LoadLayout reads the arrangement; a missing file is the defaults.
@@ -158,10 +162,11 @@ func (m Model) tile(id string) metric {
 		return base[2]
 	case "cadence_5s":
 		var aim uint32
+		var check pb.CadenceCheck
 		if m.workoutActive() {
-			aim = p.GetTargetCadence()
+			aim, check = p.GetTargetCadence(), p.GetCadenceCheck()
 		}
-		return m.cadenceTile(aim)
+		return m.cadenceTile(aim, check)
 	case "speed":
 		if m.rideActive() {
 			return metric{"SPEED", fmt.Sprintf("%.1f", r.GetSpeedMps()*3.6), "km/h", speedStyle, nil}
@@ -171,15 +176,21 @@ func (m Model) tile(id string) metric {
 		return metric{"DISTANCE", fmt.Sprintf("%.2f", m.st.GetTrainer().GetDistanceM()/1000), "km", speedStyle, nil}
 	case "grade":
 		g := r.GetGradePct()
-		return metric{"GRADE", fmt.Sprintf("%.1f", g), "%", lipgloss.NewStyle().Foreground(gradeColor(g)), nil}
+		return metric{"GRADE", fmt.Sprintf("%.1f", g), "%", lipgloss.NewStyle().Foreground(readable(gradeColor(g))), nil}
 	case "time":
 		return m.timeTile()
 	case "to_go":
-		label := "TO GO"
+		label, togo := "TO GO", r.GetCourseDistanceM()-r.GetDistanceM()
 		if r.GetLoop() {
 			label = "LAP TO GO"
+			if r.GetLapLengthM() > 0 {
+				togo = r.GetLapLengthM() - r.GetLapDistanceM()
+				if d := r.GetLapDistanceM(); d < 0 { // on the run-in
+					label, togo = "TO THE LAP", -d
+				}
+			}
 		}
-		return metric{label, fmt.Sprintf("%.2f", math.Max(0, r.GetCourseDistanceM()-r.GetDistanceM())/1000), "km", speedStyle, nil}
+		return metric{label, fmt.Sprintf("%.2f", math.Max(0, togo)/1000), "km", speedStyle, nil}
 	case "climbed":
 		unit := fmt.Sprintf("of %.0f m", r.GetCourseGainM())
 		if r.GetLoop() {

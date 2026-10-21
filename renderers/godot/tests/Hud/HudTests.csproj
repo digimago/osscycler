@@ -6,28 +6,41 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <RootNamespace>Osscycler.Hud.Tests</RootNamespace>
+    <!-- Run on a newer .NET too: an SDK 10 alone has no 8.0 runtime. -->
+    <RollForward>Major</RollForward>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../src/Hud/Format.cs" />
+    <Compile Include="../../src/Hud/RideHistory.cs" />
     <Compile Include="../../src/Hud/Cadence.cs" />
     <Compile Include="../../src/Hud/Tiles.cs" />
     <Compile Include="../../src/Hud/Layout.cs" />
     <Compile Include="../../src/Hud/Strips.cs" />
+    <Compile Include="../../src/Hud/Minimap.cs" />
+    <Compile Include="../../src/Hud/Solar.cs" />
+    <Compile Include="../../src/Hud/Laps.cs" />
     <Compile Include="../../src/Hud/Moments.cs" />
     <Compile Include="../../src/Head/Controller.cs" />
     <Compile Include="../../src/Head/Controller.Menus.cs" />
     <Compile Include="../../src/Head/Controller.Setup.cs" />
     <Compile Include="../../src/Head/Controller.Layout.cs" />
     <Compile Include="../../src/Head/Controller.Form.cs" />
+    <Compile Include="../../src/Head/Controller.Graph.cs" />
+    <Compile Include="../../src/Head/Controller.Hardware.cs" />
     <Compile Include="../../src/Head/Controller.Pause.cs" />
     <Compile Include="../../src/Head/Controller.Quit.cs" />
     <Compile Include="../../src/Head/WorkoutForm.cs" />
     <Compile Include="../../src/Head/Marks.cs" />
     <Compile Include="../../src/Head/Cover.cs" />
     <Compile Include="../../src/Head/BuildStatus.cs" />
+    <Compile Include="../../src/Head/AheadQueue.cs" />
     <Compile Include="../../src/Head/GhostTrack.cs" />
+    <Compile Include="../../src/Head/WorldPick.cs" />
     <Compile Include="../../src/Avatar/Pose.cs" />
     <Compile Include="../../src/Plants/Bleed.cs" />
+    <Compile Include="../../src/Plants/Fields.cs" />
+    <Compile Include="../../src/ControlSocket.cs" />
+    <Compile Include="../../src/RenderScale.cs" />
     <Protobuf Include="../../../../proto/osscycler/v1/telemetry.proto" ProtoRoot="../../../../proto" GrpcServices="None" />
   </ItemGroup>
   <ItemGroup>

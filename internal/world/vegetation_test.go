@@ -8,6 +8,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/digimago/osscycler/internal/course"
 	"github.com/digimago/osscycler/internal/gltf"
 	"github.com/digimago/osscycler/internal/scenery"
 )
@@ -342,7 +343,8 @@ func TestBushesKeepTheirSpreadOffTheRoad(t *testing.T) {
 
 // By the sea trees grow low (owner, 2026-10-10: dune woods stood far too
 // tall): the same forest 300 m from the shore is seaLow of its height
-// inland, and 6 km inland it is as tall as without a coast.
+// inland, and 1.5 km inland it is as tall as without a coast (owner,
+// 2026-10-13: the inner dunes' woods are full grown).
 func TestTreesByTheSeaGrowLow(t *testing.T) {
 	if f := seaFactor(300); f != seaLow {
 		t.Errorf("300 m from the sea: %.2f", f)
@@ -350,8 +352,11 @@ func TestTreesByTheSeaGrowLow(t *testing.T) {
 	if f := seaFactor(math.Inf(1)); f != 1 {
 		t.Errorf("inland: %.2f", f)
 	}
-	if a, b := seaFactor(2000), seaFactor(4000); !(seaLow < a && a < b && b < 1) {
-		t.Errorf("not growing inland: %.2f at 2 km, %.2f at 4 km", a, b)
+	if a, b := seaFactor(600), seaFactor(1200); !(seaLow < a && a < b && b < 1) {
+		t.Errorf("not growing inland: %.2f at 600 m, %.2f at 1.2 km", a, b)
+	}
+	if f := seaFactor(2000); f != 1 {
+		t.Errorf("2 km inland, in the inner dunes: %.2f", f)
 	}
 	c := northCourse(t)
 	kx := 111195 * math.Cos(52*math.Pi/180)
@@ -383,6 +388,54 @@ func TestTreesByTheSeaGrowLow(t *testing.T) {
 	}
 	if n < 100 {
 		t.Errorf("%d trees compared", n)
+	}
+}
+
+// On poor ground by the sea a tree is held back by the poorer of the two,
+// not both (owner, 2026-10-13: the dunes' trees, small for the sand and
+// again for the sea, came out a quarter of their height): a heath's small
+// trees by the shore keep at least seaLow of their size, and those held
+// back more by the heath than by the sea keep their size.
+func TestPoorGroundAndSeaDontStack(t *testing.T) {
+	c := northCourse(t)
+	kx := 111195 * math.Cos(52*math.Pi/180)
+	p := func(x, y float64) scenery.LatLon { return scenery.LatLon{Lat: 52 + y/111195, Lon: 5 + x/kx} }
+	lm := scenery.NewLandMap(c, &scenery.Data{Elements: []scenery.Element{
+		{Type: "way", ID: 1, Tags: map[string]string{"natural": "heath"}, Geometry: []scenery.LatLon{p(-300, -100), p(300, -100), p(300, 1100), p(-300, 1100), p(-300, -100)}},
+	}})
+	sizes := func(sea func(lat, lon float64) float64) map[[2]float32]float32 {
+		tr := testTerrain(c, Options{Land: lm, SeaDistance: sea})
+		s := &surface{t: tr, lists: map[[2]int]chunkLists{}}
+		out := map[[2]float32]float32{}
+		for _, q := range plants(tr, s, lm, tr.chunks(), nil, nil, nil, newRouteGrid(tr.coarse, 400)) {
+			if q.kind < speciesKinds {
+				out[[2]float32{q.x, q.z}] = q.s
+			}
+		}
+		return out
+	}
+	inland := sizes(nil)
+	shore := sizes(func(float64, float64) float64 { return 300 })
+	n, kept := 0, 0
+	for k, s := range shore {
+		in, ok := inland[k]
+		if !ok {
+			continue
+		}
+		n++
+		r := float64(s / in)
+		if r < seaLow-1e-4 {
+			t.Fatalf("a heath tree by the sea at %.2f of its inland size", r)
+		}
+		if r > 0.99 {
+			kept++
+		}
+	}
+	if n < 20 {
+		t.Fatalf("%d trees compared", n)
+	}
+	if kept == 0 {
+		t.Errorf("every one of %d heath trees by the sea is lower than inland: the heath and the sea stack", n)
 	}
 }
 
@@ -434,4 +487,118 @@ func TestWillowsAlongDitches(t *testing.T) {
 	if east != n && east != 0 {
 		t.Errorf("willows on both banks: %d east of %d", east, n)
 	}
+}
+
+// The ground map names a sown field with its crop and the way its rows
+// run, so a renderer grows the crop in rows and draws its furrows.
+func TestGroundMapNamesFields(t *testing.T) {
+	if len(GroundClasses) != groundFieldBase+len(groundCrops)*groundRowDirs || GroundClasses[groundFieldBase] != "ploughed 0" ||
+		GroundClasses[groundFieldBase+1*groundRowDirs+4] != "maize 4" {
+		t.Fatalf("classes %v", GroundClasses)
+	}
+	c := course.Tracks()[1]
+	tr := scenery.TrackScenery(c)
+	lm := scenery.NewLandMap(c, tr.Data)
+	lm.Fields()
+	sp := &spots{land: lm}
+	fields := map[string]int{}
+	for e := -2000.0; e < 2000; e += 10 {
+		for n := -800.0; n < 800; n += 10 {
+			v, land := groundValue(sp, e, n, nil)
+			if scenery.Arable(land) && land != scenery.LandFarmland {
+				fields[GroundClasses[v]]++
+			} else if int(v) >= groundFieldBase {
+				t.Fatalf("%v at %.0f, %.0f has a field's value %d", land, e, n, v)
+			}
+		}
+	}
+	for _, want := range []string{"ploughed 4", "maize 4", "wheat 4", "potatoes 4"} {
+		if fields[want] == 0 {
+			t.Errorf("no %q in the polder: %v", want, fields)
+		}
+	}
+	// Within fieldHeadlandM of a road's edge a field is its grass headland
+	// (owner, 2026-10-12: crops never grow that close to the rider).
+	everywhere := func(e, n float64) bool { return true }
+	for e := -2000.0; e < 2000; e += 25 {
+		for n := -800.0; n < 800; n += 25 {
+			if v, _ := groundValue(sp, e, n, everywhere); int(v) >= groundFieldBase {
+				t.Fatalf("a field's value %d (%s) beside a road", v, GroundClasses[v])
+			}
+		}
+	}
+}
+
+// Slivers of field are grass: a strip narrower than fieldMinM goes, a
+// field the disc fits in keeps its cells but its corners (owner,
+// 2026-10-12: slivers beside a farmyard and an orchard on the figure 8).
+func TestFieldSliversAreGrass(t *testing.T) {
+	const w = 60
+	v := make([]byte, w*w)
+	maize := byte(groundFieldBase + groundRowDirs + 4)
+	wheat := byte(groundFieldBase + 2*groundRowDirs + 4)
+	for j := 5; j < 55; j++ {
+		for i := 5; i < 30; i++ {
+			v[j*w+i] = maize // a field 25 by 50 m
+		}
+		for i := 40; i < 44; i++ {
+			v[j*w+i] = wheat // a strip 4 m wide
+		}
+	}
+	r := int(fieldMinM / 2)
+	out := openFields(v, w, r)
+	kept, strip := 0, 0
+	for k, x := range out {
+		if x == maize {
+			kept++
+		}
+		if x == wheat {
+			strip++
+		}
+		if v[k] < byte(groundFieldBase) && x != v[k] {
+			t.Fatalf("cell %d not a field, changed", k)
+		}
+	}
+	if strip != 0 {
+		t.Errorf("%d cells of the 4 m strip left", strip)
+	}
+	if all := 25 * 50; kept < all-4*r*r || kept > all {
+		t.Errorf("%d of the field's %d cells kept: want all but its corners", kept, all)
+	}
+}
+
+// Plants keep out of trees' trunks, whichever pass placed them (owner,
+// 2026-10-13: a hazel grew through an avenue oak, Velp loop 0.40 km).
+func TestPlantsKeepOutOfTrunks(t *testing.T) {
+	oak := kindNamed(t, "oak 1")
+	birch := kindNamed(t, "birch 1")
+	hazel := kindNamed(t, "bush hazel")
+	ps := []plant{
+		{kind: oak, x: 0, z: 0, s: 1},
+		{kind: hazel, x: 0.6, z: 0, s: 1},   // in the oak's trunk: goes
+		{kind: hazel, x: 3, z: 0, s: 1},     // clear of it: stays
+		{kind: birch, x: 0, z: 0.9, s: 0.4}, // a young birch in the oak: goes
+		{kind: birch, x: 3, z: 3, s: 0.4},   // clear: stays
+	}
+	got := clearTrunks(append([]plant(nil), ps...))
+	want := []plant{ps[0], ps[2], ps[4]}
+	if len(got) != len(want) {
+		t.Fatalf("kept %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("kept %v, want %v", got, want)
+		}
+	}
+}
+
+func kindNamed(t *testing.T, name string) int {
+	t.Helper()
+	for k, p := range plantKinds {
+		if p.name == name {
+			return k
+		}
+	}
+	t.Fatalf("no plant kind %q", name)
+	return -1
 }

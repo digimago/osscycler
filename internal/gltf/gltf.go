@@ -31,6 +31,7 @@ type Primitive struct {
 	Positions []float32
 	Normals   []float32
 	UVs       []float32
+	UV2s      []float32 // a second UV pair per vertex (TEXCOORD_1), optional
 	Colors    []float32
 	Indices   []uint32
 	Material  int
@@ -88,6 +89,8 @@ func (d *Doc) AddMesh(name string, prims ...Primitive) (int, error) {
 			return 0, errors.New("gltf: one normal per vertex")
 		case p.UVs != nil && len(p.UVs) != 2*n:
 			return 0, errors.New("gltf: one UV per vertex")
+		case p.UV2s != nil && len(p.UV2s) != 2*n:
+			return 0, errors.New("gltf: one second UV per vertex")
 		case p.Colors != nil && len(p.Colors) != 3*n:
 			return 0, errors.New("gltf: one colour per vertex")
 		case len(p.Indices) == 0 || len(p.Indices)%3 != 0:
@@ -108,6 +111,9 @@ func (d *Doc) AddMesh(name string, prims ...Primitive) (int, error) {
 		}
 		if p.UVs != nil {
 			attrs["TEXCOORD_0"] = d.floats(p.UVs, "VEC2", 2, false)
+		}
+		if p.UV2s != nil {
+			attrs["TEXCOORD_1"] = d.floats(p.UV2s, "VEC2", 2, false)
 		}
 		if p.Colors != nil {
 			attrs["COLOR_0"] = d.colors(p.Colors)
@@ -132,6 +138,7 @@ func weld(p Primitive) Primitive {
 	type key struct {
 		pos [3]uint32
 		uv  [2]uint32
+		uv2 [2]uint32
 		nor [3]int8
 		col [3]byte
 	}
@@ -153,6 +160,9 @@ func weld(p Primitive) Primitive {
 		if p.UVs != nil {
 			k.uv = [2]uint32{math.Float32bits(p.UVs[2*v]), math.Float32bits(p.UVs[2*v+1])}
 		}
+		if p.UV2s != nil {
+			k.uv2 = [2]uint32{math.Float32bits(p.UV2s[2*v]), math.Float32bits(p.UV2s[2*v+1])}
+		}
 		w, ok := index[k]
 		if !ok {
 			w = uint32(len(out.Positions) / 3)
@@ -166,6 +176,9 @@ func weld(p Primitive) Primitive {
 			}
 			if p.UVs != nil {
 				out.UVs = append(out.UVs, p.UVs[2*v:2*v+2]...)
+			}
+			if p.UV2s != nil {
+				out.UV2s = append(out.UV2s, p.UV2s[2*v:2*v+2]...)
 			}
 		}
 		remap[v] = w

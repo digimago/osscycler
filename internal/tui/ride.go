@@ -94,6 +94,10 @@ func (m Model) rideKey(key string) (Model, tea.Cmd, bool) {
 			if m.tab == tabActivities {
 				return m, m.exportSelected(), true
 			}
+		case "i":
+			if m.tab == tabActivities && n > 0 {
+				return m, m.fetchSummary(m.activities[m.pickIdx[tabActivities]].GetName(), true), true
+			}
 		case "enter":
 			switch {
 			case m.tab == tabActivities:
@@ -130,6 +134,12 @@ func (m Model) rideKey(key string) (Model, tea.Cmd, bool) {
 			_, err := cmds.SetDifficulty(ctx, want)
 			return err
 		}), true
+	case key == "r" && m.rideActive():
+		m, turn, cmd := m.turnKey()
+		if turn {
+			return m, m.command("turn round", cmd), true
+		}
+		return m, nil, true
 	// w also on a loop: a workout rides on it.
 	case (key == "r" && !m.rideActive() || key == "w" && !m.courseRide()) && !m.workoutActive() && !m.calibrationActive() && m.countdown == 0:
 		m.notice = ""
@@ -251,7 +261,7 @@ func (m Model) pickerPanel(width, height int) string {
 		hint = "↑/↓ choose · enter race that ride again · ★ fastest on that course from that start · tab activities · esc back"
 	case tabActivities:
 		lines = append(lines, m.activityRows(height-6)...)
-		hint = "↑/↓ choose · enter race that ride (course rides) · s save the FIT file to " + m.exportDir + " · tab courses · esc back"
+		hint = "↑/↓ choose · i summary · enter race that ride (course rides) · s save the FIT file to " + m.exportDir + " · tab courses · esc back"
 	case tabCourses:
 		for i, c := range m.courseList {
 			cursor := "  "
@@ -261,13 +271,13 @@ func (m Model) pickerPanel(width, height int) string {
 				style = style.Bold(true).Foreground(lipgloss.Color("220"))
 			}
 			pbText := ""
-			if r, ok := m.coursePB(c.GetId()); ok && c.GetLoop() {
+			if r, ok := m.coursePB(c.GetId()); ok && lapped(c) {
 				pbText = pbStyle.Render("  lap PB " + lapTime(r.GetElapsedS()))
 			} else if ok {
 				pbText = pbStyle.Render("  PB " + clock(r.GetElapsedS()))
 			}
 			name := c.GetName()
-			if c.GetLoop() {
+			if lapped(c) {
 				name = "↻ " + name
 			}
 			lines = append(lines, style.Render(fmt.Sprintf("%s%-34s %6.2f km  +%4.0f m  max %4.1f%%",
@@ -437,14 +447,7 @@ func (m Model) rideResult(width, height int, finished bool) string {
 		if s := r.GetStartDistanceM(); s > 0 {
 			from = fmt.Sprintf(" (from %.2f km)", s/1000)
 		}
-		verdict := dimStyle.Render("first ride on this stretch: the PB to beat next time")
-		if g := r.GetGhost(); g != nil {
-			if gap := g.GetGapS(); gap < 0 {
-				verdict = pbStyle.Render(fmt.Sprintf("★ NEW PB  %s faster than %s", secs(-gap), clock(g.GetTimeS())))
-			} else {
-				verdict = warnStyle.Render(fmt.Sprintf("%s off your %s (%s)", secs(gap), g.GetLabel(), clock(g.GetTimeS())))
-			}
-		}
+		verdict := rideVerdict(r)
 		lines = append(lines,
 			bigOK.Render("FINISHED  "+r.GetCourseName()+from), "",
 			bigOK.Render(t), "", verdict, "",
@@ -466,6 +469,21 @@ func (m Model) rideResult(width, height int, finished bool) string {
 		lipgloss.JoinVertical(lipgloss.Center, lines...))
 }
 
+// rideVerdict says how a finished course ride went against its ghost.
+func rideVerdict(r *pb.Ride) string {
+	if r.GetUntimed() {
+		return dimStyle.Render("turned round on the way: not timed")
+	}
+	if g := r.GetGhost(); g != nil {
+		if gap := g.GetGapS(); gap < 0 {
+			return pbStyle.Render(fmt.Sprintf("★ NEW PB  %s faster than %s", secs(-gap), clock(g.GetTimeS())))
+		} else {
+			return warnStyle.Render(fmt.Sprintf("%s off your %s (%s)", secs(gap), g.GetLabel(), clock(g.GetTimeS())))
+		}
+	}
+	return dimStyle.Render("first ride on this stretch: the PB to beat next time")
+}
+
 // gradeStrip shows the next lookaheadM metres as heat-coloured cells, like
 // Zwift's climb bar: blue is easy, deep red is 16 % and up, slate is
 // downhill, chequered is past the finish. Three lines: grade labels on the
@@ -476,7 +494,7 @@ func gradeStrip(c *pb.Course, pos, ghost float64, width int) string {
 		return ""
 	}
 	finish := c.GetDistanceM()
-	loop := c.GetLoop() && finish > 0
+	loop := lapped(c) && finish > 0
 	bg := make([]color.Color, width) // background per column
 	label := []rune(strings.Repeat(" ", width))
 	ruler := []rune(strings.Repeat(" ", width))
@@ -499,12 +517,12 @@ func gradeStrip(c *pb.Course, pos, ghost float64, width int) string {
 		var cellBG color.Color
 		from, to := pos+float64(i)*lookaheadCellM, pos+float64(i+1)*lookaheadCellM
 		switch {
-		case loop && math.Floor(from/finish) != math.Floor(to/finish):
+		case loop && lapLine(c, from, to):
 			// The line, every lap.
 			cellBG = finishColor(i)
 			put(label, col, "LAP")
 		case loop:
-			g := gradeAt(c, math.Mod(mid, finish))
+			g := gradeAt(c, coursePos(c, mid))
 			cellBG = gradeColor(g)
 			if onLabel {
 				put(label, col, fmt.Sprintf("%.0f%%", g))
@@ -551,11 +569,40 @@ func paint(text []rune, bg []color.Color) string {
 		for end < len(text) && bg[end] == bg[start] {
 			end++
 		}
-		style := lipgloss.NewStyle().Background(bg[start]).Foreground(lipgloss.Color("#000000")).Bold(true)
+		style := lipgloss.NewStyle().Background(bg[start]).Foreground(textOn(bg[start])).Bold(true)
 		b.WriteString(style.Render(string(text[start:end])))
 		start = end
 	}
 	return b.String()
+}
+
+// textOn is black on light cells, white on dark ones (the steep reds).
+func textOn(bg color.Color) color.Color {
+	if luminance(bg) < 0.35 {
+		return lipgloss.Color("#ffffff")
+	}
+	return lipgloss.Color("#000000")
+}
+
+// luminance is a colour's relative luminance, 0 to 1 (Rec. 709 weights
+// on the gamma-encoded values, as Godot's Color.Luminance).
+func luminance(c color.Color) float64 {
+	r, g, b, _ := c.RGBA()
+	return (0.2126*float64(r) + 0.7152*float64(g) + 0.0722*float64(b)) / 0xffff
+}
+
+// readable lifts a colour too dark to read on a dark terminal (the steep
+// reds, the blue on the flat) towards white, keeping its hue, as the 3D
+// view's HUD does (HudView.Readable).
+func readable(c color.Color) color.Color {
+	r, g, b, _ := c.RGBA()
+	x := [3]float64{float64(r >> 8), float64(g >> 8), float64(b >> 8)}
+	for i := 0; i < 8 && (0.2126*x[0]+0.7152*x[1]+0.0722*x[2])/255 < 0.55; i++ {
+		for k := range x {
+			x[k] += (255 - x[k]) * 0.2
+		}
+	}
+	return color.RGBA{R: uint8(math.Round(x[0])), G: uint8(math.Round(x[1])), B: uint8(math.Round(x[2])), A: 0xff}
 }
 
 // gradeAt reads the course profile: the grade from the sample at or before d.
@@ -569,20 +616,22 @@ func gradeAt(c *pb.Course, d float64) float64 {
 	return float64(g[max(0, min(i, len(g)-1))])
 }
 
-// heatStops map grade to colour, from easy blue to deep red at 16 %.
+// heatStops map grade to colour (owner, 2026-10-14: 6 % is already hefty
+// and yellowish, 9 % dark orange, 16 % a very dark red): blue on the flat,
+// green by 4 %, yellow at 6 %, dark orange at 9 %, deepening red to 16 %.
 var heatStops = []struct {
 	grade   float64
 	r, g, b float64
 }{
 	{0, 0x2c, 0x7b, 0xb6},
-	{3, 0x00, 0xa6, 0xca},
-	{5, 0x00, 0xcc, 0xbc},
-	{7, 0x90, 0xeb, 0x9d},
-	{9, 0xff, 0xff, 0x8c},
-	{11, 0xf9, 0xd0, 0x57},
-	{13, 0xf2, 0x9e, 0x2e},
-	{14.5, 0xd7, 0x19, 0x1c},
-	{16, 0x7f, 0x00, 0x00},
+	{2, 0x00, 0xa6, 0xca},
+	{4, 0x8f, 0xd1, 0x8c},
+	{6, 0xff, 0xd9, 0x3d},
+	{7.5, 0xf9, 0x9d, 0x1c},
+	{9, 0xe0, 0x56, 0x0f},
+	{11, 0xc8, 0x23, 0x0f},
+	{13, 0x9c, 0x0d, 0x0d},
+	{16, 0x4a, 0x00, 0x00},
 }
 
 // descentColor is used for any downhill; descents vary little in feel
@@ -602,7 +651,7 @@ func gradeColor(g float64) color.Color {
 			return color.RGBA{R: mix(a.r, b.r), G: mix(a.g, b.g), B: mix(a.b, b.b), A: 0xff}
 		}
 	}
-	return lipgloss.Color("#7f0000")
+	return lipgloss.Color("#4a0000")
 }
 
 // finishColor checkers the cells past the finish line.

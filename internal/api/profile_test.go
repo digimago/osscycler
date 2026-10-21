@@ -15,16 +15,20 @@ import (
 
 type stubProfile struct {
 	weights, ftps, heights []*float64
-	views                  []*string
+	choices                []map[string]string
 }
 
-func (s *stubProfile) SetProfile(_ context.Context, w, f, h *float64, v *string) (telemetry.Profile, error) {
-	s.weights, s.ftps, s.heights, s.views = append(s.weights, w), append(s.ftps, f), append(s.heights, h), append(s.views, v)
-	if v != nil {
-		if err := profile.CheckView(*v); err != nil {
-			return telemetry.Profile{}, err
+func (s *stubProfile) SetProfile(_ context.Context, w, f, h, _ *float64, choices map[string]string) (telemetry.Profile, error) {
+	s.weights, s.ftps, s.heights, s.choices = append(s.weights, w), append(s.ftps, f), append(s.heights, h), append(s.choices, choices)
+	if len(choices) > 0 {
+		p := telemetry.Profile{Known: true}
+		for name, v := range choices {
+			if err := profile.CheckChoice(name, v); err != nil {
+				return telemetry.Profile{}, err
+			}
 		}
-		return telemetry.Profile{Known: true, View: *v}, nil
+		p.View, p.WorldBuild, p.WorldFetch = choices["view"], choices["world_build"], choices["world_fetch"]
+		return p, nil
 	}
 	if f != nil && *f > profile.MaxFTPW {
 		return telemetry.Profile{}, profile.Check(profile.FTP, *f)
@@ -73,6 +77,16 @@ func TestSetProfile(t *testing.T) {
 	v = "drone"
 	if _, err := cl.SetProfile(ctx, &pb.SetProfileRequest{View: &v}); status.Code(err) != codes.InvalidArgument {
 		t.Errorf("view drone: %v", err)
+	}
+	// Building worlds ahead: when, and whether it may download.
+	wb, wf := "always", "allowed"
+	if r, err := cl.SetProfile(ctx, &pb.SetProfileRequest{WorldBuild: &wb, WorldFetch: &wf}); err != nil ||
+		r.GetProfile().GetWorldBuild() != "always" || r.GetProfile().GetWorldFetch() != "allowed" {
+		t.Errorf("world_build always, world_fetch allowed: %v, %v", r, err)
+	}
+	wb = "sometimes"
+	if _, err := cl.SetProfile(ctx, &pb.SetProfileRequest{WorldBuild: &wb}); status.Code(err) != codes.InvalidArgument {
+		t.Errorf("world_build sometimes: %v", err)
 	}
 	// A refused start says why, as a precondition any renderer can show.
 	if _, err := cl.StartRide(ctx, &pb.StartRideRequest{CourseId: "x"}); status.Code(err) != codes.FailedPrecondition {

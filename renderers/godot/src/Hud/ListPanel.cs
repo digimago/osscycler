@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Godot;
 using Osscycler.Head;
 
@@ -34,14 +35,130 @@ public partial class ListPanel : Control
 
     static readonly Color Gold = new("ffd700"), Dim = new(1, 1, 1, 0.6f), Lit = new(0.2f, 0.45f, 0.85f, 0.9f);
 
+    static readonly string[] ZoneNames = { "recovery", "endurance", "tempo", "threshold", "VO2 max", "anaerobic" };
+
+    // DrawSummary lays a summary out as the TUI's (tui/summary.go): the
+    // ride, its averages, the best power and time in each zone.
+    void DrawSummary(Osscycler.V1.ActivitySummary s)
+    {
+        static Color C(Rgb c) => Color.Color8(c.R, c.G, c.B);
+        float pw = Mathf.Min(W + 100, Size.X - 80);
+        // The height of what is drawn below, line by line.
+        int lines = (s.AvgPowerW > 0 ? 1 : 0) + (s.AvgHeartRateBpm > 0 ? 1 : 0) + (s.AvgCadenceRpm > 0 ? 1 : 0);
+        float ph = 144 + lines * 36 + (s.PowerCurve.Count > 0 ? 104 : 0)
+            + (s.PowerZoneS.Count > 0 ? 52 + s.PowerZoneS.Count * 34 : 0)
+            + (s.HeartRateZoneS.Count > 0 ? 52 + s.HeartRateZoneS.Count * 34 : s.AvgHeartRateBpm > 0 ? 50 : 0) + 56;
+        // Below the tiles where it fits; else as high as it must.
+        float top = Size.Y - ph - 60 >= 170 ? 170 : Mathf.Max(20, (Size.Y - ph) / 2);
+        var r = new Rect2((Size.X - pw) / 2, top, pw, ph);
+        Panel(r);
+        float x = r.Position.X + Pad, y = r.Position.Y + 50;
+        string when = "";
+        if (DateTime.TryParseExact(s.Name.Replace(".fit", ""), "yyyy-MM-dd-HHmmss", System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeLocal, out var t))
+            when = "   " + t.ToString("ddd d MMM HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+        if (_summaryHeading != "") // a finished course ride: how it went
+            DrawString(_bold, new Vector2(x, y), _summaryHeading, HorizontalAlignment.Left, pw - 2 * Pad, 30, Colors.White);
+        else
+            DrawString(_bold, new Vector2(x, y), "RIDE SUMMARY" + when, HorizontalAlignment.Left, -1, 30, Dim);
+        y += 44;
+        DrawString(_bold, new Vector2(x, y), $"{Format.Clock(s.TimerS)} riding · {Format.Fixed(s.DistanceM / 1000, 2)} km", HorizontalAlignment.Left, -1, 30, Colors.White);
+        y += 50;
+        void Line(string label, string text, Color c)
+        {
+            DrawString(_bold, new Vector2(x, y), label, HorizontalAlignment.Left, -1, 24, Dim);
+            DrawString(_regular, new Vector2(x + 170, y), text, HorizontalAlignment.Left, -1, 26, c);
+            y += 36;
+        }
+        if (s.AvgPowerW > 0)
+            Line("POWER", $"avg {s.AvgPowerW:F0} W" + (s.NormalizedPowerW > 0 ? $"   NP {s.NormalizedPowerW:F0} W" : "") + $"   max {s.MaxPowerW:F0} W   {s.WorkKj:F0} kJ", C(Palette.Power));
+        if (s.AvgHeartRateBpm > 0)
+            Line("HEART RATE", $"avg {s.AvgHeartRateBpm:F0}   max {s.MaxHeartRateBpm:F0} bpm", C(Palette.Heart));
+        if (s.AvgCadenceRpm > 0)
+            Line("CADENCE", $"avg {s.AvgCadenceRpm:F0} rpm", C(Palette.Cadence));
+        if (s.PowerCurve.Count > 0)
+        {
+            y += 14;
+            DrawString(_bold, new Vector2(x, y), "BEST POWER", HorizontalAlignment.Left, -1, 24, Dim);
+            y += 34;
+            float cw = (pw - 2 * Pad) / 10;
+            for (int i = 0; i < s.PowerCurve.Count; i++)
+            {
+                var b = s.PowerCurve[i];
+                string d = b.DurationS >= 60 ? $"{b.DurationS / 60}m" : $"{b.DurationS}s";
+                var c = s.FtpW > 0 ? C(Palette.Zone(b.PowerW / s.FtpW)) : Colors.White;
+                DrawString(_regular, new Vector2(x + i * cw, y), d, HorizontalAlignment.Center, cw, 22, Dim);
+                DrawString(_bold, new Vector2(x + i * cw, y + 32), $"{b.PowerW:F0}", HorizontalAlignment.Center, cw, 28, c);
+            }
+            y += 56;
+        }
+        void Bars(IList<double> secs, Func<int, Color> color, Func<int, string> name)
+        {
+            double total = 0, most = 0;
+            foreach (var v in secs)
+                (total, most) = (total + v, Math.Max(most, v));
+            float barW = pw - 2 * Pad - 420;
+            for (int i = 0; i < secs.Count; i++)
+            {
+                DrawString(_regular, new Vector2(x, y), $"Z{i + 1} {name(i)}", HorizontalAlignment.Left, -1, 22, Colors.White);
+                float bw = most > 0 ? (float)(secs[i] / most) * barW : 0;
+                DrawRect(new Rect2(x + 200, y - 20, bw, 24), color(i));
+                DrawString(_regular, new Vector2(x + 200 + barW + 10, y), $"{Format.Clock(secs[i]),8}  {(total > 0 ? secs[i] / total * 100 : 0),3:F0}%",
+                    HorizontalAlignment.Left, -1, 22, Colors.White);
+                y += 34;
+            }
+        }
+        if (s.PowerZoneS.Count > 0)
+        {
+            y += 16;
+            DrawString(_bold, new Vector2(x, y), $"POWER ZONES   FTP {s.FtpW:F0} W", HorizontalAlignment.Left, -1, 24, Dim);
+            y += 36;
+            double[] mid = { 0.3, 0.68, 0.83, 0.97, 1.12, 1.5 }; // a power in each zone, for its colour
+            Bars(s.PowerZoneS, i => C(Palette.Zone(mid[Math.Min(i, mid.Length - 1)])), i => ZoneNames[Math.Min(i, ZoneNames.Length - 1)]);
+        }
+        if (s.HeartRateZoneS.Count > 0)
+        {
+            y += 16;
+            DrawString(_bold, new Vector2(x, y), $"HEART RATE ZONES   max {s.MaxHrBpm:F0} bpm", HorizontalAlignment.Left, -1, 24, Dim);
+            y += 36;
+            var up = s.HeartRateZoneUpper;
+            Bars(s.HeartRateZoneS, _ => C(Palette.Heart), i => i == 0 ? $"<{up[0] * 100:F0}%" : i >= up.Count ? $">{up[^1] * 100:F0}%" : $"{up[i - 1] * 100:F0}-{up[i] * 100:F0}%");
+        }
+        else if (s.AvgHeartRateBpm > 0)
+        {
+            y += 16;
+            DrawString(_regular, new Vector2(x, y), "Heart rate zones: add your maximum heart rate to your profile (m, Profile).", HorizontalAlignment.Left, -1, 22, Dim);
+            y += 34;
+        }
+        DrawString(_regular, new Vector2(r.Position.X, r.End.Y - 22), "x close", HorizontalAlignment.Center, pw, 22, Dim);
+    }
+
     void Panel(Rect2 r) => DrawStyleBox(new StyleBoxFlat
     {
         BgColor = new Color(0.04f, 0.06f, 0.08f, 0.9f),
         CornerRadiusTopLeft = 14, CornerRadiusTopRight = 14, CornerRadiusBottomLeft = 14, CornerRadiusBottomRight = 14,
     }, r);
 
+    Osscycler.V1.ActivitySummary? _summary;
+
+    string _summaryHeading = "";
+
+    // ShowSummary draws a ride's summary (null: none) over everything else
+    // this panel shows.
+    public void ShowSummary(Osscycler.V1.ActivitySummary? s, string heading = "")
+    {
+        if (!ReferenceEquals(s, _summary) || heading != _summaryHeading)
+            QueueRedraw();
+        (_summary, _summaryHeading) = (s, heading);
+    }
+
     public override void _Draw()
     {
+        if (_summary is { } sum)
+        {
+            DrawSummary(sum);
+            return;
+        }
         if (_form is { } f)
         {
             DrawForm(f);

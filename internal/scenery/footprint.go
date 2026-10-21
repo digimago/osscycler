@@ -22,6 +22,10 @@ type Footprint struct {
 	// Colours from the map (building:colour, roof:colour), "" when it
 	// doesn't say.
 	WallColour, RoofColour string
+	// FromLowest: WallM is measured from the lowest ground under it (a
+	// survey's height, BD TOPO), not the highest (a guess): on a slope the
+	// downhill wall is the taller one.
+	FromLowest bool
 }
 
 const (
@@ -29,20 +33,21 @@ const (
 	footprintMinM2  = 12.0  // sheds and kiosks smaller than this don't show
 )
 
-// Footprints are the buildings near the route with their outlines.
-func Footprints(c *course.Course, d *Data) []Footprint {
-	r := sampleRoute(c)
+// nearRoute tells whether a point (metres east and north of the
+// course's start) lies within r of the route (r at most the grid's cell).
+func nearRoute(c *course.Course, r float64) func(x, y float64) bool {
+	rt := sampleRoute(c)
 	// The route by grid cell, to tell near from far quickly.
 	cells := map[[2]int][]int{}
-	for i, p := range r {
+	for i, p := range rt {
 		k := [2]int{cell(p.x), cell(p.y)}
 		cells[k] = append(cells[k], i)
 	}
-	near := func(x, y float64) bool {
+	return func(x, y float64) bool {
 		for gx := cell(x) - 1; gx <= cell(x)+1; gx++ {
 			for gy := cell(y) - 1; gy <= cell(y)+1; gy++ {
 				for _, i := range cells[[2]int{gx, gy}] {
-					if math.Hypot(r[i].x-x, r[i].y-y) < footprintRangeM {
+					if math.Hypot(rt[i].x-x, rt[i].y-y) < r {
 						return true
 					}
 				}
@@ -50,6 +55,11 @@ func Footprints(c *course.Course, d *Data) []Footprint {
 		}
 		return false
 	}
+}
+
+// Footprints are the buildings near the route with their outlines.
+func Footprints(c *course.Course, d *Data) []Footprint {
+	near := nearRoute(c, footprintRangeM)
 	var out []Footprint
 	for _, el := range d.Elements {
 		t := el.Tags

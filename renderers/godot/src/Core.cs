@@ -240,6 +240,7 @@ public sealed class Core : IDisposable, Head.ICommands
 
     CallOptions Opts() => new(Auth(), cancellationToken: _stop.Token);
 
+    public async Task<string> TurnAround() => (await Call(() => Client().TurnAroundAsync(new TurnAroundRequest(), Opts()).ResponseAsync)).CourseId;
     public Task StopRide() => Call(() => Client().StopRideAsync(new StopRideRequest(), Opts()).ResponseAsync);
     public Task SetDifficulty(double pct) => Call(() => Client().SetDifficultyAsync(new SetDifficultyRequest { DifficultyPct = pct }, Opts()).ResponseAsync);
     public Task StopWorkout() => Call(() => Client().StopWorkoutAsync(new StopWorkoutRequest(), Opts()).ResponseAsync);
@@ -279,6 +280,7 @@ public sealed class Core : IDisposable, Head.ICommands
     }
 
     public Task StartWorkout(string id) => Call(() => Client().StartWorkoutAsync(new StartWorkoutRequest { Id = id }, Opts()).ResponseAsync);
+    public Task SetSimulated(bool on) => Call(() => Client().SetSimulatedAsync(new SetSimulatedRequest { Simulated = on }, Opts()).ResponseAsync);
     public Task SetPaused(bool paused) => Call(() => Client().SetPausedAsync(new SetPausedRequest { Paused = paused }, Opts()).ResponseAsync);
     public Task SetPower(double watts) => Call(() => Client().SetTrainerControlAsync(new SetTrainerControlRequest { PowerW = watts }, Opts()).ResponseAsync);
     public Task SetFtp(double watts) => Call(() => Client().SetFtpAsync(new SetFtpRequest { FtpW = watts }, Opts()).ResponseAsync);
@@ -289,12 +291,34 @@ public sealed class Core : IDisposable, Head.ICommands
     public Task StartCalibration() => Call(() => Client().StartCalibrationAsync(new StartCalibrationRequest { Type = CalibrationType.SpinDown }, Opts()).ResponseAsync);
     public Task CancelCalibration() => Call(() => Client().CancelCalibrationAsync(new CancelCalibrationRequest(), Opts()).ResponseAsync);
 
+    public async Task<RiderProfile> SetChoice(string name, string value)
+    {
+        var req = new SetProfileRequest();
+        switch (name)
+        {
+            case "world_build":
+                req.WorldBuild = value;
+                break;
+            case "world_fetch":
+                req.WorldFetch = value;
+                break;
+            case "view":
+                req.View = value;
+                break;
+            default:
+                throw new ArgumentException($"no profile setting \"{name}\"");
+        }
+        return (await Call(() => Client().SetProfileAsync(req, Opts()).ResponseAsync)).Profile;
+    }
+
     public async Task<RiderProfile> SetView(string view) =>
         (await Call(() => Client().SetProfileAsync(new SetProfileRequest { View = view }, Opts()).ResponseAsync)).Profile;
 
-    public async Task<RiderProfile> SetProfile(double? weightKg, double? ftpW, double? heightCm)
+    public async Task<RiderProfile> SetProfile(double? weightKg, double? ftpW, double? heightCm, double? maxHrBpm)
     {
         var req = new SetProfileRequest();
+        if (maxHrBpm is double hr)
+            req.MaxHrBpm = hr;
         if (weightKg is double w)
             req.WeightKg = w;
         if (ftpW is double f)
@@ -317,6 +341,14 @@ public sealed class Core : IDisposable, Head.ICommands
                 _courses[c.Id] = c;
         return resp.Courses;
     }
+
+    public Task<GetActivityHistoryResponse> ActivityHistory(string name, uint since) =>
+        Call(() => Client().GetActivityHistoryAsync(new GetActivityHistoryRequest { Name = name, SinceS = since }, Opts()).ResponseAsync);
+
+    public async Task<ActivitySummary> RideSummary() =>
+        (await Call(() => Client().GetActivitySummaryAsync(new GetActivitySummaryRequest { LastRide = true }, Opts()).ResponseAsync)).Summary;
+    public async Task<ActivitySummary> ActivitySummary(string name) =>
+        (await Call(() => Client().GetActivitySummaryAsync(new GetActivitySummaryRequest { Name = name }, Opts()).ResponseAsync)).Summary;
 
     public async Task<IList<RideResult>> ListResults() => (await Call(() => Client().ListResultsAsync(new ListResultsRequest(), Opts()).ResponseAsync)).Results;
     public async Task<IList<Activity>> ListActivities() => (await Call(() => Client().ListActivitiesAsync(new ListActivitiesRequest(), Opts()).ResponseAsync)).Activities;

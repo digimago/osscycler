@@ -7,8 +7,10 @@
 // goes; their texel centres lie on the ground map's cell middles.
 
 // The land (Grass.cs's codes: 1 grass, 2 meadow, 3 forest, 4 built-up,
-// 5 farmland, 6 orchard, 7 heath, 8 grey dune, 9 dune thicket), a byte
-// per texel.
+// 5 farmland, 6 orchard, 7 heath, 8 grey dune, 9 dune thicket; a sown
+// field from 16: 16 + 8 × its crop (0 ploughed, 1 maize, 2 wheat, 3
+// potatoes) + the way its rows run, in eighths of a half turn anticlockwise
+// from east), a byte per texel.
 uniform sampler2D ground_map : filter_nearest, repeat_disable;
 // How far the nearest road edge, wall or car park is (0.1 m steps, so
 // 25.5 m at 1.0): interpolated, it puts the edge of the grass where the
@@ -45,6 +47,9 @@ uniform float wind = 1.0;
 // How much of the heather is in flower (Grass.cs, by the ride's date):
 // each plant flowers or not, so in the weeks either side some do.
 uniform float bloom = 0.0;
+// Above this height (the ground's, Spot.y) grass dries towards straw, as
+// summer pastures above the treeline (the manifest's ground.dry_above_m).
+uniform float dry_above = 1e9;
 
 // A plant's own fade, in the share of the layer's (0 to 1) it spreads over.
 const float SOFT = 0.25;
@@ -132,9 +137,48 @@ bool spot(int id, out Spot s) {
 	return true;
 }
 
+// A crop keeps at least this far from a road's edge, wall or car park
+// here too (the world builder already makes a field's 8 m along the road
+// grass, its headland; the clearance the ground map gives reaches a few
+// metres only).
+const float HEADLAND = 2.5;
+
+// A sown field's crop (0 ploughed, 1 maize, 2 wheat, 3 potatoes), -1
+// for any other ground.
+int crop_of(int ground) {
+	return ground >= 16 && ground < 48 ? (ground - 16) / 8 : -1;
+}
+
+// row_angle is the way a field's rows run, radians anticlockwise from east.
+float row_angle(int ground) {
+	return float((ground - 16) % 8) * 3.14159265 / 8.0;
+}
+
+// across_rows is the direction across a field's rows, glTF x and z (z is
+// south: along the rows is (cos a, -sin a)).
+vec2 across_rows(int ground) {
+	float a = row_angle(ground);
+	return vec2(sin(a), cos(a));
+}
+
+// row_spacing is how far apart a crop's rows are: maize and potatoes 75 cm
+// (as sown in the Netherlands), wheat drilled close.
+float row_spacing(int crop) {
+	return crop == 2 ? 0.25 : 0.75;
+}
+
+// card_width is a card's width for its height: a maize card is two plants
+// in a row, narrow; potatoes a bushy haulm; grass clumps wide.
+float card_width(int t) {
+	return t == 6 ? 0.7 : t == 8 ? 1.5 : 1.6;
+}
+
 // What grows on each ground: how much (the share of spots), how tall, which
 // card (0 grass, 1 dense grass, 2 fern, 3 grass in flower, 4 heather in
-// flower, 5 heather out of flower), its tint. r
+// flower, 5 heather out of flower, 6 maize, 7 wheat, 8 potatoes), its
+// tint. A crop stands at its own height whatever the layer's size: maize
+// grown in late summer (2.2 m), ripe wheat, potatoes in leaf; a ploughed
+// field grows nothing. r
 // picks between kinds. Forest undergrowth is mostly ferns (owner,
 // 2026-10-09: the Posbank's slopes above the Diepesteeg).
 void look(int ground, float r, out float dense, out float tall, out int tile, out vec3 col) {
@@ -165,6 +209,12 @@ void look(int ground, float r, out float dense, out float tall, out int tile, ou
 		dense = 0.75; tall = 0.18; tile = 1; col = vec3(1.7, 0.95, 2.4);
 	} else if (ground == 9) { // under the dune thicket: sparser turf
 		dense = 0.45; tall = 0.22; tile = r < 0.7 ? 1 : 0; col = vec3(1.5, 0.95, 2.0);
+	} else if (crop_of(ground) == 1) { // maize
+		dense = 0.9; tall = 2.2; tile = 6;
+	} else if (crop_of(ground) == 2) { // wheat
+		dense = 1.0; tall = 0.85; tile = 7;
+	} else if (crop_of(ground) == 3) { // potatoes
+		dense = 0.95; tall = 0.55; tile = 8;
 	}
 }
 
@@ -183,9 +233,9 @@ vec3 yawed(vec3 v, float a) {
 const float CLUMP_ROOM = 0.35;
 
 // plant_kind is the clump layer that models card t's plants: 0 grass, 1
-// ferns, 2 heather.
+// ferns, 2 heather; 3 none (crops are cards near the rider too).
 int plant_kind(int t) {
-	return t == 2 ? 1 : t >= 4 ? 2 : 0;
+	return t == 2 ? 1 : t == 4 || t == 5 ? 2 : t >= 6 ? 3 : 0;
 }
 
 // flowering tells whether the heather at s is in flower.
@@ -209,5 +259,11 @@ vec3 up_normal(mat4 view) {
 // tone is a plant's tint at s: its kind's colour, the ground patch's tone
 // (as the grassy ground under it), a little of its own.
 vec3 tone(Spot s, vec3 col) {
-	return col * lawn_tone(s.p) * (0.92 + 0.16 * unit(s.h3, 16u));
+	vec3 c = col * lawn_tone(s.p) * (0.92 + 0.16 * unit(s.h3, 16u));
+	// Dry above dry_above, easing in over 80 m of height; a share of the
+	// plants stays green (the lower layer under the tawny tops).
+	// The tint multiplies the plants' green: straw is that green ×
+	// (2.2, 1.2, 2.0), as the grey dune's turf is its own multiplier.
+	float dry = smoothstep(dry_above - 40.0, dry_above + 40.0, s.y) * (0.35 + 0.65 * unit(s.h3, 0u));
+	return mix(c, c * vec3(2.2, 1.2, 2.0), dry * 0.9);
 }

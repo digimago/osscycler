@@ -49,6 +49,29 @@ type species struct {
 	// pollard: cut back to its head every few years (knotwilg): a short,
 	// thick trunk, a knobbly head and a crown of thin straight shoots.
 	pollard bool
+	// region: the style whose worlds have it (style.go); "" every world.
+	region string
+	// forestBare: the share of its crown a tree in a stand loses below
+	// (0: 0.3, drawn up by its neighbours); a shade-tolerant one keeps
+	// its low branches.
+	forestBare float64
+	// pruneBareM: where its crown reaches over a road it stands about
+	// level with, its branches are cut off to this height (at scale 1:
+	// a road's clearance and a safe bend's sight line); 0: never pruned.
+	pruneBareM float64
+}
+
+// formBare is how high the trunk of form v (formForest, formOpen) goes
+// bare at scale 1, as addTreeTemplate builds it.
+func (sp species) formBare(v int) float64 {
+	if v != formForest || sp.pollard {
+		return sp.bare
+	}
+	lose := sp.forestBare
+	if lose == 0 {
+		lose = 0.3
+	}
+	return math.Max(sp.bare, math.Min(sp.bare+(sp.h-sp.bare)*lose, sp.h*0.65))
 }
 
 // crownReach is how far the species' open form reaches out from its
@@ -79,19 +102,83 @@ var allSpecies = []species{
 	// tall and about 0.7 m across, its head of shoots 3 m long (owner,
 	// 2026-10-10: along farmland ditches between plots).
 	{name: "willow", h: 5.5, bare: 2.2, trunkR: 0.35, crownR: 2.2, clumpR: 0.9, bark: 0x6b6152, leaf: 0x8aa06a, pollard: true},
+	// Town trees (owner, 2026-10-11: Dutch urban greenery is maple, ash,
+	// rowan, plane, red oak, ginkgo, now and then sweet chestnut or
+	// cherry; by water birch, willow, alder or poplar; no conifers but in
+	// woods and gardens). Grown street trees: sycamore maple (esdoorn)
+	// 18 m, 0.7 m across; rowan (lijsterbes) small, 8 m; London plane
+	// (plataan) 24 m, a broad crown on a trunk 1 m across, its bark
+	// mottled light; red oak (Amerikaanse eik) 20 m; ginkgo 15 m, narrow,
+	// steep branches; sweet chestnut (tamme kastanje) 20 m, broad; ornamental
+	// cherry (sierkers) 8 m, a wide round crown on a short stem; alder (els)
+	// 16 m, narrow and dark.
+	{name: "maple", h: 18, bare: 3.5, trunkR: 0.35, branches: 6, spread: 0.85, rise: 40, crownR: 5, clumpR: 2.6, clumps: 1, bark: 0x7a7466, leaf: 0x4a7a2e},
+	{name: "rowan", h: 8, bare: 1.8, trunkR: 0.12, branches: 5, spread: 0.6, rise: 55, crownR: 2.2, clumpR: 1.3, bark: 0x8a8478, leaf: 0x6b9440},
+	{name: "plane", h: 24, bare: 4, trunkR: 0.5, branches: 7, spread: 0.85, rise: 35, crownR: 7, clumpR: 3, clumps: 1, bark: 0xb5ac8c, leaf: 0x5a8a34},
+	{name: "red oak", h: 20, bare: 4, trunkR: 0.4, branches: 6, spread: 0.85, rise: 35, crownR: 6, clumpR: 2.8, clumps: 1, bark: 0x6e6a60, leaf: 0x46712c},
+	{name: "ginkgo", h: 15, bare: 2.5, trunkR: 0.25, branches: 5, spread: 0.45, rise: 60, crownR: 2.6, clumpR: 1.4, clumps: 1, bark: 0x857a68, leaf: 0x7ea34a},
+	{name: "chestnut", h: 20, bare: 3, trunkR: 0.5, branches: 7, spread: 0.9, rise: 35, crownR: 6, clumpR: 3, clumps: 1, bark: 0x5e5244, leaf: 0x3f6a26},
+	{name: "cherry", h: 8, bare: 1.8, trunkR: 0.18, branches: 5, spread: 0.85, rise: 35, crownR: 3.2, clumpR: 1.6, bark: 0x5a3e34, leaf: 0x4e7a32},
+	{name: "alder", h: 16, bare: 3, trunkR: 0.22, branches: 6, spread: 0.55, rise: 50, crownR: 3, clumpR: 1.6, clumps: 1, bark: 0x4a4640, leaf: 0x2f5a26},
+	// The Vosges' (styleFR): Norway spruce (épicéa), planted on the
+	// mountain, 30-35 m in a grown stand, a narrow spire of drooping
+	// tiers; silver fir (sapin pectiné), as tall, darker and blue-green,
+	// its tiers flatter and broader, its top rounding off with age; both
+	// shade-tolerant, branched low at a road's edge (owner's shot on the
+	// Route des Américains), on a bank above the road branched from the
+	// foot, at the road's level cut back over it (owner's shot of the
+	// D13B: pruneBareM); the lowest tier just over a rider's head, as a
+	// low-poly tier at eye height reads as a wall;
+	// small-leaved lime (tilleul), the village tree, 20 m with a dense
+	// round crown on a stout trunk.
+	{name: "spruce", h: 32, bare: 1.2, trunkR: 0.35, bark: 0x4e3c30, leaf: 0x263f2a, fir: true, tierCount: 7, tierShape: 0.12, region: RegionFR, forestBare: 0.02, pruneBareM: 5.5},
+	{name: "silver fir", h: 32, bare: 1.2, trunkR: 0.4, bark: 0x5e5c56, leaf: 0x22382e, fir: true, tierCount: 6, tierShape: 0.14, region: RegionFR, forestBare: 0.02, pruneBareM: 5.5},
+	// Mountain beech (hêtraie d'altitude): beech wind-shorn and stunted
+	// near the crests, 6-10 m, branched from the foot into a dense low
+	// crown, a wall of leaves along the road (owner's shot of the D430).
+	{name: "mountain beech", h: 8, bare: 0.6, trunkR: 0.22, branches: 8, spread: 0.95, rise: 25, crownR: 3.4, clumpR: 2.1, clumps: 2, bark: 0x7e796e, leaf: 0x4a7230, region: RegionFR, forestBare: 0.05},
+	{name: "lime", h: 20, bare: 3, trunkR: 0.42, branches: 7, spread: 0.8, rise: 45, crownR: 5, clumpR: 2.7, clumps: 1, bark: 0x6a6458, leaf: 0x557f30, region: RegionFR, pruneBareM: 4.5},
 }
 
 // Kinds of plant (templates): each species' detailed variants and simple
 // one, then the bushes (one per allBushes), heather, reed, lily, hedges.
 var (
-	speciesKinds = len(allSpecies) * (treeVariants + 1)
-	kBush        = speciesKinds // then one per allBushes
-	kHeather     = kBush + len(allBushes)
-	kReed        = kHeather + 1
-	kLily        = kHeather + 2
-	kMarram      = kHeather + 3
-	kHedge       = kHeather + 4 // then one per hedgeKinds
+	speciesKinds  = len(allSpecies) * (treeVariants + 1)
+	kBush         = speciesKinds // then one per allBushes
+	kHeather      = kBush + len(allBushes)
+	kReed         = kHeather + 1
+	kLily         = kHeather + 2
+	kMarram       = kHeather + 3
+	kMarramFlower = kHeather + 4
+	kHedge        = kHeather + 5 // then one per hedgeKinds
+	kPruned       = kHedge + len(hedgeKinds)
+	// prunedKind: species i's pruned form's kind (after the hedges, so
+	// the other kinds keep their numbers), -1 for one never pruned.
+	prunedKind = func() []int {
+		out, k := make([]int, len(allSpecies)), kPruned
+		for i, s := range allSpecies {
+			out[i] = -1
+			if s.pruneBareM > 0 {
+				out[i], k = k, k+1
+			}
+		}
+		return out
+	}()
 )
+
+// kindSpecies is kind k's species (any form, pruned too), -1 for a plant
+// that isn't a tree.
+func kindSpecies(k int) int {
+	if k < speciesKinds {
+		return k / (treeVariants + 1)
+	}
+	for i, pk := range prunedKind {
+		if pk == k {
+			return i
+		}
+	}
+	return -1
+}
 
 // treeKind is the kind for species sp: its variant v (0..treeVariants-1),
 // or its simple one (far).
@@ -114,9 +201,14 @@ var plantKinds = func() []plantKind {
 	for _, b := range allBushes {
 		out = append(out, plantKind{"bush " + b.name, b.drawM})
 	}
-	out = append(out, plantKind{"heather", 150}, plantKind{"reed", 150}, plantKind{"lily", 100}, plantKind{"marram", 150})
+	out = append(out, plantKind{"heather", 150}, plantKind{"reed", 150}, plantKind{"lily", 100}, plantKind{"marram", 150}, plantKind{"marram flowering", 150})
 	for _, h := range hedgeKinds {
 		out = append(out, plantKind{h.name, h.drawM})
+	}
+	for _, s := range allSpecies {
+		if s.pruneBareM > 0 {
+			out = append(out, plantKind{s.name + " pruned", 700})
+		}
 	}
 	return out
 }()
@@ -158,6 +250,23 @@ var speciesByLand = map[scenery.Land]speciesMix{
 	scenery.LandMeadow: {broad: map[string]float64{"oak": 55, "ash": 35, "birch": 10}},
 	scenery.LandNone:   {broad: map[string]float64{"oak": 50, "ash": 35, "birch": 15}},
 }
+
+// Town greenery (owner, 2026-10-11): the street and park trees of a Dutch
+// town, and by water those that like it wet. No conifers there: they grow
+// in woods and in gardens (gardenM back from the street).
+var (
+	townMix = map[string]float64{"maple": 20, "ash": 12, "plane": 14, "red oak": 12, "rowan": 10, "birch": 10, "cherry": 8, "ginkgo": 5, "chestnut": 4}
+	// Few willows (owner, 2026-10-12: not wanted along a village's streets
+	// by its ditches; they stand by the water in the fields).
+	townWaterMix = map[string]float64{"birch": 40, "alder": 30, "poplar": 25, "willow": 5}
+)
+
+const (
+	gardenM      = 12.0 // conifers grow in a town only this far from a road: in gardens
+	gardenHouseM = 20.0 // and this near a house
+	townNearM    = 40.0 // grass or park with built-up land this near is a town's
+	townWaterM   = 15.0 // a town tree this near water is one of townWaterMix
+)
 
 // avenueMix: the trees along roads through open land, one species per
 // stretch.
@@ -209,7 +318,7 @@ func addTreeTemplate(p *gltf.Primitive, sp species, v int, far bool) {
 		// Drawn up by its neighbours: bare higher, crown narrower.
 		// At most two thirds bare: a stand's crowns are a third of
 		// their height or more (Scots pine, oak, beech in Dutch stands).
-		sp.bare = math.Max(sp.bare, math.Min(sp.bare+(sp.h-sp.bare)*0.3, sp.h*0.65))
+		sp.bare = sp.formBare(formForest)
 		sp.crownR *= 0.7
 		sp.clumpR *= 0.85
 		sp.tierShape *= 0.7

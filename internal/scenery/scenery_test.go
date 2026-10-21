@@ -476,3 +476,44 @@ func TestBandedContainsMatchesEveryEdge(t *testing.T) {
 		}
 	}
 }
+
+// A reversed course is the same road: its scenery comes from its forward
+// course's map data, fetched and cached once, from the stretch the rider
+// is in.
+func TestStoreSharesMapDataWithTheReverse(t *testing.T) {
+	srv := newOverpass(t, fixtureJSON)
+	dir := t.TempDir()
+	c := longCourse(t)
+	rev := c.Reversed()
+	rev.Forward = c
+	cfg := Config{CacheDir: dir, Fetch: true, Endpoint: srv.URL, UserAgent: "osscycler-test"}
+
+	s := NewStore(cfg, []*course.Course{c, rev})
+	runStore(t, s)
+	// 9 km into the reverse is 3 km into the forward course: its first
+	// stretch first.
+	s.Want(rev.ID, 9000)
+	waitFor(t, "both stretches", func() bool { return !s.Pending(rev.ID) })
+	q := srv.asked()
+	if e := s.courses[c.ID]; len(q) != 2 || q[0] != e.parts[0].query || q[1] != e.parts[1].query {
+		t.Fatalf("%d queries, want the forward course's stretch from 0 km, then the one from 5 km", len(q))
+	}
+	if s.Get(rev.ID) == nil || s.Get(c.ID) == nil || s.Pending(c.ID) {
+		t.Fatalf("scenery: reverse %v, forward %v; forward pending %v", s.Get(rev.ID) != nil, s.Get(c.ID) != nil, s.Pending(c.ID))
+	}
+	// The reverse's scenery is its own, a sample for each of its own.
+	if f, r := s.Get(c.ID).Land, s.Get(rev.ID).Land; len(f) != len(r) {
+		t.Errorf("land use for %d samples forward, %d reversed", len(f), len(r))
+	}
+	if files, _ := filepath.Glob(filepath.Join(dir, "*.json")); len(files) != 2 {
+		t.Errorf("cache files %v, want the forward course's two", files)
+	}
+	// The world builder loads the reverse from the same cache.
+	cfg.Fetch = false
+	if d, err := NewStore(cfg, nil).Load(context.Background(), rev); err != nil || len(d.Elements) != len(fixture().Elements) {
+		t.Errorf("the reverse from the cache: %d elements, err %v", len(d.Elements), err)
+	}
+	if n := NewStore(cfg, nil).Missing(rev); n != 0 || len(srv.asked()) != 2 {
+		t.Errorf("%d stretches of the reverse missing, %d fetches", n, len(srv.asked()))
+	}
+}

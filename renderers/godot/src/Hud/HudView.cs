@@ -129,6 +129,7 @@ public sealed class HudView
         _note = note;
         _strips.ShowLookAhead = _layout.Showing(Layout.LookAhead);
         _strips.ShowProfile = _layout.Showing(Layout.Profile);
+        _strips.ShowMap = _layout.Showing(Layout.Map);
         if (Tiles.WorkoutActive(st) && workout != null)
             _strips.ShowWorkout(workout, st!.Workout.ElapsedS);
         else
@@ -235,6 +236,11 @@ public sealed class HudView
     // Arrange sets the rider's layout: the tiles, the strips shown, the
     // digits' size.
     public void Arrange(Layout l) => _layout = l;
+
+    // Summary shows a ride's summary over the rest (null: none); Graph the
+    // ride graph along the bottom (null: none), power by zone from ftp.
+    public void Summary(Osscycler.V1.ActivitySummary? s, string heading = "") => _list.ShowSummary(s, heading);
+    public void Graph(RideHistory? h, double ftp) => _strips.Graph(h, ftp);
 
     // Head sets what the head itself shows: a question waiting for its
     // second key, a notice (a command the core refused) and the key help

@@ -34,11 +34,10 @@ small; fix at the stage that causes it, then make it stay fixed.
    non-road runs within 30 m, and the commands for the next steps. A mark
    is the rider's, not a verdict: what is wrong there is still to find.
    Without marks: which world did the rider see (`_worlds/<id>`,
-   `~/osscycler/worlds/<id>`, a `.preview/`, a `.classic/`)? Built by which
-   builder (`world.json` `builder`: `graph`, the default since 2026-10-12,
-   or `classic`, the fallback, see "The graph builder" below; a world
-   without it is classic; a classic world under a graph stamp is a
-   fallback build, `osscycler-world` says why) and which version?
+   `~/osscycler/worlds/<id>`, a `.preview/`)? Built by which version
+   (`world.json` `stamp`; `builder` says `graph`, or `classic` or nothing
+   for a world from before 2026-10-21, when the classic builder was
+   retired: rebuild it)?
    A fault in a world from an older builder may already be fixed:
    rebuild with the current one from the caches first
    (`_bin/osscycler-world -courses _gpx -out _scratch/w -fetch=false
@@ -149,105 +148,77 @@ small; fix at the stage that causes it, then make it stay fixed.
 | What is seen (under_path / check / eye) | Likely stage | First things to check |
 |---|---|---|
 | MISSING: terrain or verge under the rider, road edges facing each other | a road not drawn | `networkLines` (`minLineM`, short links), `drawable`, `chains`, the 150 m `clipM`, `dropCovered`; is the way in the map data (`near_ways.py`)? |
-| MISSING beside the road, centre line fine | the path off its road | `keepOnRoad` (`keepM` 10 m), `ridingLine` width, `courseRoads` (own way vs map road), `ownWays`, `continueDeadEnds` |
-| HOLE (nothing drawn) at a road edge or junction | the cell cut | `rasterize` (footprint), verges (`verger`, `roadGap`), a junction's free edges, an overlay patch (`shapeOverlay`) over a cut terrain |
-| HOLE in open land | terrain or water | `terrain.chunk`, `lod` blocks, the water quads and bed |
-| LAND (grass through asphalt) | the cutter or heights | `newCutter`/`clip` (which materials cut: not `ground`), verges not clipped, a road lower than its ground (`heights`, `joinHeights`, `bridgeM`) |
+| MISSING beside the road, centre line fine | the path off its road | `place` (the riding line narrowed onto the carriageway, `gLaneMarginM`), `ridingLine` width, the matcher's off-road states (`matchCourse`), `ownWays`, `dropCoveredStubs` |
+| HOLE (nothing drawn) at a road edge or junction | the land's outline | `gland` (graph_terrain.go: `covered`, `gTuckM`, the smallest cell `gDepth`), a junction's free edges, an overlay patch (`shapeOverlay`); `stitchAcross`, `stitchSeams` |
+| HOLE in open land | land or water | `gland` (far blocks `merged`), the water sheets (`gWaterSheet`) |
+| LAND (grass through asphalt) | the land's heights | `gland.blend` (the shoulder), `underRoads`, a road lower than its ground (`anchorHeights`, `heightsStraight`, `bridgeM`) |
 | Torn edge at a junction (gap, slit, step) | patch shape | `networkPatches` → `mergePatches` → `shapeFromNode` (cuts `p0`/`p1` against the road mesh's edges), `roundCorners`, `cutRoads` (`onPatch` samples), apron sizes; overlays stop sidewalks short |
 | Torn edge at a roundabout | roundabout | `findRoundabouts`, `absorb`, `fit`, `shape` (roundabout.go) |
-| Step or kink in a road's height | heights | `heights`, `joinHeights` (nodes share a height, blended 15 m), `markAloft`, `markDecks` |
+| Step or kink in a road's height | heights | `anchorHeights` (nodes share a height, roads corrected node to node), `heightsStraight` (bridges, tunnels), `markAloft`, `markDecks` |
 | Bridge over nothing, or a road under a deck missing | decks | `markDecks`, `bridgeM` 2.5 m, ways tagged `bridge` the route runs along (`runsAlong`); railways are not fetched |
-| Path height steps (the check's `-max-path-step`, path_check's grade) | path / matching, or heights | a change onto a road above or below (`unridableCost` in `path`), a tunnel or underpass the world doesn't model, `heights` along the road |
-| Rider jumps sideways, hops roads, wrong carriageway | path / matching | `courseRoads` (`wrongWay`, `against`, `use_sidepath` reach), `smoothRuns`, `connectors` (`openRunM` 18 m), `smoothTurns`, `rideAround`/`passThrough`, `limitDrift`, `evenPace` |
+| Path height steps (the check's `-max-path-step`, path_check's grade) | path / matching, or heights | a change onto a road above or below (`gDropM` in `matchCourse`), a tunnel or underpass the world doesn't model, the own way's heights (`gOwnSmoothM`) |
+| Rider jumps sideways, hops roads, wrong carriageway | path / matching | `matchCourse`'s costs (`wrongWayCost`, `gAgainstCos`, `gMapBonus`, `gLeaveCost`), `hairpins`, `trace` (spurs), `place` (turns swept), `limitDrift` |
 | Fault only in some builds | order | map iteration or goroutine order: sort keys; `glb_diff.py` on two builds |
-| Fault only with `-dem` | the cut | everything after `t.cut = true` in `Build`: `markAloft`, verges, `rasterize`, the cell cut in `terrain.chunk`, the cutter |
+| Fault only with `-dem` | the ground model | `anchorHeights`, `gland.blend` (banks eased to the road), `markAloft` |
 | Fault only at a chunk edge | chunk grouping | `roadPrims` (stretches split at chunk edges share a sample), `chunkOrder` (clips share the regional frame's grid) |
 
 ## The pipeline
 
-`world.Build` (internal/world/world.go), in order. A fault is caused at
-the first stage whose output is wrong; everything after only shows it.
+`world.Build` (internal/world/graph.go), the one builder since
+2026-10-21 (the classic, terrain-first builder retired; its stages and
+A/B numbers in docs/HISTORY.md, "Two world builders"): the network
+first, the land last, each stage settled before the next and never
+revisited. A fault is caused at the first stage whose output is wrong;
+everything after only shows it.
 
 1. Course line and samples: `courseLine` (rounded corners, world/smooth.go),
    `sampleRoad`, `applyRoads` (road.go: widths and surfaces from map
-   stretches), `groundOffsets` (the ground model's offset to the profile).
-2. The network (network.go), `newNetwork`: `networkLines` (map ways
-   chained by `chains`, cut to `clipM` of the route, short pieces left out
-   unless they link roads at both ends), `finishRoad`, `courseRoads` (the
-   map road the course is on, per sample: the map matching's input),
-   `heights` (ground model along each road, smoothed), `joinHeights`.
-3. `findRoundabouts` (roundabout.go), `dropCovered`, `joinAlongside`.
-4. `network.finish` → `path` (the rider's line: Viterbi map matching onto
-   the drawn roads), `ownWays` (the course's own ways where it leaves the
-   roads), `connectors` (over open ground past `openRunM`),
-   `continueDeadEnds`.
-5. Junctions: `networkPatches` (map roads only; route lines get none) →
-   `mergePatches` → `shapePatches` (`shapeFromNode`, else `shapeOverlay`);
-   roundabouts absorb nearby junctions and become patches (`absorb`,
-   `fit`, `shape`).
-6. `cutRoads` (junction.go: a sample at every cut, samples inside a span
-   `onPatch`, roads crossing an overlay `underPatch`), `clearPatches`,
-   `tidyStrips`, `markPassesAgain` (road.go: a stretch ridden twice drawn
-   once).
-7. With a ground model: `t.cut = true`, `markAloft` (terrain.go); then
-   `markDecks` (bridges.go).
-8. `roadPrims` (world.go): road meshes per chunk (`roadMesh`, road.go;
-   verges built with them by `verger`, verges.go) and patch meshes
-   (`patchMeshes`); `rasterize` (verges.go) records their footprint.
-9. Terrain chunks (`terrain.chunk`, terrain.go: level of detail, water;
-   with a cut, cells the footprint covers whole are left out); car parks
-   (`parkingLots`); then, with a ground model, the cutter (verges.go): car parks and road
-   surfaces (not the `ground` material) are `add`ed, and every terrain primitive and every ground-material one in
-   the roads (the verges) is `clip`ped by them, each triangle's cutters
-   taken in the order of their coordinates (they arrive in map order).
-10. Buildings, plants, fences, the ground map.
-11. The manifest's path: `smoothTurns`, `ridingLine`, `keepOnRoad`,
-    `rideAround`, `passThrough`, flat roundabouts' lane 0, `limitDrift`,
-    `evenPace`, then `settleOnRoad` (settle.go: against the drawn road triangles, sideways only) and `limitDrift` again (riding.go, network.go, roundabout.go). `path.xyz` is the
-    final centre line, `path.lane_m` the riding line's offset to its right.
-
-## The graph builder
-
-`world.BuildGraph` (internal/world/graph.go), the default builder since
-2026-10-12, beside `world.Build`, the classic one, now the fallback
-(CLAUDE.md, "World builder"; its stages in docs/HISTORY.md, "Two world
-builders"): the network first, the land last.
-Worlds go in `<out>/<id>`; `-builder classic` builds the classic world
-(in `<out>/.classic/<id>`), `-builder ab` / `make world-ab` both, to
-compare; `clip -builder classic` likewise. The classic builder is also
-built automatically where the graph one fails or its world fails the
-check (`-check=fail`), under the graph builder's stamp. Shared stages (junctions, roundabouts, road meshes, car parks,
-plants, the check) are the classic builder's code: a fault there is in
-both, and a fix must keep the classic world byte-identical unless it is
-meant for it. Its own stages, in order, and what goes wrong where:
-
-1. `networkLines` → `newGnet` (graph_net.go): nodes shared by lines;
-   roundabouts' ways across as lines from `gnet.virtual` on (not drawn).
-   A course that can't change roads where it should: a node missing
-   (the map splits nowhere there) or a ring not found (`ringNodes`).
-2. `heights` then `gnet.anchorHeights` (graph_heights.go). A step or kink
-   in a road between nodes: the correction runs straight node to node.
-3. `gnet.matchCourse` → `trace` (graph_match.go): per 5 m step on a line
+   stretches), `groundOffsets`.
+2. The roads: `networkLines` (map ways chained by `chains`, cut to `clipM`
+   of the route, short pieces left out unless they link roads at both
+   ends), `joinNearEnds` (a dead end pointing at a road within its half
+   width + 3 m joins it), `finishRoad`; `findRoundabouts` (roundabout.go),
+   `dropCoveredStubs`, `joinAlongside`.
+3. `newGnet` (graph_net.go): nodes shared by lines; roundabouts' ways
+   across as lines from `gnet.virtual` on (not drawn). A course that can't
+   change roads where it should: a node missing (the map splits nowhere
+   there) or a ring not found (`ringNodes`).
+4. `gnet.anchorHeights` (graph_heights.go): each road the ground model
+   along it, smoothed, every node the mean of its roads, each road
+   corrected straight node to node; bridges and tunnels straight end to
+   end (`heightsStraight`). A step or kink between nodes: the correction.
+5. `gnet.matchCourse` → `trace` (graph_match.go): per 5 m step on a line
    or off. Costs are its constants (`gLeaveCost`, `gRankCost`,
    `gRushCost`, `gJitterM`, `gStepReachM`, `gCloseM`/`gFarCost`,
-   `gAcrossCost`, `gMapBonus`). To see the states, print `st` at the end
-   of `matchCourse` for a stretch of a clip (and `cands[i]` with `acc` for
-   one step: why one won). Hops, U-turns, loops round a roundabout: a
-   transition cost; stalls: projections stepping back (`gJitterM`).
-   Hairpins (180° in a step) and spurs: `gnet.hairpins` (arrival and
-   departure directions for a zero-length leg), `gNodeSlackM` (a node a
-   hair past a line's end), `gAgainstCos` (no leg or net move against the
-   route's way), `gSpurM` (spurs out and back removed in `trace`); dump
-   the states (`st`) and `out.pts` round a spot, and the candidates with
-   `acc` and `trans` for one step, to see which rule should have bitten.
-4. `gpathOut.place` (graph.go): the turns of the line through the
+   `gAcrossCost`, `gMapBonus`, `gDropM`: never onto a road above or
+   below). To see the states, print `st` at the end of `matchCourse` for
+   a stretch of a clip (and `cands[i]` with `acc` for one step: why one
+   won). Hops, U-turns, loops round a roundabout: a transition cost;
+   stalls: projections stepping back (`gJitterM`). Hairpins (180° in a
+   step) and spurs: `gnet.hairpins` (arrival and departure directions for
+   a zero-length leg), `gNodeSlackM` (a node a hair past a line's end),
+   `gAgainstCos` (no leg or net move against the route's way), `gSpurM`
+   (spurs out and back removed in `trace`); dump the states (`st`) and
+   `out.pts` round a spot, and the candidates with `acc` and `trans` for
+   one step, to see which rule should have bitten. Then `ownWays` (the
+   course's own ways where it leaves the roads).
+6. Surfaces: junctions `networkPatches` → `mergePatchesApart` →
+   `shapePatches` (`shapeFromNode`, else `shapeOverlay`); roundabouts
+   absorb nearby junctions and become patches (`absorb`, `fit`, `shape`;
+   railings over a bridged ring, `railMesh`); `cutRoads`, `clearPatches`,
+   `tidyStrips`, `markPassesAgain`; `markAloft`, `markDecks` (bridges.go);
+   terraces (`markTerraces`, terrace.go); `roadPrims` (road meshes per
+   chunk, `roadMesh`, and patch meshes, `patchMeshes`); car parks
+   (`parkingLots`).
+7. `gpathOut.place` (graph.go): the turns of the line through the
    network (a road change at a node, a road's own kink, the step across
    where the course leaves a road for a path beside it) rounded as wide
    as the drawn carriageway allows (`gTurnDevs`, `gTurnClearM`, the
    window kept to the line's own bends by `gChordTolM`; two turns within
    `gTurnLinkM` swept as one across the link when that stays on the
-   carriageway); the riding line narrowed onto the drawn carriageway, at
-   and between its points. A sharp turn per step (the check's `TurnDeg`,
+   carriageway; a turn off the roads swept wide, `gTurnFreeClearM`); the
+   riding line narrowed onto the drawn carriageway, at and between its
+   points (`gLaneMarginM`). A sharp turn per step (the check's `TurnDeg`,
    `path_check.py`): print each turn's `s`, `free`, `cut`, `dev` and its
    arc's `d0`, `d1`, `r` after the narrowing loop, and where the sweep
    first leaves the road, on a clip; an arc of a metre or two means a
@@ -255,33 +226,36 @@ meant for it. Its own stages, in order, and what goes wrong where:
    neighbouring turn's window ending short, a re-kept bend), a `dev` of
    1 that the sweep leaves the carriageway at every width. Off road right
    after a turn: the sweep; off road beside a straight road: the lane.
-5. `gland` (graph_terrain.go): the land laid round the roads' outline
+8. `gland` (graph_terrain.go): the land laid round the roads' outline
    (quadtree, marching squares over any leaf, `covered` = the road shrunk
    by `gTuckM`; a shore in 1.25 m cells, `gWaterS`, a road's edge in
    0.625 m; far flat 50 m blocks as one leaf, `merged`, `gFarM`,
    `gFarTolM`; after all chunks, `underRoads` puts every land triangle
-   near a road under the lowest road surface along its edges). Holes at
-   a road edge: a sliver between two surfaces narrower than a smallest
-   cell (`gDepth`); land over road: `blend`'s shoulder, `landHeight`'s
-   clamp, `underRoads` (shared vertices by position: never clamp from
-   one chunk's triangles alone); land over water along a shore: the
-   shore cell's inside against its corners (`shoreLeaf`), `lowater.py`;
-   land over a car park: the car park's own mesh is the outline; far
-   land off the model: `gFarTolM`. `area_check.py` finds the cells,
-   `raster_at.py` shows the spot, `slivers.py` the triangles.
+   near a road under the lowest road surface along its edges), water from
+   its outline (`gWaterSheet`, `ditchBanks`), far terrain in France
+   (far.go). Holes at a road edge: a sliver between two surfaces narrower
+   than a smallest cell (`gDepth`); land over road: `blend`'s shoulder,
+   `landHeight`'s clamp, `underRoads` (shared vertices by position: never
+   clamp from one chunk's triangles alone); land over water along a
+   shore: the shore cell's inside against its corners (`shoreLeaf`),
+   `lowater.py`; land over a car park: the car park's own mesh is the
+   outline; far land off the model: `gFarTolM`. `area_check.py` finds the
+   cells, `raster_at.py` shows the spot, `slivers.py` the triangles.
+9. Buildings, plants, fences, the roadside (walls, guardrails; French
+   style), the ground map.
+10. The manifest's path: `ridingLine`, `limitDrift`, `tailOntoLap`;
+    `path.xyz` is the final centre line, `path.lane_m` the riding line's
+    offset to its right.
 
-Met so far on the graph builder (owner's marks, 2026-10-11, and the A/B
-of 2026-10-12):
+Met so far (owner's marks from 2026-10-11 on, and the A/B against the
+classic builder of 2026-10-12):
 
 - The path turning 101° in one step at a road change (25.95 km), 87°
   (20.55 km), zigzags through a staggered junction (26.65 km): the
   rounding in `place` had no room (two points of one node a hair apart;
   the chord across 20 m cutting the road's own kink nearby; a window
   ending a metre short of the next turn) and, off the roads, was
-  narrowed to a metre by the carriageway check. Compare with the classic
-  builder's path at the same km (`pathdump.py` on both worlds):
-  it sweeps turns over ±15 m regardless of the road and settles sideways
-  after. The 2.1 m height step at 26.8 km was the course's own heights
+  narrowed to a metre by the carriageway check. The 2.1 m height step at 26.8 km was the course's own heights
   off the roads taken from the 5 m ground model unsmoothed, under a
   viaduct; the route goes through a cycle tunnel there (owner), which
   the map data lacks: the own way runs under bridges drawn on the
@@ -317,7 +291,7 @@ of 2026-10-12):
   corner where it dropped points near a junction turn (its distances
   then exceed the chord between kept points), so the heading at a point
   flips; the graph builder takes the route's way over ±10 m
-  (`routeWay`). The classic builder has the same line and mends after.
+  (`routeWay`).
 - A side road standing over the main road as a wall where it meets it
   (30.26 km): no junction, because the two share no node (the road
   really meets a cycle path the map data lacks); `joinNearEnds` joins a
@@ -367,8 +341,7 @@ All in `scripts/`; Python ones read only `world.glb` and `world.json`
 - `raster_at.py WORLD X Z [--r 2] [--cell 0.1]`: a text raster of the
   surface on top round a spot and the triangles over it.
 - `glb.py`: the reader they share (frame, triangles, riding line).
-- `clip/`: `go run ./.claude/skills/world-faults/scripts/clip -h`
-  (`-builder classic` for the classic builder). It is
+- `clip/`: `go run ./.claude/skills/world-faults/scripts/clip -h`. It is
   outside `./...`, so `make check` vets nothing of it (gofmt still checks
   it); after changing `world.Options` or `scenery`, `go build` it once.
 - The builder's own check: printed by every `osscycler-world` build and
@@ -414,24 +387,20 @@ own code works in east and north (n = −z).
 - `-fetch=false` builds from the caches only; a missing stretch is then a
   warning and its scenery is grass, which changes what you're looking at.
 
-## Where things stood (2026-10-10)
+## Where things stood (2026-10-21)
 
-What current worlds have, to compare a change against (check within 40 m;
-riding line off road):
+What current worlds have, to compare a change against (`osscycler-world`'s
+check within 40 m of the path; builder version 72):
 
-- Posbank Loop: holes 5.7 m², land over road 0.1 m² (1.0 km), off road
-  0 m since 2026-10-10 (`settleOnRoad`, `keepToConnected`, `openRuns`; was about 110 m in 16) (`under_path.py` over the whole course), the
-  longest 5.779-5.810 km (31 m), then 7.065, 7.139 and 13.174 km (8-9 m
-  each); open. At 5.79 km (a course's own way: a cycle path the map data
-  lacks) the path runs about 1.5 m right of the drawn road's middle (the
-  road, 3.5 m wide, ends 0.23 m right of the path), so the riding line,
-  0.73 m right of the path, lies on the verge; the other
-  places are not yet looked at. `path_check.py`: worst turn 66° and worst
-  zigzag 2.84 m, both at 18.17 km.
-- Figure 8 and the oval: 0, 0, 0.
-- Grebbeberg to Rotterdam (98.7 km): holes 31.4 m², land over road
-  0.7 m², off road 8 m (0.1 m/km) since 2026-10-10 (was 1,150 m: a canal
-  with a road on each bank at 55-62 km, which the match hopped between,
-  and short gaps). `under_path.py` also reports OTHER where the road
-  passes under buildings or a bridge's structure (97.2, 98.2 km, the
-  Erasmus Bridge): the check counts those as on the road.
+- Posbank Loop: holes 0.9 m² (the worst 0.2 at 27.4 km), land over road
+  0, riding line off road 0, height steps at most 0.50 m, sharpest turn
+  42° per step (26.6 km; the Schaarweg Z at 30.6 km is open).
+- Posbank Loop (reverse): holes 0.9 m², land over road 0, off road 1 m
+  (5.2 km).
+- La Bresse – Hohneck loop: holes 0.5 m², land over road 0, off road 0,
+  height steps at most 1.25 m (17.4 km, the summit car park's climb),
+  sharpest turn 54°.
+- Figure 8 and oval: every measure 0 (the oval's turns 8° per step).
+
+Older numbers, and the classic builder's beside them, are in
+docs/HISTORY.md.

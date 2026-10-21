@@ -173,7 +173,6 @@ Packages live under `internal/` (names below mean `internal/<name>`); only `gen/
 - 13b. After a one-way route (a planning session of its own): a corridor into a made-up world until a new ride is picked, more world generated from real terrain and roads, or a fixed world of appended real terrain with set intersections.
 - 14. Heart rate zones from threshold heart rate (Friel), from a guided 20-minute test or picked out of a ride, as an alternative to the maximum. Descriptive only: no training advice or warnings.
 - Faster world builds themselves (the Dunes course 48 s from the caches), and the course picker showing which worlds are ready.
-- TUI: a prompt's suggested value is appended to when typing (5 makes 35); let the first digit replace it, as the 3D view does.
 - TUI: power and HR zone colours on the dashboard.
 - Workouts: repeat groups of 3+ blocks would only be an editing convenience (real files write sets as plain blocks).
 - Recorder: a workout_step / lap per workout segment.

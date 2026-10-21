@@ -1440,6 +1440,40 @@ func TestActivitiesExport(t *testing.T) {
 	}
 }
 
+// A prompt's suggested value is replaced by the first character typed
+// (owner: typing 5 after a suggested 3 % made 35), taken as it is with
+// enter, and edited by backspace, as in the 3D view.
+func TestPromptSuggestionIsReplacedByTyping(t *testing.T) {
+	cmds := &stubCommands{}
+	m := calModel(cmds)
+	m = pressAll(m, "w", "enter", "180") // suggested 150
+	m, cmd := press(m, "enter")
+	run(m, cmd)
+	m = pressAll(m, "g", "-2.5") // suggested 3, a minus first
+	m, cmd = press(m, "enter")
+	run(m, cmd)
+	m = pressAll(m, "g") // the suggestion as it is
+	m, cmd = press(m, "enter")
+	run(m, cmd)
+	m = pressAll(m, "w", "enter", "backspace", "5") // 150 edited: 15, then 155
+	m, cmd = press(m, "enter")
+	run(m, cmd)
+	want := "[CONTROL_MODE_POWER 180 CONTROL_MODE_GRADE -2.5 CONTROL_MODE_GRADE 3 CONTROL_MODE_POWER 155]"
+	if got := fmt.Sprint(cmds.controls); got != want {
+		t.Errorf("calls %s\nwant  %s", got, want)
+	}
+	// The FTP prompt alike: 265 over a suggested 200.
+	st := sample()
+	st.Workout = &pb.WorkoutProgress{FtpW: 200, IntensityPct: 100}
+	next, _ := m.Update(StateMsg{State: st})
+	m = pressAll(next.(Model), "f", "265")
+	m, cmd = press(m, "enter")
+	run(m, cmd)
+	if fmt.Sprint(cmds.ftps) != "[265]" {
+		t.Errorf("SetFTP calls %v", cmds.ftps)
+	}
+}
+
 func TestManualControl(t *testing.T) {
 	cmds := &stubCommands{}
 	m := calModel(cmds)

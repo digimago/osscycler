@@ -27,6 +27,26 @@ var PowerZones = []float64{0.60, 0.76, 0.90, 1.05, 1.19}
 // Z5 above.
 var HRZones = []float64{0.60, 0.70, 0.80, 0.90}
 
+// HRThresholdZones are Friel's, as a fraction of threshold heart rate:
+// Z1 under 81 %, Z2 81-89, Z3 90-93, Z4 94-99, Z5 from 100 (his 5a-5c in
+// one; owner, 2026-10-21: five zones, as the maximum's).
+var HRThresholdZones = []float64{0.81, 0.90, 0.94, 1.00}
+
+// HRBasis is what heart rate zones are taken from: a maximum heart rate,
+// or a threshold heart rate (Bpm 0: neither, no zones).
+type HRBasis struct {
+	Threshold bool
+	Bpm       float64
+}
+
+// Bounds are the zones' upper bounds as a fraction of Bpm.
+func (b HRBasis) Bounds() []float64 {
+	if b.Threshold {
+		return HRThresholdZones
+	}
+	return HRZones
+}
+
 // Best is the highest average power held for DurationS seconds.
 type Best struct {
 	DurationS int
@@ -48,17 +68,18 @@ type Summary struct {
 	// PowerZoneS is the time in each power zone, s (len(PowerZones)+1),
 	// nil without an FTP or power.
 	PowerZoneS []float64
-	// HRZoneS is the time in each heart rate zone, s (len(HRZones)+1), nil
-	// without a maximum heart rate or heart rate.
+	// HRZoneS is the time in each heart rate zone, s (one more than
+	// HR.Bounds()), nil without a basis for them or heart rate.
 	HRZoneS []float64
-	// The FTP and maximum heart rate the zones were taken from.
-	FTPW, MaxHRBpm float64
+	// The FTP and the heart rate the zones were taken from.
+	FTPW float64
+	HR   HRBasis
 }
 
 // Summarize sums up samples (one a second, in order) with the rider's FTP
-// and maximum heart rate (0: unknown, those zones are left out).
-func Summarize(ss []Sample, ftpW, maxHR float64) Summary {
-	s := Summary{TimerS: float64(len(ss)), FTPW: ftpW, MaxHRBpm: maxHR}
+// and heart rate zones' basis (0: unknown, those zones are left out).
+func Summarize(ss []Sample, ftpW float64, hr HRBasis) Summary {
+	s := Summary{TimerS: float64(len(ss)), FTPW: ftpW, HR: hr}
 	var powerN, hrN, cadN int
 	var powerSum, hrSum, cadSum float64
 	watts := make([]float64, len(ss)) // no reading counts as 0 for the curve
@@ -99,11 +120,12 @@ func Summarize(ss []Sample, ftpW, maxHR float64) Summary {
 	}
 	if hrN > 0 {
 		s.AvgHR = hrSum / float64(hrN)
-		if maxHR > 0 {
-			s.HRZoneS = make([]float64, len(HRZones)+1)
+		if hr.Bpm > 0 {
+			bounds := hr.Bounds()
+			s.HRZoneS = make([]float64, len(bounds)+1)
 			for _, x := range ss {
 				if x.HR > 0 {
-					s.HRZoneS[zone(float64(x.HR)/maxHR, HRZones)]++
+					s.HRZoneS[zone(float64(x.HR)/hr.Bpm, bounds)]++
 				}
 			}
 		}

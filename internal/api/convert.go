@@ -117,7 +117,7 @@ func profileToProto(p telemetry.Profile) *pb.RiderProfile {
 		Complete: p.Complete, WeightKg: p.WeightKg, FtpW: p.FTPW, DifficultyPct: p.DifficultyPct,
 		WeightForced: p.WeightForced, FtpForced: p.FTPForced, DifficultyForced: p.DifficultyForced,
 		Path: p.Path, SuggestedFtpW: p.SuggestedFTPW,
-		HeightCm: p.HeightCm, MaxHrBpm: p.MaxHRBpm, Cda: p.CdA, HeightForced: p.HeightForced, CdaForced: p.CdAForced,
+		HeightCm: p.HeightCm, MaxHrBpm: p.MaxHRBpm, ThresholdHrBpm: p.ThresholdHRBpm, HrZones: p.HRZones, Cda: p.CdA, HeightForced: p.HeightForced, CdaForced: p.CdAForced,
 		View: p.View, WorldBuild: p.WorldBuild, WorldFetch: p.WorldFetch,
 	}
 	if p.NeedWeight {

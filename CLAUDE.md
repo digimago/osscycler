@@ -177,7 +177,7 @@ Packages live under `internal/` (names below mean `internal/<name>`); only `gen/
 - Recorder: a workout_step / lap per workout segment.
 - Ghosts: choose another ghost than the PB (last ride, a friend's file); workout ghosts (power against the last attempt); several ghosts, other riders with multiplayer, kit colours from the profile; ghost cadence from the recording (a proto change).
 - HRM: R-R intervals (page 4) for HRV later.
-- Later (owner, 2026-10-21): internationalisation of the interface: the TUI's and the 3D view's text in other languages, chosen in the profile; English first, Dutch next.
+- Later (owner, 2026-10-21): internationalisation of the interface: the TUI's and the 3D view's text in other languages, chosen in the profile. First English, Dutch, German and French; later perhaps Spanish, Italian, Norwegian, Slovak and Danish (language codes en, nl, de, fr; es, it, nb, sk, da).
 - Courses: GPX without elevation, looked up from a ground model. Zwift GPX exports (Watopia lies in the Pacific, no OSM there): a synthetic scenery could come later.
 
 ## Known course data

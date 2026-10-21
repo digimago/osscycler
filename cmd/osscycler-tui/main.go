@@ -172,6 +172,11 @@ func (c commands) StopRide(ctx context.Context) error {
 	return err
 }
 
+func (c commands) TurnAround(ctx context.Context) (string, error) {
+	resp, err := c.c.TurnAround(ctx, &pb.TurnAroundRequest{})
+	return resp.GetCourseId(), err
+}
+
 func (c commands) SetDifficulty(ctx context.Context, pct float64) (float64, error) {
 	resp, err := c.c.SetDifficulty(ctx, &pb.SetDifficultyRequest{DifficultyPct: pct})
 	return resp.GetDifficultyPct(), err

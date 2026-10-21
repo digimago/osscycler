@@ -9,7 +9,8 @@ The owner does no coding or modelling. Everything drawn in the 3D world is
 made by code from data (OpenStreetMap, a ground model, the course) and from
 real-world measures, and judged by the owner riding past it. This skill
 holds the rules for making such assets; CLAUDE.md holds what exists and
-what the owner decided about each one.
+the owner's verdicts still in force, docs/HISTORY.md how each asset came
+to be, with its numbers.
 
 ## Where an asset belongs
 
@@ -178,7 +179,8 @@ once, then `--shot`).
 ## The owner's verdicts
 
 The owner looks at the result on a ride and reports by km mark. Record
-each verdict in CLAUDE.md under the step it belongs to, as
-"(owner, YYYY-MM-DD: reason)", with the km mark and the numbers before
-and after, so the rule survives the next change. Work on a branch from
+each verdict that sets a rule for later work in CLAUDE.md (under "Owner's
+verdicts on the world's look", as "(owner, YYYY-MM-DD: reason)"), so the
+rule survives the next change; the km mark and the numbers before and
+after go in docs/HISTORY.md, a dated entry at its end. Work on a branch from
 develop, as for any change.

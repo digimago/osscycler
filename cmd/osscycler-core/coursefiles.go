@@ -26,7 +26,11 @@ func (f courseFiles) File(id string) (string, []byte, error) {
 			return "", nil, fmt.Errorf("course %q comes with osscycler: %w", id, os.ErrNotExist)
 		}
 		// The ID is the file's name (course.LoadDir), so this is the file
-		// it was loaded from.
+		// it was loaded from; a reverse's is its forward course's, which
+		// the world builder reverses as the core does.
+		if c.Forward != nil {
+			id = c.Forward.ID
+		}
 		name := id + ".gpx"
 		b, err := os.ReadFile(filepath.Join(f.dir, name))
 		return name, b, err

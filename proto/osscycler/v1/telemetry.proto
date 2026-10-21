@@ -34,6 +34,17 @@ service TelemetryService {
   // StopRide aborts a ride under way, or dismisses a finished one.
   rpc StopRide(StopRideRequest) returns (StopRideResponse);
 
+  // TurnAround turns the rider round during a course ride (owner,
+  // 2026-10-20): the ride so far ends without a result, and the rider
+  // rides on from the same spot along the course's other way (its
+  // reverse, or the forward course of a reverse), untimed until a timing
+  // line: a lap's line starts a timed lap; a one-way course's finish ends
+  // the ride, not timed. FAILED_PRECONDITION without a course ride under
+  // way, on a course with no other way, or on a lapped course's run-in
+  // out, where the other way has no way back to the start (turn round
+  // once on the lap).
+  rpc TurnAround(TurnAroundRequest) returns (TurnAroundResponse);
+
   // SetDifficulty sets the share of climbs the trainer applies, 0-100 %,
   // clamped. It applies to the ride under way and the ones after it.
   rpc SetDifficulty(SetDifficultyRequest) returns (SetDifficultyResponse);
@@ -620,6 +631,13 @@ message StopRideRequest {}
 
 message StopRideResponse {}
 
+message TurnAroundRequest {}
+
+message TurnAroundResponse {
+  // The course ridden on now.
+  string course_id = 1;
+}
+
 enum CalibrationType {
   CALIBRATION_TYPE_UNSPECIFIED = 0;
   // Pedal up to the target speed, then coast; the trainer times the spin-down.
@@ -882,6 +900,11 @@ message Ride {
   // lap under way.
   bool paused = 26;
   bool lap_paused = 27;
+  // Not timed: the rider turned round onto this course partway along
+  // (TurnAround). A one-way course then finishes with no time that counts;
+  // a lapped one is untimed until its lap's line (lap 0, lap_distance_m
+  // negative: how far to the line).
+  bool untimed = 31;
 }
 
 message RideLap {

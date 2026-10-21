@@ -181,7 +181,8 @@ func (c *Course) Lapped() *Course {
 	// The profile: every Spacing to the lap's end and on through the tail,
 	// the tail's elevations the lap's start's; the course ends on a sample.
 	n := int(math.Ceil((l.EndM + LapTailM) / c.Spacing))
-	lc := &Course{ID: c.ID, Name: c.Name, Spacing: c.Spacing, Builtin: c.Builtin, Included: c.Included, Credit: c.Credit, frame: c.frame}
+	lc := &Course{ID: c.ID, Name: c.Name, Spacing: c.Spacing, Builtin: c.Builtin, Included: c.Included, Credit: c.Credit,
+		Forward: c.Forward, frame: c.frame, raw: c.rawLength()}
 	lc.Distance = float64(n) * c.Spacing
 	src := func(x float64) float64 { // where along c a point of the lapped course lies
 		if x > l.EndM {

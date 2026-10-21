@@ -21,7 +21,8 @@ the sidewalk's outer edge, the wall's top a wedge up, a straight piece,
 a wedge down; the strip of sidewalk a rectangle; the lane's mouth square
 to the main road, its first metre flat in line with the sidewalk; the
 uphill road's mouth asphalt ramping up to the sidewalk's end with no
-kerb. CLAUDE.md, "Regional styles", has the rules and numbers.
+kerb. CLAUDE.md, "Regional styles", has the rules; docs/HISTORY.md
+(the France work) the numbers.
 
 ## Read the configuration first
 
@@ -191,4 +192,5 @@ Every piece shares its edges or is tucked under its neighbour:
 6. Tests: the structure on a hand-made course (`graphCourse`, ways with
    a node per point) that fails without the fix; Dutch worlds compared;
    `make check`; versions bumped (`BuilderVersion`, `GraphVersion`).
-7. Record the verdict and numbers in CLAUDE.md (`docs:` commit).
+7. Record the numbers in docs/HISTORY.md (a dated entry at its end) and a
+   verdict that sets a rule for later work in CLAUDE.md (`docs:` commit).

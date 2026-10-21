@@ -130,6 +130,7 @@ func (m Model) helpContext() (string, []helpEntry) {
 			{"g / l", "a fixed grade / brake level instead of the track's"},
 			layout[0], layout[1], layout[2],
 			{"x x", "end the ride (each lap is kept; your best lap is the ghost)"},
+			m.turnHelp(),
 			{"p  space", "pause: the trainer goes flat and the clocks stand (a paused ride never counts as a PB)"},
 			{"esc", "pause and open the menu (esc again carries on)"},
 			{"q", "the menu (pauses the ride); quit from there"},
@@ -140,6 +141,7 @@ func (m Model) helpContext() (string, []helpEntry) {
 			{"v", "road view or big numbers"},
 			layout[0], layout[1], layout[2],
 			{"x x", "abort the ride (still recorded; only a finished ride counts as a ghost)"},
+			m.turnHelp(),
 			{"p  space", "pause: the trainer goes flat and the clocks stand (a paused ride never counts as a PB)"},
 			{"esc", "pause and open the menu (esc again carries on)"},
 			{"q", "the menu (pauses the ride); quit from there"},
@@ -173,7 +175,13 @@ func (m Model) helpContext() (string, []helpEntry) {
 }
 
 func (m Model) helpPanel(width, height int) string {
-	title, entries := m.helpContext()
+	title, all := m.helpContext()
+	var entries []helpEntry
+	for _, e := range all {
+		if e.keys != "" { // left out here (turnHelp on a test track)
+			entries = append(entries, e)
+		}
+	}
 	keyW := 0
 	for _, e := range entries {
 		keyW = max(keyW, lipgloss.Width(e.keys))
@@ -190,3 +198,15 @@ func (m Model) helpPanel(width, height int) string {
 
 // helpHint is the footer's pointer to the help.
 const helpHint = "? help"
+
+// turnHelp is r r's entry on a course that can be ridden the other way;
+// none on the test tracks.
+func (m Model) turnHelp() helpEntry {
+	switch {
+	case m.otherWay() == "":
+		return helpEntry{}
+	case m.onRunIn():
+		return helpEntry{"r r", "turn round, once you're on the lap (none from the run-in)"}
+	}
+	return helpEntry{"r r", "turn round: on along the course the other way, untimed until its next timing line"}
+}

@@ -54,6 +54,9 @@ type Rides interface {
 	// StartAgainst races the earlier ride that finished at finished.
 	StartAgainst(courseID string, finished time.Time) error
 	Stop() error
+	// TurnAround turns the rider round onto the course's other way: the
+	// course ridden on now.
+	TurnAround() (string, error)
 	SetDifficulty(pct float64) float64
 }
 
@@ -576,6 +579,25 @@ func (s *telemetryServer) StopRide(context.Context, *pb.StopRideRequest) (*pb.St
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	return &pb.StopRideResponse{}, nil
+}
+
+func (s *telemetryServer) TurnAround(context.Context, *pb.TurnAroundRequest) (*pb.TurnAroundResponse, error) {
+	if s.rides == nil {
+		return nil, status.Error(codes.Unimplemented, "this core has no courses")
+	}
+	id, err := s.rides.TurnAround()
+	switch {
+	case errors.Is(err, ride.ErrNoRide), errors.Is(err, ride.ErrNoOtherWay), errors.Is(err, ride.ErrOnRunIn):
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	case err != nil:
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	if id != "" && s.scenery != nil {
+		// The other way's map data, from where the rider is now.
+		st, _ := s.hub.Latest()
+		s.scenery.Want(id, st.Ride.DistanceM)
+	}
+	return &pb.TurnAroundResponse{CourseId: id}, nil
 }
 
 func (s *telemetryServer) StartCalibration(ctx context.Context, req *pb.StartCalibrationRequest) (*pb.StartCalibrationResponse, error) {

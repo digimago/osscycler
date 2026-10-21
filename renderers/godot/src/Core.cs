@@ -240,6 +240,7 @@ public sealed class Core : IDisposable, Head.ICommands
 
     CallOptions Opts() => new(Auth(), cancellationToken: _stop.Token);
 
+    public async Task<string> TurnAround() => (await Call(() => Client().TurnAroundAsync(new TurnAroundRequest(), Opts()).ResponseAsync)).CourseId;
     public Task StopRide() => Call(() => Client().StopRideAsync(new StopRideRequest(), Opts()).ResponseAsync);
     public Task SetDifficulty(double pct) => Call(() => Client().SetDifficultyAsync(new SetDifficultyRequest { DifficultyPct = pct }, Opts()).ResponseAsync);
     public Task StopWorkout() => Call(() => Client().StopWorkoutAsync(new StopWorkoutRequest(), Opts()).ResponseAsync);

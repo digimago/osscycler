@@ -45,7 +45,7 @@ public sealed partial class Controller
         var act = f.Key(key, now);
         if (f.Notice.StartsWith("press esc again"))
         {
-            (_abortUntil, _asking) = (now + AbortConfirmS, f.Notice);
+            (_abortUntil, _asking, _confirmKey) = (now + AbortConfirmS, f.Notice, "esc");
         }
         else if (f.Notice != "")
             Say(f.Notice);

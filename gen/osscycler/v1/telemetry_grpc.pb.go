@@ -25,6 +25,7 @@ const (
 	TelemetryService_ListCourses_FullMethodName           = "/osscycler.v1.TelemetryService/ListCourses"
 	TelemetryService_StartRide_FullMethodName             = "/osscycler.v1.TelemetryService/StartRide"
 	TelemetryService_StopRide_FullMethodName              = "/osscycler.v1.TelemetryService/StopRide"
+	TelemetryService_TurnAround_FullMethodName            = "/osscycler.v1.TelemetryService/TurnAround"
 	TelemetryService_SetDifficulty_FullMethodName         = "/osscycler.v1.TelemetryService/SetDifficulty"
 	TelemetryService_ListWorkouts_FullMethodName          = "/osscycler.v1.TelemetryService/ListWorkouts"
 	TelemetryService_SaveWorkout_FullMethodName           = "/osscycler.v1.TelemetryService/SaveWorkout"
@@ -76,6 +77,16 @@ type TelemetryServiceClient interface {
 	StartRide(ctx context.Context, in *StartRideRequest, opts ...grpc.CallOption) (*StartRideResponse, error)
 	// StopRide aborts a ride under way, or dismisses a finished one.
 	StopRide(ctx context.Context, in *StopRideRequest, opts ...grpc.CallOption) (*StopRideResponse, error)
+	// TurnAround turns the rider round during a course ride (owner,
+	// 2026-10-20): the ride so far ends without a result, and the rider
+	// rides on from the same spot along the course's other way (its
+	// reverse, or the forward course of a reverse), untimed until a timing
+	// line: a lap's line starts a timed lap; a one-way course's finish ends
+	// the ride, not timed. FAILED_PRECONDITION without a course ride under
+	// way, on a course with no other way, or on a lapped course's run-in
+	// out, where the other way has no way back to the start (turn round
+	// once on the lap).
+	TurnAround(ctx context.Context, in *TurnAroundRequest, opts ...grpc.CallOption) (*TurnAroundResponse, error)
 	// SetDifficulty sets the share of climbs the trainer applies, 0-100 %,
 	// clamped. It applies to the ride under way and the ones after it.
 	SetDifficulty(ctx context.Context, in *SetDifficultyRequest, opts ...grpc.CallOption) (*SetDifficultyResponse, error)
@@ -231,6 +242,16 @@ func (c *telemetryServiceClient) StopRide(ctx context.Context, in *StopRideReque
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(StopRideResponse)
 	err := c.cc.Invoke(ctx, TelemetryService_StopRide_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *telemetryServiceClient) TurnAround(ctx context.Context, in *TurnAroundRequest, opts ...grpc.CallOption) (*TurnAroundResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TurnAroundResponse)
+	err := c.cc.Invoke(ctx, TelemetryService_TurnAround_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -484,6 +505,16 @@ type TelemetryServiceServer interface {
 	StartRide(context.Context, *StartRideRequest) (*StartRideResponse, error)
 	// StopRide aborts a ride under way, or dismisses a finished one.
 	StopRide(context.Context, *StopRideRequest) (*StopRideResponse, error)
+	// TurnAround turns the rider round during a course ride (owner,
+	// 2026-10-20): the ride so far ends without a result, and the rider
+	// rides on from the same spot along the course's other way (its
+	// reverse, or the forward course of a reverse), untimed until a timing
+	// line: a lap's line starts a timed lap; a one-way course's finish ends
+	// the ride, not timed. FAILED_PRECONDITION without a course ride under
+	// way, on a course with no other way, or on a lapped course's run-in
+	// out, where the other way has no way back to the start (turn round
+	// once on the lap).
+	TurnAround(context.Context, *TurnAroundRequest) (*TurnAroundResponse, error)
 	// SetDifficulty sets the share of climbs the trainer applies, 0-100 %,
 	// clamped. It applies to the ride under way and the ones after it.
 	SetDifficulty(context.Context, *SetDifficultyRequest) (*SetDifficultyResponse, error)
@@ -593,6 +624,9 @@ func (UnimplementedTelemetryServiceServer) StartRide(context.Context, *StartRide
 }
 func (UnimplementedTelemetryServiceServer) StopRide(context.Context, *StopRideRequest) (*StopRideResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method StopRide not implemented")
+}
+func (UnimplementedTelemetryServiceServer) TurnAround(context.Context, *TurnAroundRequest) (*TurnAroundResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method TurnAround not implemented")
 }
 func (UnimplementedTelemetryServiceServer) SetDifficulty(context.Context, *SetDifficultyRequest) (*SetDifficultyResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetDifficulty not implemented")
@@ -775,6 +809,24 @@ func _TelemetryService_StopRide_Handler(srv interface{}, ctx context.Context, de
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(TelemetryServiceServer).StopRide(ctx, req.(*StopRideRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _TelemetryService_TurnAround_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TurnAroundRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TelemetryServiceServer).TurnAround(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TelemetryService_TurnAround_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TelemetryServiceServer).TurnAround(ctx, req.(*TurnAroundRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1176,6 +1228,10 @@ var TelemetryService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "StopRide",
 			Handler:    _TelemetryService_StopRide_Handler,
+		},
+		{
+			MethodName: "TurnAround",
+			Handler:    _TelemetryService_TurnAround_Handler,
 		},
 		{
 			MethodName: "SetDifficulty",

@@ -120,6 +120,7 @@ type stubCommands struct {
 	races              []string
 	heights            []float64
 	stops              int
+	turns              int
 	difficulties       []float64
 	workouts           []*pb.WorkoutDef
 	saved              []*pb.WorkoutDef
@@ -252,6 +253,10 @@ func (s *stubCommands) StartRideAgainst(_ context.Context, id string, finished i
 	return nil
 }
 func (s *stubCommands) StopRide(context.Context) error { s.stops++; return nil }
+func (s *stubCommands) TurnAround(context.Context) (string, error) {
+	s.turns++
+	return "hill-reverse", nil
+}
 func (s *stubCommands) ListWorkouts(context.Context) ([]*pb.WorkoutDef, error) {
 	return s.workouts, nil
 }

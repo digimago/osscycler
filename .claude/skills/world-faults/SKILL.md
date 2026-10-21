@@ -94,9 +94,9 @@ small; fix at the stage that causes it, then make it stay fixed.
    a later stage to cover for it (no patching over a missing road with a
    bigger junction). Prefer a rule that names what the world is (a short
    road with roads at both ends is a link, and drawn) over a threshold
-   tuned to one place. Keep the owner's earlier verdicts (CLAUDE.md, under
-   the step they belong to): a fix that undoes one is a question for the
-   owner, not a fix.
+   tuned to one place. Keep the owner's earlier verdicts (CLAUDE.md, and in
+   full in docs/HISTORY.md under the step they belong to): a fix that
+   undoes one is a question for the owner, not a fix.
 8. **Make it stay fixed.** In this order:
    - A regression test in `internal/world` (or `internal/scenery`) that
      fails without the fix and passes with it: check by taking the fix
@@ -137,10 +137,11 @@ small; fix at the stage that causes it, then make it stay fixed.
    could touch elsewhere (junctions, roundabouts, bridges). The glTF
    validator and 60 fps when geometry changed (`world-assets`).
 10. **Record.** Commit the fix with its test (one feature per commit,
-    `make check` first); the owner's verdict and the numbers before and
-    after go in CLAUDE.md under the step they belong to, as "(owner,
-    YYYY-MM-DD: reason)" with the km mark, in a `docs:` commit; a finding
-    left for later goes under TODO with its km mark. Rebuild the world the
+    `make check` first); the numbers before and after, with the km mark, go
+    in docs/HISTORY.md (a dated entry at its end), and a verdict that sets
+    a rule for later work in CLAUDE.md as "(owner, YYYY-MM-DD: reason)",
+    in a `docs:` commit; a finding left for later goes under Next up in
+    CLAUDE.md with its km mark. Rebuild the world the
     owner rides, or tell them it needs one.
 
 ## Symptom → where to look
@@ -209,7 +210,8 @@ the first stage whose output is wrong; everything after only shows it.
 
 `world.BuildGraph` (internal/world/graph.go), the default builder since
 2026-10-12, beside `world.Build`, the classic one, now the fallback
-(CLAUDE.md, "Two world builders"): the network first, the land last.
+(CLAUDE.md, "World builder"; its stages in docs/HISTORY.md, "Two world
+builders"): the network first, the land last.
 Worlds go in `<out>/<id>`; `-builder classic` builds the classic world
 (in `<out>/.classic/<id>`), `-builder ab` / `make world-ab` both, to
 compare; `clip -builder classic` likewise. The classic builder is also

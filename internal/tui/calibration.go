@@ -21,6 +21,9 @@ type Commands interface {
 	// StartRideAgainst races an earlier ride, by when it finished.
 	StartRideAgainst(ctx context.Context, courseID string, finishedUnixMs int64) error
 	StopRide(ctx context.Context) error
+	// TurnAround turns the rider round onto the course's other way; the
+	// course ridden on now, "" when the ride ended instead.
+	TurnAround(ctx context.Context) (string, error)
 	SetDifficulty(ctx context.Context, pct float64) (float64, error)
 	ListWorkouts(ctx context.Context) ([]*pb.WorkoutDef, error)
 	SaveWorkout(ctx context.Context, id string, w *pb.WorkoutDef) (string, error)

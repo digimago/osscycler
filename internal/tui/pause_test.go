@@ -67,6 +67,24 @@ func TestEscPausesIntoTheMenu(t *testing.T) {
 	}
 }
 
+// A ride already paused (p, another screen, nobody watching) still opens
+// the menu on esc (owner, 2026-10-20: now and then esc did nothing during
+// a ride); leaving it leaves the pause as it was.
+func TestEscOnAPausedRideOpensTheMenu(t *testing.T) {
+	m, cmds := pausing(t)
+	m = paused(m, true)
+	m, cmd := press(m, "esc")
+	m = run(m, cmd)
+	if m.menu == nil || len(cmds.pauses) != 0 {
+		t.Fatalf("esc on a paused ride: menu %v, asked %v", m.menu != nil, cmds.pauses)
+	}
+	m, cmd = press(m, "esc")
+	run(m, cmd)
+	if m.menu != nil || len(cmds.pauses) != 0 {
+		t.Errorf("esc out of it: menu %v, asked %v (want it left paused)", m.menu != nil, cmds.pauses)
+	}
+}
+
 func TestPauseKeysWaitForOpenThings(t *testing.T) {
 	m, cmds := pausing(t)
 	m.input = &input{} // typing a value: space and P are its own

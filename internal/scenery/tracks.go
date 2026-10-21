@@ -52,6 +52,11 @@ func TrackScenery(c *course.Course) *Track {
 	if !c.Builtin {
 		return nil
 	}
+	if c.Forward != nil {
+		// A track ridden the other way: the forward track's surroundings,
+		// the same place (the same start, so the same frame).
+		c = c.Forward
+	}
 	g := newTrackGen(c)
 	switch c.ID {
 	case "oval-400":

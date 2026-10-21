@@ -312,7 +312,10 @@ func (r *Recorder) step(st telemetry.State, now time.Time) {
 	// Laps: one for each course ride and each workout.
 	riding := st.Ride.Phase == telemetry.RideRiding
 	working := st.Workout.Phase == telemetry.WorkoutRunning || st.Workout.Phase == telemetry.WorkoutPaused
-	if riding != r.riding {
+	// Turned round (ride.Session.TurnAround): riding on, on the other way,
+	// a ride of its own from here.
+	turned := riding && r.riding && st.Ride.CourseID != r.ride.CourseID
+	if riding != r.riding || turned {
 		r.mu.Lock()
 		if riding {
 			r.rideFrom, r.rideTo = len(r.hist), -1
@@ -321,9 +324,11 @@ func (r *Recorder) step(st telemetry.State, now time.Time) {
 		}
 		r.mu.Unlock()
 	}
-	if riding != r.riding || working != r.working {
+	if riding != r.riding || working != r.working || turned {
 		lap := a.endLap(now, lapManual)
-		if r.riding && !riding && st.Ride.Phase == telemetry.RideFinished {
+		// An untimed ride (turned round onto the course) has no time that
+		// counts.
+		if r.riding && !riding && st.Ride.Phase == telemetry.RideFinished && !st.Ride.Untimed {
 			r.result(st.Ride, now, lap)
 		}
 	} else if l := st.Ride.LastLap; riding && st.Ride.Loop && l.N > 0 && l.N != r.ride.LastLap.N {

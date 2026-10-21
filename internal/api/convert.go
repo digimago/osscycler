@@ -88,6 +88,7 @@ func rideToProto(r telemetry.Ride) *pb.Ride {
 		TrainerYielded:  r.Yielded,
 		Paused:          r.Paused,
 		LapPaused:       r.LapPaused,
+		Untimed:         r.Untimed,
 	}
 }
 

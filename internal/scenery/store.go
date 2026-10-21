@@ -55,9 +55,12 @@ type Store struct {
 	seq     int
 }
 
-// entry is a course and which of its stretches are cached.
+// entry is a course and which of its stretches are cached. views are
+// the courses its map data is the scenery of: c, and its reverse (the
+// same road, so the same map data, fetched and cached once).
 type entry struct {
 	c     *course.Course
+	views []*course.Course
 	parts []stretch
 	have  []bool
 }
@@ -89,11 +92,31 @@ func NewStore(cfg Config, courses []*course.Course) *Store {
 	s := &Store{cfg: cfg, client: &http.Client{Timeout: 4 * time.Minute}, wake: make(chan struct{}, 1),
 		byID: map[string]*Scenery{}, courses: map[string]*entry{}, want: map[string]*want{}}
 	for _, c := range courses {
-		if !c.Builtin { // osscycler's own test tracks lie where there is no map
+		if !c.Builtin && c.Forward == nil { // osscycler's own test tracks lie where there is no map
 			s.courses[c.ID] = s.entryFor(c)
 		}
 	}
+	for _, c := range courses {
+		if c.Builtin || c.Forward == nil {
+			continue
+		}
+		e := s.courses[c.Forward.ID]
+		if e == nil || e.c != c.Forward {
+			e = s.entryFor(c.Forward) // its forward course isn't ridden here
+		}
+		e.views = append(e.views, c)
+		s.courses[c.ID] = e
+	}
 	return s
+}
+
+// fetched is the course whose map data c's scenery is made from: c, or the
+// forward course of a reverse.
+func fetched(c *course.Course) *course.Course {
+	if c.Forward != nil {
+		return c.Forward
+	}
+	return c
 }
 
 // Get returns a course's scenery; nil until some of it is known. It may
@@ -112,6 +135,14 @@ func (s *Store) Want(id string, fromM float64) {
 		return
 	}
 	s.mu.Lock()
+	if e := s.courses[id]; e != nil && e.c.ID != id {
+		// A reverse: its stretches are the forward course's.
+		for _, v := range e.views {
+			if v.ID == id {
+				fromM = v.ForwardAt(fromM)
+			}
+		}
+	}
 	s.seq++
 	w := s.want[id]
 	if w == nil {
@@ -179,8 +210,12 @@ func (s *Store) Run(ctx context.Context) {
 func (s *Store) loadCache(ctx context.Context) {
 	s.mu.Lock()
 	es := make([]*entry, 0, len(s.courses))
+	seen := map[*entry]bool{}
 	for _, e := range s.courses {
-		es = append(es, e)
+		if !seen[e] {
+			seen[e] = true
+			es = append(es, e)
+		}
 	}
 	s.mu.Unlock()
 	for _, e := range es {
@@ -305,14 +340,16 @@ func (s *Store) rebuild(e *entry) {
 	for _, err := range err {
 		s.cfg.Log.Warn("cached map data unreadable; it will be fetched again", "course", e.c.ID, "err", err)
 	}
-	var sc *Scenery
+	var scs []*Scenery
 	if d != nil {
-		sc = Build(e.c, d)
+		for _, c := range e.views {
+			scs = append(scs, Build(c, d))
+		}
 	}
 	s.mu.Lock()
 	copy(e.have, have)
-	if sc != nil {
-		s.byID[e.c.ID] = sc
+	for i, sc := range scs {
+		s.byID[e.views[i].ID] = sc
 	}
 	s.mu.Unlock()
 }
@@ -345,9 +382,10 @@ func (s *Store) readCached(e *entry) (*Data, []bool, []error) {
 	return merge(parts), have, errs
 }
 
-// Load returns c's map data for a program that needs all of it now (the
-// world builder): the cached stretches, and the missing ones fetched one
-// after the other when fetching is on. Stretches that couldn't be had are
+// Load returns c's map data (a reverse's is its forward course's) for a
+// program that needs all of it now (the world builder): the cached
+// stretches, and the missing ones fetched one after the other when
+// fetching is on. Stretches that couldn't be had are
 // left out, and the error says which.
 func (s *Store) Load(ctx context.Context, c *course.Course) (*Data, error) {
 	return s.LoadProgress(ctx, c, nil)
@@ -357,7 +395,7 @@ func (s *Store) Load(ctx context.Context, c *course.Course) (*Data, error) {
 // how many as it goes (fetch: how many of those it had to fetch so far,
 // and how many are left to fetch).
 func (s *Store) LoadProgress(ctx context.Context, c *course.Course, progress func(done, total, toFetch int)) (*Data, error) {
-	e := s.entryFor(c)
+	e := s.entryFor(fetched(c))
 	d, have, errs := s.readCached(e)
 	if !s.cfg.Fetch {
 		for k, ok := range have {
@@ -405,7 +443,7 @@ func (s *Store) LoadProgress(ctx context.Context, c *course.Course, progress fun
 // for a build's estimate of the time left.
 func (s *Store) Missing(c *course.Course) int {
 	n := 0
-	for _, p := range s.entryFor(c).parts {
+	for _, p := range s.entryFor(fetched(c)).parts {
 		if _, err := os.Stat(p.path); err != nil {
 			n++
 		}
@@ -428,7 +466,7 @@ func (s *Store) entryFor(c *course.Course) *entry {
 		bounds[k] = float64(k) * stretchM
 	}
 	bounds[n] = c.Distance
-	e := &entry{c: c, have: make([]bool, n)}
+	e := &entry{c: c, views: []*course.Course{c}, have: make([]bool, n)}
 	for k, q := range queries(c, bounds) {
 		e.parts = append(e.parts, stretch{q, s.cachePath(c.ID, k, q)})
 	}

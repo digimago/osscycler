@@ -103,7 +103,9 @@ public static class Tiles
     {
         string label = "TIME", value = Format.Clock(r.ElapsedS);
         if (r.Loop)
-            (label, value) = r.Lap == 0 ? ("RUN-IN", Format.Clock(r.ElapsedS)) : ($"LAP {r.Lap}", Format.Clock(r.LapElapsedS));
+            (label, value) = r.Lap == 0 ? (r.Untimed ? "NOT TIMED" : "RUN-IN", Format.Clock(r.ElapsedS)) : ($"LAP {r.Lap}", Format.Clock(r.LapElapsedS));
+        else if (r.Untimed)
+            label = "NOT TIMED"; // turned round: no time that counts
         var g = r.Ghost;
         if (g == null)
             return new(label, value, "", Palette.Plain);

@@ -240,6 +240,9 @@ type stubRides struct {
 	difficulty float64
 	err        error
 	against    time.Time
+	turned     int
+	turnTo     string
+	turnErr    error
 }
 
 func (s *stubRides) Courses() []*course.Course { return s.courses }
@@ -249,6 +252,10 @@ func (s *stubRides) StartAgainst(id string, finished time.Time) error {
 	return s.err
 }
 func (s *stubRides) Stop() error { s.stopped++; return nil }
+func (s *stubRides) TurnAround() (string, error) {
+	s.turned++
+	return s.turnTo, s.turnErr
+}
 func (s *stubRides) SetDifficulty(p float64) float64 {
 	s.difficulty = max(0, min(p, 100))
 	return s.difficulty
@@ -309,6 +316,17 @@ func TestRideRPCs(t *testing.T) {
 	rides.err = nil
 	if _, err := cl.StopRide(ctx, &pb.StopRideRequest{}); err != nil || rides.stopped != 1 {
 		t.Errorf("StopRide: %v, stops %d", err, rides.stopped)
+	}
+	// TurnAround: the course ridden on now, or none when the ride ended.
+	rides.turnTo = "hill-reverse"
+	if resp, err := cl.TurnAround(ctx, &pb.TurnAroundRequest{}); err != nil || resp.GetCourseId() != "hill-reverse" || rides.turned != 1 {
+		t.Errorf("TurnAround: %v, %v", resp, err)
+	}
+	for _, e := range []error{ride.ErrNoRide, ride.ErrNoOtherWay} {
+		rides.turnErr = e
+		if _, err := cl.TurnAround(ctx, &pb.TurnAroundRequest{}); status.Code(err) != codes.FailedPrecondition {
+			t.Errorf("TurnAround with %v: %v", e, err)
+		}
 	}
 	if resp, err := cl.SetDifficulty(ctx, &pb.SetDifficultyRequest{DifficultyPct: 140}); err != nil || resp.GetDifficultyPct() != 100 {
 		t.Errorf("SetDifficulty(140): %v, %v; want clamped 100", resp, err)

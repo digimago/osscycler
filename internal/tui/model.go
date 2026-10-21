@@ -64,6 +64,7 @@ type Model struct {
 	lapsUntil        time.Time     // the lap times show until then
 	input            *input        // numeric prompt
 	abortUntil       time.Time     // a second x before this aborts the ride
+	turnUntil        time.Time     // a second r before this turns round
 	now              func() time.Time
 
 	tour        *Tour // demo autopilot; nil without -tour
@@ -667,6 +668,9 @@ func (m Model) keyHints() string {
 		if m.roadScene() != nil {
 			h = append(h, map[bool]string{false: "v tiles", true: "v road"}[m.tiles])
 		}
+		if m.otherWay() != "" {
+			h = append(h, "r r turn round")
+		}
 		if m.onLoop() {
 			h = append(h, "w workout", "g/l trainer", "x x end ride")
 		} else {
@@ -693,7 +697,7 @@ func (m Model) keyHints() string {
 	h = append(h, helpHint, "q quit")
 	// On a narrow screen leave out the hints least needed (the help lists
 	// every key), rather than wrapping onto a second line.
-	for _, drop := range []string{"+/- difficulty", "g/l trainer", "w workout", "r ride"} {
+	for _, drop := range []string{"+/- difficulty", "r r turn", "g/l trainer", "w workout", "r ride"} {
 		if m.width == 0 || lipgloss.Width(strings.Join(h, " · ")) <= m.width {
 			break
 		}

@@ -62,6 +62,23 @@ public class PauseTests
         Assert.Equal(new[] { "paused True", "paused False" }, c.Sent);
     }
 
+    // A ride already paused (p, another screen, nobody watching) still
+    // opens the menu on esc (owner, 2026-10-20: now and then esc did
+    // nothing during a ride); leaving it leaves the pause as it was.
+    [Fact]
+    public void EscOnAPausedRideOpensTheMenu()
+    {
+        var c = new Calls();
+        var h = new Controller(c);
+        h.Tick(Riding(paused: true), 0);
+        h.Key("esc", Riding(paused: true), 0);
+        Assert.NotNull(h.List());
+        h.Key("esc", Riding(paused: true), 0);
+        Settle();
+        Assert.Null(h.List());
+        Assert.Empty(c.Sent);
+    }
+
     [Fact]
     public void AnotherScreenCarryingOnClosesTheMenu()
     {

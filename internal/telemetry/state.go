@@ -364,6 +364,10 @@ type Ride struct {
 	// up a climb would make an unbeatable time). On a loop, per lap: the
 	// lap under way (LapPaused) and the completed ones (Lap.Paused).
 	Paused, LapPaused bool
+	// Untimed: the rider turned round onto this course partway along
+	// (ride.Session.TurnAround). A one-way ride then finishes with no time
+	// that counts; a lapped one is untimed until its lap's line.
+	Untimed bool
 }
 
 // OnLoop reports whether a loop ride is under way: it moves the rider

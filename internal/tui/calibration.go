@@ -34,7 +34,9 @@ type Commands interface {
 	SetFTP(ctx context.Context, watts float64) (float64, error)
 	EndActivity(ctx context.Context, discard bool) (file string, err error)
 	ListResults(ctx context.Context) ([]*pb.RideResult, error)
-	SetProfile(ctx context.Context, weightKg, ftpW, heightCm, maxHR *float64) (*pb.RiderProfile, error)
+	// SetProfile saves what is given (nil: unchanged); hrZones is what
+	// heart rate zones come from with both heart rates set.
+	SetProfile(ctx context.Context, weightKg, ftpW, heightCm, maxHR, thresholdHR *float64, hrZones *string) (*pb.RiderProfile, error)
 	// ActivityHistory is an activity's samples from second since on: the
 	// one being recorded (name empty) or a finished one.
 	ActivityHistory(ctx context.Context, name string, since uint32) (*pb.GetActivityHistoryResponse, error)

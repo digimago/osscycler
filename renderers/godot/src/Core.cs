@@ -305,6 +305,9 @@ public sealed class Core : IDisposable, Head.ICommands
             case "view":
                 req.View = value;
                 break;
+            case "hr_zones":
+                req.HrZones = value;
+                break;
             default:
                 throw new ArgumentException($"no profile setting \"{name}\"");
         }
@@ -314,11 +317,13 @@ public sealed class Core : IDisposable, Head.ICommands
     public async Task<RiderProfile> SetView(string view) =>
         (await Call(() => Client().SetProfileAsync(new SetProfileRequest { View = view }, Opts()).ResponseAsync)).Profile;
 
-    public async Task<RiderProfile> SetProfile(double? weightKg, double? ftpW, double? heightCm, double? maxHrBpm)
+    public async Task<RiderProfile> SetProfile(double? weightKg, double? ftpW, double? heightCm, double? maxHrBpm, double? thresholdHrBpm)
     {
         var req = new SetProfileRequest();
         if (maxHrBpm is double hr)
             req.MaxHrBpm = hr;
+        if (thresholdHrBpm is double th)
+            req.ThresholdHrBpm = th;
         if (weightKg is double w)
             req.WeightKg = w;
         if (ftpW is double f)

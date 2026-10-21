@@ -40,7 +40,7 @@ public interface ICommands
     Task SetLevel(double pct);
     Task ReleaseControl();
     // SetProfile saves what is given (null: unchanged); the profile now.
-    Task<RiderProfile> SetProfile(double? weightKg, double? ftpW, double? heightCm, double? maxHrBpm);
+    Task<RiderProfile> SetProfile(double? weightKg, double? ftpW, double? heightCm, double? maxHrBpm, double? thresholdHrBpm);
     // SetChoice saves one of the profile's settings with a fixed set of
     // values (world_build, world_fetch; SetProfileRequest's field names).
     Task<RiderProfile> SetChoice(string name, string value);

@@ -77,3 +77,32 @@ func TestHeldMaxHeartRate(t *testing.T) {
 		t.Errorf("heldMax %d", got)
 	}
 }
+
+// A recording tells 95 % of the highest heart rate averaged over 20
+// minutes, Friel's threshold from a 20-minute effort: a lower bound on the
+// rider's threshold (owner, 2026-10-21: suggested from rides).
+func TestHeldThresholdHeartRate(t *testing.T) {
+	r := newRecorder(t)
+	play(r, []step{{1500, func(i int) telemetry.State {
+		st := state(220, 90, 8)
+		hr := 140
+		if i >= 200 && i < 1400 {
+			hr = 168 // 20 minutes steady and hard
+		}
+		st.HeartRate.BPM = telemetry.Some(uint8(hr))
+		return st
+	}}})
+	if _, err := r.endByRider(state(0, 0, 0), false); err != nil {
+		t.Fatal(err)
+	}
+	as, err := (&Catalog{Dir: r.cfg.Dir}).List()
+	if err != nil || len(as) != 1 || as[0].HeldThresholdHR != 160 { // 0.95 × 168
+		t.Errorf("held threshold HR %+v, %v; want 160", as, err)
+	}
+	if got := bestAverage([]int{100, 200, 100}, 2); got != 150 {
+		t.Errorf("bestAverage %v", got)
+	}
+	if got := bestAverage([]int{100}, 2); got != 0 {
+		t.Errorf("bestAverage of too few: %v", got)
+	}
+}

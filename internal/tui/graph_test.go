@@ -84,7 +84,7 @@ func TestSummary(t *testing.T) {
 	m = run(m, cmd)
 	out := plain(m.render())
 	for _, want := range []string{"RIDE SUMMARY", "1:00:00 riding · 30.00 km", "avg 200 W  NP 215 W  max 600 W", "BEST POWER", "20m",
-		"POWER ZONES  FTP 250 W", "Z2 endurance", "50%", "add your maximum heart rate"} {
+		"POWER ZONES  FTP 250 W", "Z2 endurance", "50%", "add your maximum or threshold heart rate"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("summary lacks %q:\n%s", want, out)
 		}
@@ -98,6 +98,14 @@ func TestSummary(t *testing.T) {
 	m = run(m, cmd)
 	if out := plain(m.render()); !strings.Contains(out, "HEART RATE ZONES  max 190 bpm") || !strings.Contains(out, "70-80%") {
 		t.Errorf("heart rate zones:\n%s", out)
+	}
+	// From a threshold heart rate (owner, 2026-10-21): Friel's bounds.
+	m = pressAll(m, "x")
+	sum.HeartRateZoneUpper, sum.MaxHrBpm, sum.ThresholdHrBpm = []float64{0.81, 0.90, 0.94, 1.00}, 0, 165
+	m, cmd = press(m, "i")
+	m = run(m, cmd)
+	if out := plain(m.render()); !strings.Contains(out, "HEART RATE ZONES  threshold 165 bpm") || !strings.Contains(out, "81-90%") || !strings.Contains(out, ">100%") {
+		t.Errorf("threshold heart rate zones:\n%s", out)
 	}
 	// After a ride is saved.
 	m = pressAll(m, "x")

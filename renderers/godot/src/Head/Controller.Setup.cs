@@ -21,7 +21,7 @@ public sealed partial class Controller
     public sealed record DialogView(string Title, string Big, Hud.Rgb BigColor, IReadOnlyList<string> Lines, string Hint);
 
     // Onboarding: the profile's steps, as the TUI's.
-    enum Step { Weight, Height, Ftp, MaxHr, View, WorldBuild, WorldFetch }
+    enum Step { Weight, Height, Ftp, MaxHr, ThresholdHr, HrZones, View, WorldBuild, WorldFetch }
 
     // The profile's settings with a fixed set of values, after the view
     // (owner, 2026-10-13: building worlds ahead set in the profile): the
@@ -29,6 +29,10 @@ public sealed partial class Controller
     // says, and why it is there.
     static readonly Dictionary<Step, (string Name, string Title, (string Value, string Label)[] Values, string Why)> Choice = new()
     {
+        // Only with both heart rates set (owner, 2026-10-21: the rider
+        // chooses which the zones come from).
+        [Step.HrZones] = ("hr_zones", "Heart rate zones from", new[] { ("max", "your maximum"), ("threshold", "your threshold") },
+            "Which your ride summaries' heart rate zones are taken from: your maximum, or your threshold (Friel's zones)."),
         [Step.WorldBuild] = ("world_build", "Build worlds ahead", new[] { ("idle", "while not riding"), ("always", "also while riding") },
             "Courses' 3D worlds are built in the background so a ride starts in its own world. Also while riding: at the lowest priority."),
         [Step.WorldFetch] = ("world_fetch", "Downloads for them", new[] { ("cached", "cached only"), ("allowed", "allowed") },
@@ -179,6 +183,8 @@ public sealed partial class Controller
         Step.Weight => p is { WeightKg: > 0 } ? Hud.Format.Fixed(p.WeightKg, 0) : "",
         Step.Height => p is { HeightCm: > 0 } ? Hud.Format.Fixed(p.HeightCm, 0) : "",
         Step.MaxHr => p is { MaxHrBpm: > 0 } ? Hud.Format.Fixed(p.MaxHrBpm, 0) : "",
+        Step.ThresholdHr => p is { ThresholdHrBpm: > 0 } ? Hud.Format.Fixed(p.ThresholdHrBpm, 0) : "",
+        Step.HrZones => p?.HrZones == "threshold" ? "threshold" : "max",
         _ => p is { FtpW: > 0 } ? Hud.Format.Fixed(p.FtpW, 0) : p != null ? Hud.Format.Fixed(p.SuggestedFtpW, 0) : "",
     };
 
@@ -286,6 +292,8 @@ public sealed partial class Controller
                 if (o.Step > Step.Weight && o.Edit)
                 {
                     o.Step--;
+                    if (o.Step == Step.HrZones && !BothHrs(st?.Profile))
+                        o.Step--; // shown only with both heart rates
                     o.Value = StepValue(st?.Profile, o.Step);
                     return;
                 }
@@ -354,13 +362,12 @@ public sealed partial class Controller
                 }
                 if (o.Step == Step.MaxHr && o.Value == "") // optional: skipped
                 {
-                    if (o.Edit && st?.Profile?.View is { Length: > 0 })
-                        (o.Step, o.Value) = (Step.View, StepValue(st.Profile, Step.View));
-                    else
-                    {
-                        _onboard = null;
-                        Say("profile saved");
-                    }
+                    (o.Step, o.Value) = (Step.ThresholdHr, StepValue(st?.Profile, Step.ThresholdHr));
+                    return;
+                }
+                if (o.Step == Step.ThresholdHr && o.Value == "") // optional: skipped
+                {
+                    AfterThreshold(o, st?.Profile ?? new RiderProfile());
                     return;
                 }
                 var (lo, hi, what) = o.Step switch
@@ -368,6 +375,7 @@ public sealed partial class Controller
                     Step.Weight => (30.0, 200.0, "weight in kg"),
                     Step.Height => (120.0, 220.0, "height in cm"),
                     Step.MaxHr => (100.0, 230.0, "maximum heart rate in bpm"),
+                    Step.ThresholdHr => (80.0, 220.0, "threshold heart rate in bpm"),
                     _ => (50.0, 600.0, "FTP in watts"),
                 };
                 if (!double.TryParse(o.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) || v < lo || v > hi)
@@ -378,10 +386,11 @@ public sealed partial class Controller
                 var step = o.Step;
                 Task<RiderProfile> save = step switch
                 {
-                    Step.Weight => _cmds.SetProfile(v, null, null, null),
-                    Step.Height => _cmds.SetProfile(null, null, v, null),
-                    Step.MaxHr => _cmds.SetProfile(null, null, null, v),
-                    _ => _cmds.SetProfile(null, v, null, null),
+                    Step.Weight => _cmds.SetProfile(v, null, null, null, null),
+                    Step.Height => _cmds.SetProfile(null, null, v, null, null),
+                    Step.MaxHr => _cmds.SetProfile(null, null, null, v, null),
+                    Step.ThresholdHr => _cmds.SetProfile(null, null, null, null, v),
+                    _ => _cmds.SetProfile(null, v, null, null, null),
                 };
                 save.ContinueWith(done =>
                 {
@@ -394,32 +403,55 @@ public sealed partial class Controller
                     {
                         if (_onboard != o)
                             return;
-                        if (step < Step.MaxHr || step == Step.MaxHr && o.Edit && done.Result.View != "")
+                        if (step < Step.ThresholdHr)
                         {
-                            (o.Step, o.Value) = (step + 1, StepValue(done.Result, step + 1)); // editing: the view too, if the core keeps it
-                            if (o.Step == Step.MaxHr) // for the highest heart rate held in them
+                            (o.Step, o.Value) = (step + 1, StepValue(done.Result, step + 1));
+                            if (o.Step == Step.MaxHr) // for the highest heart rates held in them
                                 Load("activities", _cmds.ListActivities, l => _activities = l);
                         }
                         else
-                        {
-                            _onboard = null;
-                            Say(done.Result.WeightForced || done.Result.FtpForced
-                                ? "profile set; what flags on the core force applies to this run only" : "profile saved");
-                        }
+                            AfterThreshold(o, done.Result);
                     }
                 }, TaskContinuationOptions.ExecuteSynchronously);
                 return;
             }
         }
-        if (o.Step < Step.View && key.Length == 1 && (char.IsDigit(key[0]) || key == ".") && o.Value.Length < 5)
+        if (o.Step < Step.HrZones && key.Length == 1 && (char.IsDigit(key[0]) || key == ".") && o.Value.Length < 5)
             o.Value += key;
     }
 
-    // NextChoice goes on from the setting step after saving it: to the
-    // next setting the core keeps (an older core has none: its profile
-    // leaves it empty), else the profile is done.
+    // BothHrs: the profile has a maximum and a threshold heart rate, so
+    // the rider chooses which the zones come from.
+    static bool BothHrs(RiderProfile? p) => p is { MaxHrBpm: > 0, ThresholdHrBpm: > 0 };
+
+    // AfterThreshold goes on past the threshold heart rate: to the choice
+    // of zones with both heart rates set, else as after that choice.
+    void AfterThreshold(Onboarding o, RiderProfile p)
+    {
+        if (BothHrs(p))
+        {
+            (o.Step, o.Value) = (Step.HrZones, StepValue(p, Step.HrZones));
+            return;
+        }
+        NextChoice(o, Step.HrZones, p);
+    }
+
+    // NextChoice goes on from the setting step after saving it: editing,
+    // to the view and the next setting the core keeps (an older core has
+    // none: its profile leaves it empty), else the profile is done.
     void NextChoice(Onboarding o, Step saved, RiderProfile p)
     {
+        if (saved < Step.View && o.Edit && p.View != "")
+        {
+            (o.Step, o.Value) = (Step.View, StepValue(p, Step.View));
+            return;
+        }
+        if (saved < Step.View) // onboarding: the numbers done
+        {
+            _onboard = null;
+            Say(p.WeightForced || p.FtpForced ? "profile set; what flags on the core force applies to this run only" : "profile saved");
+            return;
+        }
         for (var s = saved + 1; s <= Step.WorldFetch; s++)
             if (s == Step.WorldBuild && p.WorldBuild != "" || s == Step.WorldFetch && p.WorldFetch != "")
             {
@@ -431,9 +463,14 @@ public sealed partial class Controller
     }
 
     // ProfileSteps is how many steps editing the profile has with the core
-    // giving p: the four numbers, then the settings it keeps.
+    // giving p: the five numbers, the zones' choice with both heart rates,
+    // then the settings it keeps.
     static int ProfileSteps(RiderProfile? p) =>
-        4 + (p?.View is { Length: > 0 } ? 1 : 0) + (p?.WorldBuild is { Length: > 0 } ? 1 : 0) + (p?.WorldFetch is { Length: > 0 } ? 1 : 0);
+        5 + (BothHrs(p) ? 1 : 0) + (p?.View is { Length: > 0 } ? 1 : 0) + (p?.WorldBuild is { Length: > 0 } ? 1 : 0) + (p?.WorldFetch is { Length: > 0 } ? 1 : 0);
+
+    // StepNumber is step s's place, from 1: the zones' choice counts only
+    // with both heart rates.
+    static int StepNumber(Step s, RiderProfile? p) => (int)s + 1 - (s > Step.HrZones && !BothHrs(p) ? 1 : 0);
 
     void End(bool discard) =>
         _cmds.EndActivity(discard).ContinueWith(done =>
@@ -457,13 +494,13 @@ public sealed partial class Controller
             bool chase = ov.Value != "eyes";
             return new("RIDER PROFILE", chase ? "View: ▸ behind the rider ◂   your eyes" : "View:   behind the rider   ▸ your eyes ◂", Hud.Palette.Plain,
                 new[] { "How the 3D view shows your ride: from behind and above you (you see yourself and your ghost), or through your own eyes. v switches while riding." },
-                $"step 5 of {ProfileSteps(st?.Profile)} · ← → choose · enter save · esc back");
+                $"step {StepNumber(Step.View, st?.Profile)} of {ProfileSteps(st?.Profile)} · ← → choose · enter save · esc back");
         }
         if (_onboard is { } oc && Choice.TryGetValue(oc.Step, out var ch))
         {
             var big = string.Join("   ", ch.Values.Select(v => v.Value == oc.Value ? $"▸ {v.Label} ◂" : v.Label));
             return new("RIDER PROFILE", $"{ch.Title}: {big}", Hud.Palette.Plain, new[] { ch.Why },
-                $"step {(int)oc.Step + 1} of {ProfileSteps(st?.Profile)} · ← → choose · enter save · esc back");
+                $"step {StepNumber(oc.Step, st?.Profile)} of {ProfileSteps(st?.Profile)} · ← → choose · enter save · esc back");
         }
         if (_onboard is { } o)
         {
@@ -472,7 +509,8 @@ public sealed partial class Controller
             {
                 Step.Weight => ("Your weight", "kg", "It sets how climbs feel on the trainer and your speed on a course.", p?.WeightForced == true),
                 Step.Height => ("Your height", "cm", "Optional: with your weight it sizes how much air you push on a course. Leave it empty to skip.", p?.HeightForced == true),
-                Step.MaxHr => ("Your maximum heart rate", "bpm", "Optional: it sets the heart rate zones of your ride summaries.", false),
+                Step.MaxHr => ("Your maximum heart rate", "bpm", "Optional: your ride summaries' heart rate zones can come from it.", false),
+                Step.ThresholdHr => ("Your threshold heart rate", "bpm", "Optional: what you can hold for about an hour; the zones can come from it.", false),
                 _ => ("Your FTP", "W", "The power you can hold for about an hour: workouts are set from it. Not sure? Take the suggestion.", p?.FtpForced == true),
             };
             var lines = new List<string> { why };
@@ -486,10 +524,23 @@ public sealed partial class Controller
                     lines.Add($"Highest held for 10 s in your rides: {held} bpm; your maximum is at least this.");
                 lines.Add("Zones describe your rides; they are not medical advice.");
             }
+            if (o.Step == Step.ThresholdHr)
+            {
+                lines.Add("For riders who don't know their maximum (Friel's zones). Empty: skip.");
+                uint held = 0;
+                foreach (var a in _activities ?? new List<Activity>())
+                    held = Math.Max(held, a.HeldThresholdHeartRateBpm);
+                if (held > 0)
+                {
+                    lines.Add($"From your rides: 95 % of your best 20-minute average is {held} bpm.");
+                    lines.Add("After 20 minutes all-out that is your threshold; else it is at least this.");
+                }
+                lines.Add("Zones describe your rides; they are not medical advice.");
+            }
             if (forced)
                 lines.Add("a flag on the core forces this for its run: what you enter is saved for later");
             return new(o.Edit ? "RIDER PROFILE" : "WELCOME TO OSSCYCLER", $"{prompt}: {o.Value}_ {unit}", Hud.Palette.Plain, lines,
-                $"step {(int)o.Step + 1} of {(o.Edit ? ProfileSteps(st?.Profile) : 4)} · enter save and go on · esc {(o.Edit && o.Step > Step.Weight ? "back" : "later")}");
+                $"step {(int)o.Step + 1} of {(o.Edit ? ProfileSteps(st?.Profile) : 5)} · enter save and go on · esc {(o.Edit && o.Step > Step.Weight ? "back" : "later")}");
         }
         if (_ending)
         {

@@ -119,7 +119,8 @@ public partial class ListPanel : Control
         if (s.HeartRateZoneS.Count > 0)
         {
             y += 16;
-            DrawString(_bold, new Vector2(x, y), $"HEART RATE ZONES   max {s.MaxHrBpm:F0} bpm", HorizontalAlignment.Left, -1, 24, Dim);
+            var from = s.ThresholdHrBpm > 0 ? $"threshold {s.ThresholdHrBpm:F0} bpm" : $"max {s.MaxHrBpm:F0} bpm";
+            DrawString(_bold, new Vector2(x, y), $"HEART RATE ZONES   {from}", HorizontalAlignment.Left, -1, 24, Dim);
             y += 36;
             var up = s.HeartRateZoneUpper;
             Bars(s.HeartRateZoneS, _ => C(Palette.Heart), i => i == 0 ? $"<{up[0] * 100:F0}%" : i >= up.Count ? $">{up[^1] * 100:F0}%" : $"{up[i - 1] * 100:F0}-{up[i] * 100:F0}%");
@@ -127,7 +128,7 @@ public partial class ListPanel : Control
         else if (s.AvgHeartRateBpm > 0)
         {
             y += 16;
-            DrawString(_regular, new Vector2(x, y), "Heart rate zones: add your maximum heart rate to your profile (m, Profile).", HorizontalAlignment.Left, -1, 22, Dim);
+            DrawString(_regular, new Vector2(x, y), "Heart rate zones: add your maximum or threshold heart rate to your profile (m, Profile).", HorizontalAlignment.Left, -1, 22, Dim);
             y += 34;
         }
         DrawString(_regular, new Vector2(r.Position.X, r.End.Y - 22), "x close", HorizontalAlignment.Center, pw, 22, Dim);

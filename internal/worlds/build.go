@@ -24,21 +24,24 @@ import (
 
 // BuilderVersion goes up when a change to the builder should rebuild the
 // worlds riders have (a fix they'd ride into, not every commit).
-const BuilderVersion = 20
+const BuilderVersion = 63
 
 // GraphVersion is BuilderVersion for the graph builder (world.EngineGraph),
 // which goes its own way: it goes up when that builder changes what it
 // builds.
-const GraphVersion = 22
+const GraphVersion = 72
 
 // Builder builds worlds.
 type Builder struct {
-	// Ground is "auto" (AHN inside the Netherlands, else the profile),
-	// "ahn" or "none".
+	// Ground is "auto" (the national ground model where there is one
+	// (Grounds), else the profile), one of Grounds by name, or "none".
 	Ground   string
-	DEMCache string  // AHN tile cache
-	DEMCellM float64 // AHN resolution to fetch, m (default 5)
-	Fetch    bool    // fetch what the caches lack
+	DEMCache string // ground model tile cache
+	// BuildingsCache: France's BD TOPO buildings (default: .bdtopo beside
+	// DEMCache).
+	BuildingsCache string
+	DEMCellM       float64 // ground model resolution to fetch, m (default 5)
+	Fetch          bool    // fetch what the caches lack
 	// Maps is the map data (OpenStreetMap); nil builds without.
 	Maps *scenery.Store
 	// Options are the world's settings (cell, chunk, corridor, road width,
@@ -71,6 +74,32 @@ type Builder struct {
 	// would be stamped current and never get its data (a renderer building
 	// worlds ahead of a ride from the caches only, owner 2026-10-13).
 	Complete bool
+}
+
+// grounds are the national ground models, tried in this order by "auto",
+// with the style of the country each covers (world.Options.Region).
+var grounds = []struct {
+	name, source, attribution, region string
+	load                              func(context.Context, dem.Source, []dem.LatLon, float64) (*dem.Mosaic, error)
+}{
+	{"ahn", "AHN DTM", dem.AHNAttribution, world.RegionNL, func(ctx context.Context, s dem.Source, pts []dem.LatLon, r float64) (*dem.Mosaic, error) {
+		a := dem.AHN(s)
+		return a.Load(ctx, pts, r)
+	}},
+	{"rgealti", "IGN RGE ALTI", dem.RGEAltiAttribution, world.RegionFR, func(ctx context.Context, s dem.Source, pts []dem.LatLon, r float64) (*dem.Mosaic, error) {
+		a := dem.RGEAlti(s)
+		return a.Load(ctx, pts, r)
+	}},
+}
+
+// Grounds names the ground models Builder.Ground takes besides "auto" and
+// "none".
+func Grounds() []string {
+	var n []string
+	for _, g := range grounds {
+		n = append(n, g.name)
+	}
+	return n
 }
 
 // ErrIncomplete: Builder.Complete, and data the world needs is missing
@@ -134,7 +163,7 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 		if cell <= 0 {
 			cell = 5
 		}
-		a := &dem.AHN{CacheDir: b.DEMCache, Fetch: b.Fetch, CellM: cell, Log: log, UserAgent: b.UserAgent,
+		src := dem.Source{CacheDir: b.DEMCache, Fetch: b.Fetch, CellM: cell, Log: log, UserAgent: b.UserAgent,
 			Progress: func(done, total int) { tr.step(done, total, float64(done)/float64(max(1, total))) }}
 		var pts []dem.LatLon
 		for d := 0.0; d <= c.Distance; d += 20 {
@@ -149,7 +178,46 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 			chunk = 250
 		}
 		// The corridor plus a chunk: every terrain vertex is inside.
-		m, err := a.Load(ctx, pts, corridor+1.5*chunk)
+		radius := corridor + 1.5*chunk
+		var (
+			m   *dem.Mosaic
+			err = dem.ErrOutside
+		)
+		// The national ground models in turn (auto), or the one asked for.
+		for _, g := range grounds {
+			if b.Ground != "auto" && b.Ground != g.name || !errors.Is(err, dem.ErrOutside) {
+				continue
+			}
+			if m, err = g.load(ctx, src, pts, radius); err == nil {
+				o.Elevation = m.Elevation
+				o.TerrainSource = fmt.Sprintf("%s, %g m", g.source, cell)
+				o.Attribution = append(o.Attribution, g.attribution)
+				o.Region = g.region
+			}
+		}
+		// The distant terrain's coarse ground model, where the region's
+		// style has one (mountains): the same source at 50 m, out to its
+		// reach. Missing it is no reason to stop; the world just ends at
+		// its corridor.
+		if far := world.FarM(o.Region); err == nil && far > 0 {
+			fsrc := src
+			fsrc.CellM, fsrc.Progress = 50, nil
+			for _, g := range grounds {
+				if g.region != o.Region || b.Ground != "auto" && b.Ground != g.name {
+					continue
+				}
+				fm, ferr := g.load(ctx, fsrc, pts, far+fsrc.CellM)
+				switch {
+				case ferr == nil:
+					o.FarElevation, o.FarM = fm.Elevation, far
+				case errors.Is(ferr, dem.ErrNotCached) && b.Complete:
+					return Result{}, fmt.Errorf("%w: distant ground model: %v", ErrIncomplete, ferr)
+				default:
+					log.Warn("no distant terrain", "course", c.ID, "err", ferr)
+				}
+				break
+			}
+		}
 		switch {
 		case errors.Is(err, dem.ErrOutside) && b.Ground == "auto":
 			log.Info("no ground model for this area: terrain from the course profile", "course", c.ID)
@@ -157,10 +225,6 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 			return Result{}, fmt.Errorf("%w: ground model: %v", ErrIncomplete, err)
 		case err != nil:
 			return Result{}, err
-		default:
-			o.Elevation = m.Elevation
-			o.TerrainSource = fmt.Sprintf("AHN DTM, %g m", cell)
-			o.Attribution = append(o.Attribution, dem.AHNAttribution)
 		}
 	}
 	mapInfo := "no map data"
@@ -195,6 +259,27 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 			o.Attribution = append(o.Attribution, scenery.Attribution+" (ODbL)")
 		}
 		mapInfo = fmt.Sprintf("%d map elements", len(d.Elements))
+		// France's own buildings, measured (BD TOPO), where they can be had.
+		if o.Region == world.RegionFR {
+			cache := b.BuildingsCache
+			if cache == "" {
+				cache = filepath.Join(filepath.Dir(b.DEMCache), ".bdtopo")
+			}
+			bt := &scenery.BDTopo{CacheDir: cache, Fetch: b.Fetch, UserAgent: b.UserAgent, Log: log}
+			fps, err := bt.Footprints(ctx, c)
+			switch {
+			case err == nil && len(fps) > 0:
+				o.Buildings = fps
+				o.Attribution = append(o.Attribution, scenery.BDTopoAttribution)
+				mapInfo += fmt.Sprintf(", %d buildings from BD TOPO", len(fps))
+			case err != nil && ctx.Err() != nil:
+				return Result{}, ctx.Err()
+			case errors.Is(err, scenery.ErrNoBDTopo) && b.Complete:
+				return Result{}, fmt.Errorf("%w: buildings: %v", ErrIncomplete, err)
+			case err != nil:
+				log.Warn("BD TOPO buildings: keeping OpenStreetMap's", "course", c.ID, "err", err)
+			}
+		}
 	}
 	if b.Preview && !c.Builtin {
 		t := scenery.Countryside(c)

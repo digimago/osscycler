@@ -2,8 +2,6 @@ package world
 
 import (
 	"math"
-
-	"github.com/digimago/osscycler/internal/scenery"
 )
 
 // Stands: a forest is not one even planting (owner, 2026-10-09: at 3.0 km
@@ -14,10 +12,11 @@ import (
 // each spot its stand: how dense (fewer mature trees where it is low),
 // how old (their size), and, where thin, the odd young tree.
 const (
-	standM      = 45.0 // stands about this far across
-	standFineM  = 15.0 // and patchy within
-	standMinDen = 0.5  // mature trees in the thinnest stand, × the land's rule
-	standMaxDen = 1.15 // and in the densest
+	standM      = 45.0  // stands about this far across
+	standFineM  = 15.0  // and patchy within
+	standLeafM  = 150.0 // a forest's stands of one kind or the other about this far across (standLeaf)
+	standMinDen = 0.5   // mature trees in the thinnest stand, × the land's rule
+	standMaxDen = 1.15  // and in the densest
 	// Young trees: where a stand's field is under regenBelow, one per
 	// regenM2 of floor in its thinnest parts, fewer as it closes up.
 	regenBelow = 0.55
@@ -31,6 +30,20 @@ func standField(e, n float64) float64 {
 	v := 0.7*valueNoise(e/standM, n/standM, 0x57a4d) + 0.3*valueNoise(e/standFineM, n/standFineM, 0x9a7c1)
 	// Spread the middle-heavy sum back over [0, 1].
 	return smoothstep(math.Max(0, math.Min(1, (v-0.2)/0.6)))
+}
+
+// standLeaf is the leaf field at e, n: uniform in [0, 1) over the land,
+// one draw per parcel about standLeafM across with wavering edges (the
+// cell of a grid shifted by noise), as the dark and light patches of a
+// mountain forest seen from above. A stand is of the forest's tagged
+// kind where it is under the band's pureShare, of the other kind above
+// it (vegetation.go); uniform, so the share is the share by area.
+func standLeaf(e, n float64) float64 {
+	w := standLeafM / 2 // the edges waver at half a parcel
+	je := (valueNoise(e/w, n/w, 0x3e8f2) - 0.5) * standLeafM * 0.5
+	jn := (valueNoise(e/w, n/w, 0x7c1b5) - 0.5) * standLeafM * 0.5
+	i, j := math.Floor((e+je)/standLeafM), math.Floor((n+jn)/standLeafM)
+	return unit(splitmix(uint64(int64(i))<<32 ^ uint64(int64(j)) ^ 0x1eaf))
 }
 
 // standAge scales a stand's mature trees: some stands older, some younger.
@@ -70,12 +83,11 @@ func regenChance(stand float64) float64 {
 // (a pioneer, the first in a gap), and its size (× the species' grown
 // height), from a sapling to a pole. It grows in the open form: branches
 // low, as young trees have.
-func youngTree(h uint64, leaf string) (sp int, scale float64) {
-	mix := speciesByLand[scenery.LandForest]
+func youngTree(h uint64, leaf string, mix speciesMix, pioneer string) (sp int, scale float64) {
 	table := mix.broad
 	switch {
 	case unit(h) < 0.25:
-		table = map[string]float64{"birch": 1}
+		table = map[string]float64{pioneer: 1}
 	case leaf == "needleleaved", leaf != "broadleaved" && unit(h>>16) < 0.5:
 		table = mix.conifer
 	}

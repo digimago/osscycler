@@ -211,7 +211,7 @@ func TestGraphNodesShareAHeight(t *testing.T) {
 		}
 	}
 	g := newGnet(ls, ways, nil)
-	g.anchorHeights()
+	g.anchorHeights(ways)
 	var at []float64
 	for k, l := range g.lines {
 		for _, st := range g.stops[k] {
@@ -628,7 +628,7 @@ func TestJunctionsStopAtTheNext(t *testing.T) {
 	for _, l := range ls {
 		finishRoad(l.samples, 5)
 	}
-	ps := networkPatches(ls, ways)
+	ps := networkPatches(ls, ways, 0)
 	for _, p := range ps {
 		for _, q := range [][2]float64{{-10, 20}, {-10, 10}, {-12, 30}} {
 			if inPoly(p.poly, q[0], q[1]) {
@@ -1073,5 +1073,47 @@ func TestTailOntoLap(t *testing.T) {
 	want, _ := c.Project(c.Position(pd[i] - l.Length() - 1.5))
 	if math.Abs(px[i]-want) > 1e-9 {
 		t.Errorf("the tail's turn moved")
+	}
+}
+
+// Land between two roads close beside it on opposite sides lies at the
+// lower one's level (owner, 2026-10-16, Rue du Hohneck at 1.34 km: a
+// lane climbing beside the main road); on one side only, or wide apart,
+// it eases as before. Two roads a step apart in height are level only
+// where a wall closes the step (1.52 km, where the lane parts from the
+// main road: the land had stood as a bare cliff up to it).
+func TestLandBetweenCloseRoadsIsLevel(t *testing.T) {
+	const wall = abreastReachM
+	main := gPiece{k: [2]int{1, 0}, gap: 0.3, ele: 10, qe: 0, qn: -2, de: 1}
+	lane := gPiece{k: [2]int{2, 0}, gap: 0.5, ele: 11.2, qe: 0, qn: 3, de: 1}
+	if low, ok := island([]gPiece{main, lane}, 0, 0, wall); !ok || low != 10 {
+		t.Errorf("between the main road and the lane: %v, %v; want the main road's 10 m", low, ok)
+	}
+	if _, ok := island([]gPiece{main, lane}, 0, 0, 0); ok {
+		t.Error("a step with no wall made a level strip (a cliff up to the lane)")
+	}
+	level := lane
+	level.ele = 10.2
+	if _, ok := island([]gPiece{main, level}, 0, 0, 0); !ok {
+		t.Error("two roads at one level, no wall needed: no level strip")
+	}
+	parted := lane
+	parted.gap = abreastReachM
+	if _, ok := island([]gPiece{main, parted}, 0, 0, wall); ok {
+		t.Error("a step past the wall's reach made a level strip")
+	}
+	across := lane
+	across.de, across.dn = 0.3, 0.95
+	if _, ok := island([]gPiece{main, across}, 0, 0, wall); ok {
+		t.Error("a step to a road crossing (no wall across its mouth) made a level strip")
+	}
+	same := gPiece{k: [2]int{2, 0}, gap: 3, ele: 11.2, qe: 0, qn: -4, de: 1}
+	if _, ok := island([]gPiece{main, same}, 0, 0, wall); ok {
+		t.Error("two roads on one side made an island")
+	}
+	far := lane
+	far.gap = 8
+	if _, ok := island([]gPiece{main, far}, 0, 0, wall); ok {
+		t.Error("roads 9.5 m apart made an island")
 	}
 }

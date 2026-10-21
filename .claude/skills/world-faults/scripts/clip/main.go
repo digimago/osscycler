@@ -113,17 +113,25 @@ func main() {
 		o.Land.ByTheSea(cc, co.Distance)
 	}
 	if *demDir != "" {
-		a := &dem.AHN{CacheDir: *demDir, CellM: 5}
 		var ll []dem.LatLon
 		for at := 0.0; at <= cc.Distance; at += 20 {
 			lat, lon := cc.Position(at)
 			ll = append(ll, dem.LatLon{Lat: lat, Lon: lon})
 		}
-		m, err := a.Load(context.Background(), ll, 300+1.5*250) // the corridor and a chunk, as worlds.Builder
+		// The national ground models in turn, as worlds.Builder (AHN, then
+		// RGE ALTI), each with its country's style.
+		src := dem.Source{CacheDir: *demDir, CellM: 5}
+		ctx := context.Background()
+		m, err := (*dem.AHN)(&src).Load(ctx, ll, 300+1.5*250) // the corridor and a chunk, as worlds.Builder
+		o.TerrainSource, o.Region = "AHN DTM, 5 m", world.RegionNL
+		if errors.Is(err, dem.ErrOutside) {
+			m, err = (*dem.RGEAlti)(&src).Load(ctx, ll, 300+1.5*250)
+			o.TerrainSource, o.Region = "IGN RGE ALTI, 5 m", world.RegionFR
+		}
 		if err != nil {
 			log.Fatal(err)
 		}
-		o.Elevation, o.TerrainSource = m.Elevation, "AHN DTM, 5 m"
+		o.Elevation = m.Elevation
 	}
 	w, err := world.BuildWith(*engine, cc, o)
 	if err != nil {

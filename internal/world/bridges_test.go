@@ -20,7 +20,7 @@ func TestMarkDecks(t *testing.T) {
 		return l
 	}
 	upper, lower, beside := line(0, 0, 1, 0, 10), line(0, 0, 0, 1, 0), line(7, 0, 0, 1, -1)
-	markDecks([]*roadLine{upper, lower, beside}, 0)
+	markDecks([]*roadLine{upper, lower, beside}, 0, false)
 	var from, to float64
 	n := 0
 	for _, s := range upper.samples {

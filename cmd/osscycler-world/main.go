@@ -1,6 +1,6 @@
 // Command osscycler-world builds the 3D world of courses for renderers:
 // terrain from a ground model (the Dutch AHN where the course lies in the
-// Netherlands), the road on it, and a manifest, written as
+// Netherlands, IGN's RGE ALTI in France), the road on it, and a manifest, written as
 // <out>/<course>/world.glb and world.json.
 //
 // Ground model tiles are fetched once and cached; -fetch=false builds from
@@ -23,6 +23,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -45,7 +46,7 @@ func run() error {
 	var (
 		courses  = flag.String("courses", home.Courses(), "directory of .gpx courses")
 		out      = flag.String("out", home.Worlds(), "directory for the worlds, one subdirectory per course")
-		ground   = flag.String("dem", "auto", "ground model: auto (AHN inside the Netherlands), ahn, or none")
+		ground   = flag.String("dem", "auto", "ground model: auto (AHN inside the Netherlands, IGN RGE ALTI inside France, else the course profile), ahn, rgealti, or none")
 		cache    = flag.String("dem-cache", "", "ground model tile cache (default <courses>/.dem)")
 		fetch    = flag.Bool("fetch", true, "fetch missing ground model tiles and map data; false uses the caches only")
 		osm      = flag.Bool("osm", true, "use OpenStreetMap map data")
@@ -83,10 +84,8 @@ func run() error {
 	if *check != "fail" && *check != "warn" {
 		return fmt.Errorf("-check %q: want fail or warn", *check)
 	}
-	switch *ground {
-	case "auto", "ahn", "none":
-	default:
-		return fmt.Errorf("-dem %q: want auto, ahn or none", *ground)
+	if g := append([]string{"auto", "none"}, worlds.Grounds()...); !slices.Contains(g, *ground) {
+		return fmt.Errorf("-dem %q: want one of %v", *ground, g)
 	}
 	if *ifCached {
 		*fetch = false

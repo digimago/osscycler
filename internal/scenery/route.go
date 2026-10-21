@@ -252,6 +252,11 @@ type Way struct {
 	Sidepath bool
 	// Driveway: a service road to a house or yard (not drawn).
 	Driveway bool
+	// Ref is the road's number ("D13B"), "" when it has none.
+	Ref string
+	// WalkGuessed: Sidewalk was guessed from built-up land beside the
+	// road (the map tags none), not tagged.
+	WalkGuessed bool
 }
 
 // ways are the roads as Ways (in the same order, so RouteOn indexes
@@ -275,6 +280,7 @@ func ways(roads []*road, built func(x, y float64) bool) []Way {
 			Roundabout: t["junction"] == "roundabout" || t["junction"] == "circular",
 			Sidepath:   t["bicycle"] == "no" || t["bicycle"] == "use_sidepath",
 			Lanes:      atoi(t["lanes"]),
+			Ref:        t["ref"],
 		}
 		for i := range rd.x {
 			w.Line = append(w.Line, [2]float64{rd.x[i], rd.y[i]})
@@ -284,6 +290,7 @@ func ways(roads []*road, built func(x, y float64) bool) []Way {
 			walkL, walkR = builtBeside(rd, func(x, y float64) bool {
 				return built(x, y) && !near.onRoad(x, y, rd)
 			})
+			w.WalkGuessed = walkL || walkR
 		}
 		laneL, laneR, _ := sides(t, "cycleway", "lane", "opposite_lane")
 		w.Sidewalk, w.CycleLane = [2]bool{walkL, walkR}, [2]bool{laneL, laneR}

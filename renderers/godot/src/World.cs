@@ -48,11 +48,16 @@ public sealed class Manifest
     [JsonPropertyName("road")] public RoadInfo Road { get; set; } = new();
     [JsonPropertyName("terrain")] public TerrainInfo Terrain { get; set; } = new();
     [JsonPropertyName("ground")] public GroundInfo Ground { get; set; } = new();
+    // The style the world was built in ("fr"), "" for the Dutch one.
+    [JsonPropertyName("region")] public string Region { get; set; } = "";
 
     public sealed class TerrainInfo
     {
         [JsonPropertyName("cell_m")] public double CellM { get; set; }
         [JsonPropertyName("chunk_m")] public double ChunkM { get; set; }
+        // Distant terrain out to this from the route (0: the world ends
+        // at its corridor, which the haze hides).
+        [JsonPropertyName("far_m")] public double FarM { get; set; }
     }
 
     // The ground map near the route (osscycler-world's ground.bin): what
@@ -64,6 +69,9 @@ public sealed class Manifest
         [JsonPropertyName("layout")] public string Layout { get; set; } = "";
         [JsonPropertyName("classes")] public string[] Classes { get; set; } = [];
         [JsonPropertyName("chunks")] public GroundChunk[] Chunks { get; set; } = [];
+        // Grass on ground above this height dries towards straw (summer
+        // pastures above the treeline); 0: none.
+        [JsonPropertyName("dry_above_m")] public double DryAboveM { get; set; }
     }
 
     public sealed class GroundChunk
@@ -153,7 +161,7 @@ public sealed class World
         if (err != Error.Ok)
             throw new IOException($"loading {m.Model}: {err}");
         var scene = (Node3D)doc.GenerateScene(state);
-        var terrain = Dress(scene);
+        var terrain = Dress(scene, m.Region == "fr");
         Plant(scene, m, dir, bloom);
         return new World(m, scene, relief, GroundMap.Load(m, dir, scene), terrain);
     }
@@ -163,9 +171,24 @@ public sealed class World
     // base colour: the terrain's land cover is in them. The terrain gets
     // its own shader (shaders/terrain.gdshader: the land cover with detail
     // on top).
-    static ShaderMaterial Dress(Node scene)
+    static ShaderMaterial Dress(Node scene, bool shutters = false)
     {
         var terrain = new ShaderMaterial { Shader = GD.Load<Shader>("res://shaders/terrain.gdshader") };
+        // Surfaces with their detail drawn (shaders/surfaces.gdshader), by
+        // the material's name: its kind there.
+        var surfaceShader = GD.Load<Shader>("res://shaders/surfaces.gdshader");
+        var surfaces = new System.Collections.Generic.Dictionary<string, ShaderMaterial>();
+        ShaderMaterial Surface(string name, int kind)
+        {
+            if (!surfaces.TryGetValue(name, out var m))
+            {
+                m = new ShaderMaterial { Shader = surfaceShader };
+                m.SetShaderParameter("kind", kind);
+                m.SetShaderParameter("shutters", shutters);
+                surfaces[name] = m;
+            }
+            return m;
+        }
         foreach (var n in scene.FindChildren("*", "MeshInstance3D", true, false))
         {
             var mi = (MeshInstance3D)n;
@@ -184,6 +207,19 @@ public sealed class World
                     mat.VertexColorUseAsAlbedo = true;
                     mat.VertexColorIsSrgb = false; // glTF colours are linear
                 }
+                if (SurfaceKind(mat.ResourceName) is int kind)
+                {
+                    // The builder's colour (vertex colours, else the
+                    // material's) under the drawn detail.
+                    var sm = Surface(mat.ResourceName, kind);
+                    if (arrays[(int)Mesh.ArrayType.Color].VariantType == Variant.Type.Nil)
+                    {
+                        sm = (ShaderMaterial)sm.Duplicate();
+                        sm.SetShaderParameter("albedo_tint", mat.AlbedoColor);
+                    }
+                    mi.SetSurfaceOverrideMaterial(s, sm);
+                    continue;
+                }
                 if (mat.ResourceName == "water")
                 {
                     mat.Roughness = 0.08f;
@@ -193,6 +229,19 @@ public sealed class World
         }
         return terrain;
     }
+
+    // SurfaceKind is the surfaces shader's kind for a world material, null
+    // for one drawn as glTF says.
+    internal static int? SurfaceKind(string material) => material switch
+    {
+        "road" => 0,
+        "stone wall" => 1,
+        "rock" => 2,
+        "setts" => 3,
+        "grate" => 4,
+        "building" => 5,
+        _ => null,
+    };
 
     // Plant adds the vegetation: a MultiMesh per group of instances, of the
     // group's template (a hidden node of the model), drawn up to the

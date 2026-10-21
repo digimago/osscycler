@@ -150,7 +150,7 @@ func TestJoinedRoadsHaveNoSkirtBetween(t *testing.T) {
 		return l
 	}
 	a, b := strip(0), strip(4.5) // edges 0.5 m apart
-	joinAlongside([]*roadLine{a, b}, 5)
+	joinAlongside([]*roadLine{a, b}, 5, 0)
 	mid := 25
 	if !a.samples[mid].butt[1] || !b.samples[mid].butt[0] {
 		t.Errorf("the facing edges: butt %v and %v, want no skirt on either", a.samples[mid].butt, b.samples[mid].butt)
@@ -329,7 +329,7 @@ func TestSidewalksAndLanesEndInATaper(t *testing.T) {
 				tr.fine[i].lane[1] = true
 			}
 		}
-		m := addRoadMaterials(gltf.New("test"))
+		m := addRoadMaterials(gltf.New("test"), &styleNL)
 		ps := roadMesh(tr.fine[:200], tr.fine, 0, courseLine(c, nil), false, m, nil)
 		covered := func(e, n float64) bool {
 			for _, p := range ps {

@@ -96,10 +96,10 @@ var (
 	bushReaches   []float64
 )
 
-func pickBush(l scenery.Land, h uint64) (kind int, scale float64, ok bool) {
-	mix := bushesByLand[l]
+func pickBush(st *style, l scenery.Land, h uint64) (kind int, scale float64, ok bool) {
+	mix := st.bushes[l]
 	if mix == nil {
-		mix = bushesByLand[scenery.LandNone]
+		mix = st.bushes[scenery.LandNone]
 	}
 	total := 0.0
 	for _, b := range allBushes { // in a fixed order

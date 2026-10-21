@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using Godot;
+using Osscycler.Hud;
 using Osscycler.V1;
 
 namespace Osscycler;
@@ -53,6 +55,8 @@ public partial class Main : Node3D
     float _look; // radians to the right of the way ahead
     string _worldsDir = "";
     Camera3D _camera = null!;
+    Godot.Environment _env = null!;
+    float _hazeDensity = 0.0004f, _depthDensity;
     Hud.HudView _hud = null!;
     Head.Controller _head = null!;
     Vector3 _gaze;
@@ -65,6 +69,8 @@ public partial class Main : Node3D
     readonly List<(int Frame, string Key)> _keys = new();
     float _relief = 1;
     int _seed;
+    Weather _weather;
+    DirectionalLight3D? _sun;
     bool _debug;          // --debug: space marks the spot (Mark)
     string _marksDir = "";
 
@@ -150,8 +156,14 @@ public partial class Main : Node3D
         _marksDir = args.File("marks", Path.Combine(Core.Home(), "marks"));
         _bloom = Grass.Bloom(seed % 1000); // the seed's day of the year
         var weather = Weather.From(seed);
-        AddChild(Sky(weather));
-        AddChild(Sun(weather));
+        _weather = weather;
+        var sky = Sky(weather);
+        _env = sky.Environment;
+        _depthDensity = _env.FogDensity;
+        AddChild(sky);
+        _sun = Sun();
+        AddChild(_sun);
+        PlaceSun(48);
         // Godot's field of view is vertical by default: 70° made about 102°
         // across on a wide screen, which looked flat and far away.
         _camera = new Camera3D
@@ -163,9 +175,22 @@ public partial class Main : Node3D
             Current = true,
         };
         _relief = (float)Math.Max(0.1, args.Number("relief", 1));
+        // For checks: the haze over distant terrain, its end as a share of
+        // the terrain's reach and its curve.
+        _hazeDensity = (float)args.Number("haze", 0.0004);
         if (args.Get("ghost", "") != "")
             _ghostAhead = args.Number("ghost", 10);
         _look = Mathf.DegToRad((float)args.Number("look", 0));
+        // --camera x,y,z,yaw,pitch: the camera fixed in the world's frame
+        // (x east, y up, z south; yaw clockwise from north, pitch up, -90
+        // straight down, north at the top), for top-down views and close
+        // looks at a world's faults; no HUD.
+        if (args.Get("camera", "") is { Length: > 0 } cam)
+        {
+            var v = cam.Split(',').Select(x => float.Parse(x, System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+            if (v.Length == 5)
+                _fixedCamera = (new Vector3(v[0], v[1], v[2]), Mathf.DegToRad(v[3]), Mathf.DegToRad(v[4]));
+        }
         AddChild(_camera);
         // The fade under the HUD: the haze's own colour, so a swap reads as
         // riding through a bank of mist.
@@ -346,11 +371,14 @@ public partial class Main : Node3D
         }
         _world = w;
         AddChild(w.Scene);
+        Reach(w.Manifest.Terrain.FarM);
+        if (w.Manifest.Origin.Lat != 0 || w.Manifest.Origin.Lon != 0)
+            PlaceSun(w.Manifest.Origin.Lat);
         // Grass beside the scene, not in it: the scene is scaled by the
         // relief, the grass shouldn't be.
         if (w.Ground != null)
         {
-            _grass = new Grass(w.Ground, _relief, w.TerrainMaterial, _bloom);
+            _grass = new Grass(w.Ground, _relief, w.TerrainMaterial, _bloom, (float)w.Manifest.Ground.DryAboveM);
             AddChild(_grass.Node);
         }
         _hidden.Clear(); // the old world's nodes went with it
@@ -702,8 +730,21 @@ public partial class Main : Node3D
     // ahead (riders look a little into a bend). The head stays nearer
     // level than the bike, on climbs as the TUI's road view does, and
     // leans a little with it in bends.
+    (Vector3 At, float Yaw, float Pitch)? _fixedCamera;
+
     void Place(double delta)
     {
+        if (_fixedCamera is var (camAt, camYaw, camPitch))
+        {
+            var flat = new Vector3(Mathf.Sin(camYaw), 0, -Mathf.Cos(camYaw));
+            var look = flat * Mathf.Cos(camPitch) + Vector3.Up * Mathf.Sin(camPitch);
+            var up = Mathf.Abs(camPitch) > Mathf.DegToRad(89) ? flat : Vector3.Up;
+            _camera.Transform = new Transform3D(Basis.LookingAt(look, up), camAt);
+            _grass?.Update(_camera.Position);
+            if (_hud.Node is CanvasLayer hudLayer)
+                hudLayer.Visible = false;
+            return;
+        }
         var w = _world!;
         double at = Viewed;
         var here = w.InLane(at);
@@ -932,16 +973,38 @@ public partial class Main : Node3D
     // Weather is a ride's light and air: the sun's height and direction,
     // how far the haze reaches, the sky's tint. Picked from a seed (the
     // day, or --seed), so rides vary and a seed repeats a look.
-    readonly record struct Weather(float SunHeight, float SunYaw, float HazeFrom, float HazeTo, float Tint)
+    // The sun's place comes from the world's latitude, the seed's day and
+    // a time of day from the seed (Solar; owner, 2026-10-15: the sun had
+    // stood high in the north-east over the Vosges, picked at random), so
+    // it is set when a world is shown (PlaceSun); until then at 48° N.
+    // The hour is picked for 48° N; another latitude moves the sun a few
+    // degrees, which keeps a low sun low.
+    readonly record struct Weather(float Hours, int Day, float HazeFrom, float HazeTo, float Tint)
     {
         public static Weather From(int seed)
         {
             var r = new Random(seed);
             float f(float lo, float hi) => lo + (float)r.NextDouble() * (hi - lo);
+            float hours = (float)Solar.RideHours(48, Solar.DayOfYear(seed), r.NextDouble(), r.NextDouble());
             // The haze is clear near the rider and full by 360-460 m: the
             // world ends 300 m from the road, so it must hide that edge.
-            return new Weather(f(22, 58), f(0, 360), f(60, 140), f(360, 460), f(-1, 1));
+            return new Weather(hours, Solar.DayOfYear(seed), f(60, 140), f(360, 460), f(-1, 1));
         }
+    }
+
+    // PlaceSun puts the sun where it stands at latitude lat for the
+    // weather's day and hour (at least 5° up: a ride is lit), warmer and
+    // dimmer when low.
+    void PlaceSun(double lat)
+    {
+        if (_sun == null)
+            return;
+        var (height, az) = Solar.Position(lat, _weather.Day, _weather.Hours);
+        height = Math.Max(5, height);
+        _sun.RotationDegrees = new Vector3(-(float)height, (float)Solar.LightYaw(az), 0);
+        _sun.LightEnergy = 0.9f + (float)height / 100f;
+        float warm = Math.Clamp((float)(20 - height) / 15f, 0, 1); // golden below 20°
+        _sun.LightColor = new Color(1, 1, 1).Lerp(new Color(1f, 0.78f, 0.55f), warm);
     }
 
     // Scale3D renders the 3D view at RenderScale's share of the window's
@@ -952,6 +1015,30 @@ public partial class Main : Node3D
         float s = RenderScale.Of(GetWindow().Size.Y);
         vp.Scaling3DMode = s < 1 ? Viewport.Scaling3DModeEnum.Fsr : Viewport.Scaling3DModeEnum.Bilinear;
         vp.Scaling3DScale = s;
+    }
+
+    // Reach sets how far the view goes for a world: one with distant
+    // terrain (far_m) is seen out to it, the haze thinning so its hills
+    // show and swallowing them only near its end; one without ends at its
+    // corridor, which the haze hides as before.
+    void Reach(double farM)
+    {
+        if (farM > 0)
+        {
+            // Haze as the air makes it: thinning the view evenly with
+            // distance (exponential), so the near hills keep their colour
+            // and the far ones fade into the sky.
+            _camera.Far = (float)farM + 1500;
+            _env.FogMode = Godot.Environment.FogModeEnum.Exponential;
+            _env.FogDensity = _hazeDensity;
+            return;
+        }
+        _camera.Far = 4000;
+        _env.FogMode = Godot.Environment.FogModeEnum.Depth;
+        _env.FogDensity = _depthDensity;
+        _env.FogDepthBegin = _weather.HazeFrom;
+        _env.FogDepthEnd = _weather.HazeTo;
+        _env.FogDepthCurve = 1.6f;
     }
 
     // Sky is a daylight sky, its haze by distance: clear up close (the
@@ -984,10 +1071,8 @@ public partial class Main : Node3D
         return new WorldEnvironment { Environment = env };
     }
 
-    static DirectionalLight3D Sun(Weather w) => new()
+    static DirectionalLight3D Sun() => new()
     {
-        RotationDegrees = new Vector3(-w.SunHeight, w.SunYaw, 0),
-        LightEnergy = 0.9f + w.SunHeight / 100f,
         ShadowEnabled = true,
         DirectionalShadowMaxDistance = 150,
     };

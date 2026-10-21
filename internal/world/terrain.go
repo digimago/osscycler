@@ -12,6 +12,10 @@ import (
 
 // terrain shapes the ground in square chunks along the route.
 type terrain struct {
+	// walls are the retaining walls' footprints (e, n), from the face's
+	// foot to the coping's back: no grass grows there (the ground map's
+	// clearance).
+	walls [][][2]float64
 	// exact are the water areas drawn from their own outline (waters.go):
 	// the cells leave their water out.
 	exact        map[int]bool
@@ -148,7 +152,7 @@ func (t *terrain) chunk(key [2]int, material, waterMaterial int) (ground, water 
 		nx, ny, nz := -dhde, 1.0, dhdn
 		ln := math.Sqrt(nx*nx + ny*ny + nz*nz)
 		p.Normals = append(p.Normals, float32(nx/ln), float32(ny/ln), float32(nz/ln))
-		c := landColors[land[hj*side+hi]]
+		c := styleFor(t.o.Region).landColour(land[hj*side+hi])
 		p.Colors = append(p.Colors, c[0], c[1], c[2])
 		return v
 	}
@@ -514,6 +518,9 @@ func (t *terrain) roadGap(e, n float64, _ []int, skip int) float64 {
 // left): its carriageway, and its sidewalk there or its reach over to a
 // road alongside.
 func sideEdge(s sample, side int) float64 {
+	if s.terrace[side] > 0 {
+		return s.terrace[side] // the terrace's slab (terrace.go) is the road's edge there
+	}
 	if s.walk[side] {
 		return s.hw + s.walkWidth(side)
 	}

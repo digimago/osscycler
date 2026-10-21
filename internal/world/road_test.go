@@ -80,7 +80,7 @@ func TestRoadFromTheMap(t *testing.T) {
 		t.Errorf("width at the change %.1f, want between", m)
 	}
 
-	m := addRoadMaterials(w.doc)
+	m := addRoadMaterials(w.doc, &styleNL)
 	ps := roadMesh(tr.fine[:200], tr.fine, 0, courseLine(c, nil), false, m, nil) // the first 400 m
 	got := map[int]bool{}
 	for _, p := range ps {
@@ -207,7 +207,7 @@ func TestSidewalkEndsAreClosed(t *testing.T) {
 	sc := &scenery.Scenery{Roads: []scenery.RoadStretch{
 		{FromM: 0, ToM: c.Distance, Class: "residential", WidthM: 6, Sidewalk: [2]bool{true, true}}}}
 	tr := testTerrain(c, Options{Scenery: sc})
-	m := addRoadMaterials(gltf.New("test"))
+	m := addRoadMaterials(gltf.New("test"), &styleNL)
 	// The first 400 m: the strip starts at the first cross-section and
 	// stops at the last, each end a face across both sidewalks.
 	ps := roadMesh(tr.fine[:200], tr.fine, 0, courseLine(c, nil), false, m, nil)
@@ -278,5 +278,248 @@ func TestJunctionTrianglesAreFat(t *testing.T) {
 	}
 	if fa < 5 || fa < 10*ea {
 		t.Errorf("thinnest corner %.1f° (ear clipping's %.1f°)", fa, ea)
+	}
+}
+
+// A car park's outline running just off a road's edge is taken onto the
+// road (parkingOntoRoads): a map outline a few centimetres outside the
+// drawn carriageway left a slit between the two surfaces too narrow for
+// the land to fill (the Route des Crêtes' car parks, 15.3-15.5 km of the
+// Route des Américains).
+func TestParkingOutlineMeetsTheRoad(t *testing.T) {
+	// A road 3.5 m half wide along n, its right edge at e 3.5, 10 m high.
+	road := gltf.Primitive{Material: 1}
+	for _, q := range [][3]float64{{-3.5, 10, 50}, {3.5, 10, 50}, {3.5, 10, -50}, {-3.5, 10, -50}} {
+		road.Positions = append(road.Positions, float32(q[0]), float32(q[1]), float32(q[2]))
+	}
+	road.Indices = []uint32{0, 1, 2, 0, 2, 3}
+	rs := newSurfaceIndex([]gltf.Primitive{road}, func(int) bool { return true }, 200)
+	// The car park: its west edge 0.2 m off the road's, from n -20 to 20.
+	outline := [][2]float64{{3.7, -20}, {13.7, -20}, {13.7, 20}, {3.7, 20}}
+	out := parkingOntoRoads(outline, rs)
+	west, far := 0, 0
+	for _, q := range out {
+		switch {
+		case q[0] < 5:
+			west++
+			if q[0] > 3.5 || q[0] < 3.1 {
+				t.Errorf("a west point at e %.2f, want it just in over the road's edge at 3.5", q[0])
+			}
+		case math.Abs(q[0]-13.7) < 1e-9:
+			far++
+		default:
+			t.Errorf("a point at %v, neither on the west edge nor the far one", q)
+		}
+	}
+	if west < 2 || far != 2 {
+		t.Errorf("%d west points and %d far ones; want the west edge on the road (its ends at least) and the far edge as it was", west, far)
+	}
+	if len(out) > 8 {
+		t.Errorf("%d points, want the collinear ones along the road dropped", len(out))
+	}
+}
+
+// The course's own way isn't drawn where it crosses a car park or a paved
+// area: the car park is the surface there (an own way over the Hohneck
+// col's apron showed as a dark seam, 16.1 km of the Route des Américains).
+func TestOwnWayHiddenInACarPark(t *testing.T) {
+	own := &roadLine{route: true}
+	road := &roadLine{}
+	for n := 0.0; n <= 100; n += fineStep {
+		own.samples = append(own.samples, sample{d: n, e: 0, n: n, ele: 10, hw: 1.75})
+		road.samples = append(road.samples, sample{d: n, e: 20, n: n, ele: 10, hw: 3})
+	}
+	sc := &scenery.Scenery{Parking: []scenery.Parking{{Outline: [][2]float64{{-10, 41}, {19, 41}, {19, 59}, {-10, 59}}}}}
+	hideOwnWaysInLots([]*roadLine{own, road}, nil, sc)
+	for _, s := range own.samples {
+		if in := s.n > 40 && s.n < 60; s.onPatch != in {
+			t.Errorf("own way at %.0f m: onPatch %v, want %v (inside the car park)", s.n, s.onPatch, in)
+		}
+	}
+	for _, s := range road.samples {
+		if s.onPatch {
+			t.Error("a map road's samples hidden in the car park")
+		}
+		// The road's left edge (e 17) lies in the car park from 41 to 59 m
+		// (its right edge, e 23, outside it):
+		// no skirt there, the surface goes on.
+		if in := s.n > 41 && s.n < 59; s.butt[0] != in || s.butt[1] {
+			t.Errorf("road at %.0f m: butt %v, want left %v and right false", s.n, s.butt, in)
+		}
+	}
+}
+
+// A car park's rim is drawn along its outline where land lies beside it,
+// not where the outline runs under a road: the road is the surface there
+// (a rim across the Hohneck col's apron stood as a line on the asphalt).
+func TestRimNotUnderARoad(t *testing.T) {
+	road := gltf.Primitive{Material: 1}
+	for _, q := range [][3]float64{{-3.5, 10, 50}, {3.5, 10, 50}, {3.5, 10, -50}, {-3.5, 10, -50}} {
+		road.Positions = append(road.Positions, float32(q[0]), float32(q[1]), float32(q[2]))
+	}
+	road.Indices = []uint32{0, 1, 2, 0, 2, 3}
+	roads := newSurfaceIndex([]gltf.Primitive{road}, func(int) bool { return true }, 200)
+	land := newSurfaceIndex(nil, func(int) bool { return true }, 200)
+	// The car park reaches from inside the road (e 0) out to e 20.
+	outline := [][2]float64{{0, -10}, {20, -10}, {20, 10}, {0, 10}}
+	p := rimMesh(outline, func(e, n float64) float64 { return 9.5 }, land, roads, 2)
+	for v := 0; v+2 < len(p.Positions); v += 3 {
+		if e := float64(p.Positions[v]); e < 3.4 {
+			t.Fatalf("a rim vertex at e %.2f, under the road", e)
+		}
+	}
+}
+
+// Roads inside a car park (its aisles, a road's last metres inside it)
+// are taken out of the network: the car park is the surface there (the
+// Hohneck's summit car park: a loop ridden in it was matched onto the
+// service way through it and came out as a hairpin on that line).
+func TestTrimLinesInLots(t *testing.T) {
+	road := &roadLine{}
+	for n := 0.0; n <= 100; n += fineStep {
+		road.samples = append(road.samples, sample{d: n, e: 0, n: n, ele: 10, hw: 2})
+	}
+	aisle := &roadLine{}
+	for e := 10.0; e <= 30; e += fineStep {
+		aisle.samples = append(aisle.samples, sample{d: e - 10, e: e, n: 70, ele: 10, hw: 1.5})
+	}
+	own := &roadLine{route: true}
+	for n := 0.0; n <= 100; n += fineStep {
+		own.samples = append(own.samples, sample{d: n, e: 20, n: n, ele: 10, hw: 1.75})
+	}
+	// The car park from n 60 on, over e 5..40: the road's last 40 m and
+	// the whole aisle lie in it.
+	lots := []scenery.Parking{{Outline: [][2]float64{{-5, 60}, {40, 60}, {40, 120}, {-5, 120}}}}
+	out := trimLinesInLots([]*roadLine{road, aisle, own}, lots)
+	if len(out) != 2 {
+		t.Fatalf("%d lines, want the road's outside piece and the course's own line", len(out))
+	}
+	for _, l := range out {
+		if l.route {
+			if len(l.samples) != len(own.samples) {
+				t.Error("the course's own line was trimmed")
+			}
+			continue
+		}
+		if last := l.samples[len(l.samples)-1]; last.n >= 60 || len(l.samples) < 25 {
+			t.Errorf("the road's piece ends at %.0f m with %d samples, want outside the car park, 30 samples", last.n, len(l.samples))
+		}
+	}
+}
+
+// An apron (a paved junction area mapped as a highway) keeps the roads
+// running over it; only a car park's aisles are trimmed.
+func TestApronKeepsItsRoads(t *testing.T) {
+	road := &roadLine{}
+	for n := 0.0; n <= 100; n += fineStep {
+		road.samples = append(road.samples, sample{d: n, e: 0, n: n, ele: 10, hw: 2})
+	}
+	lots := []scenery.Parking{{Outline: [][2]float64{{-10, 40}, {10, 40}, {10, 60}, {-10, 60}}, Apron: true}}
+	out := trimLinesInLots([]*roadLine{road}, lots)
+	if len(out) != 1 || len(out[0].samples) != len(road.samples) {
+		t.Errorf("the road through an apron was trimmed: %d lines", len(out))
+	}
+}
+
+// A car park's surface is cut along a grid with shared vertices: a long
+// strip beside a road on a slope comes out smooth, each vertex one height
+// and one normal, and no fan of slivers (owner, 2026-10-18, the car parks
+// beside the Route des Crêtes at 19.7 km rippled with light and dark
+// bands).
+func TestCarParkSurfaceIsAGrid(t *testing.T) {
+	// A strip 6 m wide and 300 m long, its long sides sampled every
+	// half metre with a wobble (as parkingOntoRoads leaves them), on a 9 %
+	// slope across a 2 m swell.
+	var outline [][2]float64
+	for x := 0.0; x <= 300; x += 0.5 {
+		outline = append(outline, [2]float64{x, 0.02 * math.Sin(x)})
+	}
+	for x := 300.0; x >= 0; x -= 0.5 {
+		outline = append(outline, [2]float64{x, 6 + 0.02*math.Cos(x)})
+	}
+	height := func(e, n float64) float64 { return 0.09*e + 2*math.Sin(e/40) }
+	p := gridDraped(height, outline, 0, 0, 1)
+	area, worst := 0.0, 0.0
+	slivers := 0
+	for i := 0; i+2 < len(p.Indices); i += 3 {
+		var v [3][2]float64
+		for k := range 3 {
+			v[k] = pc2(p, p.Indices[i+k])
+		}
+		a := math.Abs((v[1][0]-v[0][0])*(v[2][1]-v[0][1])-(v[1][1]-v[0][1])*(v[2][0]-v[0][0])) / 2
+		area += a
+		long := 0.0
+		for k := range 3 {
+			long = math.Max(long, math.Hypot(v[(k+1)%3][0]-v[k][0], v[(k+1)%3][1]-v[k][1]))
+		}
+		worst = math.Max(worst, long)
+		// Away from the outline (cells cut by it may leave a thin strip
+		// along a grid line, in the surface's own plane).
+		cn := (v[0][1] + v[1][1] + v[2][1]) / 3
+		if 2*a/long < 0.05 && long > 0.5 && cn > 1 && cn < 5 {
+			slivers++
+		}
+	}
+	if math.Abs(area-1800) > 5 {
+		t.Errorf("the surface covers %.0f m², want the outline's 1800", area)
+	}
+	if worst > 1.5 {
+		t.Errorf("a triangle %.2f m long, want the grid's cells (under 1.5 m)", worst)
+	}
+	if slivers > 0 {
+		t.Errorf("%d slivers over half a metre long inside the car park, want none", slivers)
+	}
+	// Vertices shared: one per grid point (~2,100) and per outline point
+	// (~1,200), not three per triangle.
+	if n := len(p.Positions) / 3; n > 4000 {
+		t.Errorf("%d vertices for %d triangles: not shared", n, len(p.Indices)/3)
+	}
+}
+
+// A road stopping at a car park's edge closes its end: a face across the
+// carriageway down past the car park's surface, a little under the road
+// there (owner, 2026-10-18, the Hohneck's summit car park at 17.52 km:
+// from the car park one looked under the road through the open end).
+// Its other end, in the open, gets none.
+func TestRoadEndAtACarParkIsClosed(t *testing.T) {
+	c := northCourse(t)
+	road := &roadLine{smooth: courseLine(c, nil)}
+	for n := 0.0; n <= 100; n += fineStep {
+		road.samples = append(road.samples, sample{d: n, e: 0, n: n, ele: 10, hw: 2})
+	}
+	lots := []scenery.Parking{{Outline: [][2]float64{{-5, 60}, {40, 60}, {40, 120}, {-5, 120}}}}
+	out := trimLinesInLots([]*roadLine{road}, lots)
+	if len(out) != 1 {
+		t.Fatalf("%d lines, want the road's outside piece", len(out))
+	}
+	ss := out[0].samples
+	if ss[0].lotEnd || !ss[len(ss)-1].lotEnd {
+		t.Fatalf("lot ends: start %v, end %v; want only the end at the car park", ss[0].lotEnd, ss[len(ss)-1].lotEnd)
+	}
+	m := addRoadMaterials(gltf.New("test"), &styleNL)
+	faces := map[string]int{}
+	for _, p := range roadMesh(ss, ss, 0, out[0].smooth, false, m, nil) {
+		if p.Material != m.surface[scenery.SurfaceAsphalt] {
+			continue
+		}
+		for i := 0; i+2 < len(p.Indices); i += 3 {
+			var v [3][3]float64
+			for k := range 3 {
+				j := p.Indices[i+k]
+				v[k] = [3]float64{float64(p.Positions[3*j]), float64(p.Positions[3*j+1]), float64(p.Positions[3*j+2])}
+			}
+			n := cross([3]float64{v[1][0] - v[0][0], v[1][1] - v[0][1], v[1][2] - v[0][2]}, [3]float64{v[2][0] - v[0][0], v[2][1] - v[0][1], v[2][2] - v[0][2]})
+			if l := math.Sqrt(dot3(n, n)); l > 0 && math.Abs(n[2])/l > 0.9 {
+				north := -(v[0][2] + v[1][2] + v[2][2]) / 3
+				if north > 50 {
+					faces["lot"]++
+				} else {
+					faces["open"]++
+				}
+			}
+		}
+	}
+	if faces["lot"] != 2 || faces["open"] != 0 {
+		t.Errorf("faces across the carriageway: %d at the car park, %d at the open end; want 2 and 0", faces["lot"], faces["open"])
 	}
 }

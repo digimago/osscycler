@@ -46,8 +46,13 @@ const (
 
 // DetectLap finds the lap of a course whose end comes back to its start:
 // from the end of the run-in its start and its end share (0 when none) to
-// where the end joins it again. ok is false for a course that ends
-// elsewhere, or whose lap would be shorter than lapMinM.
+// where the end joins it again. A course that ends on itself elsewhere,
+// within lapMeetM of an earlier point and going the same way there (owner,
+// 2026-10-17: La Bresse to the Hohneck and back, the run-in from the start
+// to the second roundabout, the lap from there up, round the summit's car
+// park, down and round the roundabout, ending where the lap began), is
+// lapped from that point: the run-in is what comes before. ok is false for
+// a course that ends elsewhere, or whose lap would be shorter than lapMinM.
 func (c *Course) DetectLap() (l Lap, ok bool) {
 	n := int(c.Distance / lapScanM)
 	if n < 2 {
@@ -59,7 +64,7 @@ func (c *Course) DetectLap() (l Lap, ok bool) {
 	}
 	near := func(a, b [2]float64) float64 { return math.Hypot(a[0]-b[0], a[1]-b[1]) }
 	if near(pts[0], pts[n]) > lapMeetM {
-		return Lap{}, false
+		return c.lapOnItself(pts)
 	}
 	// Out along the run-in from the start and back along it from the end:
 	// i and j keep step while the two stay within lapMeetM.
@@ -109,6 +114,50 @@ func (c *Course) DetectLap() (l Lap, ok bool) {
 		ex, ey := c.Project(c.Position(e))
 		if d := math.Hypot(ex-sx, ey-sy); d < best {
 			best, l.EndM = d, e
+		}
+	}
+	if l.Length() < lapMinM {
+		return Lap{}, false
+	}
+	return l, true
+}
+
+// lapOnItself is the lap of a course whose end lies on an earlier point
+// of it (within lapMeetM, the nearest such), heading the same way there
+// (within 60°: an out-and-back ends beside its own start stretch going
+// the other way, a course crossing its own line ends across it; neither
+// is a lap). The lap runs from that point to the end.
+func (c *Course) lapOnItself(pts [][2]float64) (Lap, bool) {
+	n := len(pts) - 1
+	heading := func(k int) (float64, float64) {
+		a, b := pts[max(0, k-2)], pts[min(n, k+2)]
+		return b[0] - a[0], b[1] - a[1]
+	}
+	ex, ey := heading(n)
+	best, at := lapMeetM, -1
+	for a := 1; float64(n-a)*lapScanM >= lapMinM; a++ {
+		d := math.Hypot(pts[a][0]-pts[n][0], pts[a][1]-pts[n][1])
+		if d > best {
+			continue
+		}
+		hx, hy := heading(a)
+		if hx*ex+hy*ey < 0.5*math.Hypot(hx, hy)*math.Hypot(ex, ey) {
+			continue // the way back beside it, or across it
+		}
+		best, at = d, a
+	}
+	if at < 0 {
+		return Lap{}, false
+	}
+	l := Lap{StartM: float64(at) * lapScanM, EndM: c.Distance}
+	// The start exactly where the course's end lies (the end is the lap's
+	// end to the metre; the scan found it to lapScanM).
+	ex, ey = c.Project(c.Position(c.Distance))
+	best = math.Inf(1)
+	for s := math.Max(0, l.StartM-2*lapScanM); s <= math.Min(c.Distance, l.StartM+2*lapScanM); s += 0.25 {
+		sx, sy := c.Project(c.Position(s))
+		if d := math.Hypot(sx-ex, sy-ey); d < best {
+			best, l.StartM = d, s
 		}
 	}
 	if l.Length() < lapMinM {

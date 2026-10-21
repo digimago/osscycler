@@ -77,6 +77,14 @@ type gland struct {
 	blocks sync.Map // [2]int block → bool: one leaf (far and flat)
 	far    *routeGrid
 	nearC  sync.Map // [2]int chunk → []sample: the route's coarse samples that shape it
+	// walls is the route within roadsideNearM, where a style with
+	// roadside walls stands a wall between two roads a step apart in
+	// height (nil: no such walls, roadside.go).
+	walls *routeGrid
+	// levelM: the style's junctionLevelM; over 0, two roads further apart
+	// in height than this beside each other are levels of their own, and
+	// the land between them a bank where no wall closes the step.
+	levelM float64
 }
 
 // gtree is a root cell's leaves: for each of its smallest cells, the
@@ -107,6 +115,10 @@ func newGland(t *terrain, roads *landSurface, lines []*roadLine) *gland {
 	g.fineM = g.rootM / (1 << gDepth)
 	g.near = newRouteGrid(t.coarse, gNearM+g.rootM)
 	g.far = newRouteGrid(t.coarse, gFarM+gBlockRoots*g.rootM)
+	if styleFor(t.o.Region).roadside {
+		g.walls = newRouteGrid(t.coarse, roadsideNearM)
+	}
+	g.levelM = styleFor(t.o.Region).junctionLevelM
 	g.blendM = gBlendM
 	if t.o.Elevation == nil {
 		g.blendM = t.o.BlendM
@@ -140,7 +152,8 @@ func (g *gland) covered(e, n float64) bool {
 func (g *gland) coverKind(e, n float64) int8 {
 	kind := int8(gByWater)
 	water := false
-	for _, d := range [5][2]float64{{0, 0}, {gTuckM, 0}, {-gTuckM, 0}, {0, gTuckM}, {0, -gTuckM}} {
+	var hs [5]float64
+	for i, d := range [5][2]float64{{0, 0}, {gTuckM, 0}, {-gTuckM, 0}, {0, gTuckM}, {0, -gTuckM}} {
 		m, ok := g.roads.matAt(e+d[0], n+d[1])
 		if !ok {
 			return gClear
@@ -149,6 +162,19 @@ func (g *gland) coverKind(e, n float64) int8 {
 			kind = gByRoad
 		} else {
 			water = true
+		}
+		hs[i], _ = g.roads.low(e+d[0], n+d[1])
+	}
+	// Between two roads a level apart (the style's level), the land runs
+	// on into the gap between them, however narrow: the bank between the
+	// two (bankBetween) rather than nothing, which from the side showed
+	// the sky under the higher road's edge (the Route des Crêtes coming
+	// down beside the Route des Américains, 10.92 km).
+	if g.levelM > 0 && kind == gByRoad {
+		if _, on := g.roads.matAt(e, n); !on {
+			if math.Abs(hs[1]-hs[2]) > g.levelM || math.Abs(hs[3]-hs[4]) > g.levelM {
+				return gClear
+			}
 		}
 	}
 	// Probes on a road and on water both: the seam between the two
@@ -391,6 +417,51 @@ func (g *gland) heightAt(e, n float64) float64 {
 	return g.height(e, n, true)
 }
 
+// relief is the meso relief the ground model is too coarse for (owner,
+// 2026-10-15: a detail terrain over the coarse one, in mountains and
+// hills first): hummocks and lumps of 0.3-1.5 m, a seeded field at 40 m
+// and 14 m, as strong as the style says (reliefM) where the ground slopes
+// (none on the flat: a valley floor or a meadow stays calm, full from a
+// 20 % slope), none within the road's blend and a few metres beyond, nor
+// by water; so roads, junctions and shores stay as they are.
+func (g *gland) relief(e, n, gap float64, near []sample) float64 {
+	t := g.t
+	amp := styleFor(t.o.Region).reliefM
+	if amp <= 0 || t.o.Elevation == nil || gap < gBlendM {
+		return 0
+	}
+	fade := smooth01((gap - gBlendM) / 6)
+	// Smooth in town: gardens and lawns (owner's shot of the Rue du
+	// Hohneck at 0.89 km: a mown bank where the hummocks had striped it).
+	for _, d := range [5][2]float64{{0, 0}, {15, 0}, {-15, 0}, {0, 15}, {0, -15}} {
+		if l, _ := t.cover.at(e+d[0], n+d[1]); l == scenery.LandBuilt {
+			return 0
+		}
+	}
+	for _, d := range [4][2]float64{{8, 0}, {-8, 0}, {0, 8}, {0, -8}} {
+		if l, _ := t.cover.at(e+d[0], n+d[1]); l == scenery.LandWater {
+			return 0
+		}
+	}
+	if l, _ := t.cover.at(e, n); l == scenery.LandWater {
+		return 0
+	}
+	const r = 12.0
+	gx := (t.base(e+r, n, near) - t.base(e-r, n, near)) / (2 * r)
+	gy := (t.base(e, n+r, near) - t.base(e, n-r, near)) / (2 * r)
+	steep := smooth01((math.Hypot(gx, gy) - 0.04) / 0.16)
+	// Hummocks 14 m across on swells 40 m across (a 5 m cell near the
+	// route carries the first; finer would need finer land).
+	field := 0.35*(valueNoise(e/40, n/40, 0x6e11ef)-0.5) + 0.65*(valueNoise(e/14, n/14, 0x6e11f0)-0.5)
+	return 2 * amp * field * steep * fade
+}
+
+// smooth01 eases x, clamped to 0..1, in and out.
+func smooth01(x float64) float64 {
+	x = math.Max(0, math.Min(1, x))
+	return x * x * (3 - 2*x)
+}
+
 // dryAt is the land's height at e, n as if no water were there: what a
 // water's shore stands at.
 func (g *gland) dryAt(e, n float64) float64 {
@@ -403,6 +474,7 @@ func (g *gland) height(e, n float64, wet bool) float64 {
 	near := g.coarseNear(key)
 	base := t.base(e, n, near)
 	h, gap, edge := g.blend(e, n, base)
+	h += g.relief(e, n, gap, near)
 	// Between a road and a ditch: a verge, then the bank down to the water
 	// (ditchBank), not the land at the water's level right up to the road.
 	if gap < gDitchVergeM+gDitchBankM+1 {
@@ -479,12 +551,7 @@ func (g *gland) coarseNear(key [2]int) []sample {
 // nearest road's edge. Easing to the centre lines alone stood the land
 // 13 cm over a junction's corner, between two roads at their own heights.
 func (g *gland) blend(e, n, base float64) (h, gap, edge float64) {
-	type piece struct {
-		k      [2]int
-		gap    float64
-		ele    float64
-		qe, qn float64 // the nearest point on its centre line
-	}
+	type piece = gPiece
 	var ps [12]piece
 	pieces := ps[:0]
 	kx, ky := int(math.Floor(e/g.gridM)), int(math.Floor(n/g.gridM))
@@ -509,18 +576,22 @@ func (g *gland) blend(e, n, base float64) (h, gap, edge float64) {
 				}
 				pk := [2]int{a.line, int(a.d / (pieceSegs * fineStep))}
 				ele := a.ele + f*(b.ele-a.ele)
+				ue, un := 0.0, 0.0
+				if l := math.Hypot(de, dn); l > 0 {
+					ue, un = de/l, dn/l
+				}
 				found := false
 				for i := range pieces {
 					if pieces[i].k == pk {
 						if gap < pieces[i].gap {
-							pieces[i] = piece{pk, gap, ele, qe, qn}
+							pieces[i] = piece{pk, gap, ele, qe, qn, ue, un}
 						}
 						found = true
 						break
 					}
 				}
 				if !found && len(pieces) < cap(pieces) {
-					pieces = append(pieces, piece{pk, gap, ele, qe, qn})
+					pieces = append(pieces, piece{pk, gap, ele, qe, qn, ue, un})
 				}
 			}
 		}
@@ -597,7 +668,108 @@ func (g *gland) blend(e, n, base float64) (h, gap, edge float64) {
 	// far in under it, and a bank easing from the edge itself stood a few
 	// centimetres over the road within that), then eased out to blendM.
 	f := smoothstep(math.Max(0, gap-gTuckM) / (g.blendM - gTuckM))
+	// Between two roads close beside each other, on opposite sides, the
+	// land lies at the lower one's level (owner, 2026-10-16, Rue du
+	// Hohneck at 1.34 km: a lane climbs beside the main road behind a
+	// wall; eased between them, the strip floated in a tilt with the
+	// lane's edge standing over it); the higher road's wall closes the step
+	// (roadside.go's abreast walls). Two roads a step apart in height
+	// with no wall between them (too far apart, or no walls in this
+	// style) have the land eased between them instead: laid level with
+	// the lower one, it had stood as a bare cliff up to the higher one
+	// (1.52 km, where the lane parts from the main road).
+	wallGap := 0.0
+	if g.walls != nil {
+		g.walls.within(e, n, roadsideNearM, func(int) { wallGap = abreastReachM })
+	}
+	if low, ok := island(pieces, e, n, wallGap); ok {
+		road, f = low, 0
+		if !math.IsInf(edge, 1) {
+			edge = math.Min(edge, low)
+		}
+	} else if g.levelM > 0 {
+		if h, ok := bankBetween(pieces, e, n, g.levelM); ok {
+			return h, gap, edge
+		}
+	}
 	return (road-gSinkM)*(1-f) + base*f, gap, edge
+}
+
+// bankBetween is the land's height where e, n lies between two different
+// roads' pieces alongside each other on opposite sides, a step apart in
+// height (over levelM) with no wall to close it (island) and their edges
+// less than gIslandM apart: a straight bank from the higher road's edge
+// down to the lower's, tucked under each within gTuckM of it (owner,
+// 2026-10-17, the Route des Crêtes coming down beside the Route des
+// Américains at 10.91 km: eased to the nearest edge, the strip between
+// them lay level at each edge and fell 1.3 m within half a metre in the
+// middle, a grass cliff in the rider's eye).
+func bankBetween(pieces []gPiece, e, n, levelM float64) (float64, bool) {
+	for i, a := range pieces {
+		for _, b := range pieces[i+1:] {
+			if a.k[0] == b.k[0] || math.Abs(a.ele-b.ele) <= levelM || a.gap+b.gap >= gIslandM {
+				continue
+			}
+			if math.Abs(a.de*b.de+a.dn*b.dn) < abreastCrossCos {
+				continue // crossing, not alongside
+			}
+			if (a.qe-e)*(b.qe-e)+(a.qn-n)*(b.qn-n) >= 0 {
+				continue // both to one side
+			}
+			ga, gb := math.Max(0, a.gap-gTuckM), math.Max(0, b.gap-gTuckM)
+			f := 0.5
+			if ga+gb > 0 {
+				f = ga / (ga + gb)
+			}
+			return a.ele*(1-f) + b.ele*f - gSinkM, true
+		}
+	}
+	return 0, false
+}
+
+// gIslandM: land between two roads narrower than this lies at the lower
+// one's level.
+const gIslandM = 6.0
+
+// gPiece is a road's piece near a land point (blend): which, how far its
+// edge, its height, its nearest point on its centre line.
+type gPiece struct {
+	k      [2]int
+	gap    float64
+	ele    float64
+	qe, qn float64
+	de, dn float64 // the road's way there (unit; 0 for none)
+}
+
+// island is the lower road's height when e, n lies between two different
+// roads' pieces on opposite sides, their edges less than gIslandM apart;
+// for two a step apart in height (over abreastStepM), wherever a wall
+// will close the step: their edges less than wallGap apart.
+func island(pieces []gPiece, e, n, wallGap float64) (float64, bool) {
+	low, ok := math.Inf(1), false
+	for i, a := range pieces {
+		for _, b := range pieces[i+1:] {
+			if a.k[0] == b.k[0] {
+				continue
+			}
+			limit := gIslandM
+			if step := math.Abs(a.ele - b.ele); step > abreastStepM {
+				// As roadside.go stands its wall: roads alongside each other
+				// (not crossing each other, the step under abreastMaxM).
+				limit = wallGap
+				if step >= abreastMaxM || math.Abs(a.de*b.de+a.dn*b.dn) < abreastCrossCos {
+					limit = 0
+				}
+			}
+			if a.gap+b.gap >= limit {
+				continue
+			}
+			if (a.qe-e)*(b.qe-e)+(a.qn-n)*(b.qn-n) < 0 {
+				low, ok = math.Min(low, math.Min(a.ele, b.ele)), true
+			}
+		}
+	}
+	return low, ok
 }
 
 // The land looks for the drawn road round a point within the last ring,
@@ -681,7 +853,7 @@ func (g *gland) chunk(key [2]int, material, waterMaterial int) (ground, water gl
 		if gap < verge {
 			land = verdure
 		}
-		c := landColors[land]
+		c := styleFor(t.o.Region).landColour(land)
 		p.Colors = append(p.Colors, c[0], c[1], c[2])
 		return v
 	}
@@ -1213,6 +1385,39 @@ func (g *gland) underRoads(meshes []gltf.Primitive) {
 				}
 			}
 			probe(ce, cn, (h[0]+h[1]+h[2])/3, 0, 1, 2)
+			// At its own corners and at every road corner inside it: a long
+			// thin road triangle (a junction's) can reach into a land
+			// triangle between the samples along its edges (16.1 km of the
+			// Route des Américains: 9 cm of land over a junction's
+			// corner). These lower the land by as much as it stands over the
+			// road there, not to the road's height: the land is linear, so
+			// that puts it under, and keeps its shape (taken down whole, a
+			// verge beside a road stood 14 cm under the road's edge).
+			drop := func(pe, pn, land float64, w [3]float64) {
+				if r, ok := g.roads.low(pe, pn); ok && land > r-gSinkM {
+					d := land - (r - gSinkM)
+					for v := range 3 {
+						if w[v] <= 0 {
+							continue
+						}
+						k := vkey{float32(e[v]), float32(n[v])}
+						if cur, ok := low[k]; !ok || float32(h[v]-d) < cur {
+							low[k] = float32(h[v] - d)
+						}
+					}
+				}
+			}
+			for a := range 3 {
+				var w [3]float64
+				w[a] = 1
+				drop(e[a], n[a], h[a], w)
+			}
+			g.roadCornersIn(e, n, func(pe, pn float64) {
+				w0, w1, w2, ok := barycentric(e, n, pe, pn)
+				if ok {
+					drop(pe, pn, w0*h[0]+w1*h[1]+w2*h[2], [3]float64{w0, w1, w2})
+				}
+			})
 		}
 	}
 	if len(low) == 0 {
@@ -1225,4 +1430,43 @@ func (g *gland) underRoads(meshes []gltf.Primitive) {
 			}
 		}
 	}
+}
+
+// roadCornersIn calls f with every corner of a road surface triangle that
+// lies in the cells under the triangle e, n (east, north).
+func (g *gland) roadCornersIn(e, n [3]float64, f func(e, n float64)) {
+	x0, x1 := math.Min(e[0], math.Min(e[1], e[2])), math.Max(e[0], math.Max(e[1], e[2]))
+	z0, z1 := math.Min(-n[0], math.Min(-n[1], -n[2])), math.Max(-n[0], math.Max(-n[1], -n[2]))
+	seen := map[int32]bool{}
+	for gx := int(math.Floor(x0 / landCellM)); gx <= int(math.Floor(x1/landCellM)); gx++ {
+		for gz := int(math.Floor(z0 / landCellM)); gz <= int(math.Floor(z1/landCellM)); gz++ {
+			for _, id := range g.roads.cells[[2]int{gx, gz}] {
+				if seen[id] {
+					continue
+				}
+				seen[id] = true
+				t := g.roads.tri[9*int(id) : 9*int(id)+9]
+				for c := range 3 {
+					x, z := t[3*c], t[3*c+2]
+					if x >= x0 && x <= x1 && z >= z0 && z <= z1 {
+						f(x, -z)
+					}
+				}
+			}
+		}
+	}
+}
+
+// barycentric is point pe, pn's weights in the triangle e, n, and whether
+// it lies inside (edges included).
+func barycentric(e, n [3]float64, pe, pn float64) (w0, w1, w2 float64, ok bool) {
+	den := (n[1]-n[2])*(e[0]-e[2]) + (e[2]-e[1])*(n[0]-n[2])
+	if math.Abs(den) < 1e-12 {
+		return 0, 0, 0, false
+	}
+	w0 = ((n[1]-n[2])*(pe-e[2]) + (e[2]-e[1])*(pn-n[2])) / den
+	w1 = ((n[2]-n[0])*(pe-e[2]) + (e[0]-e[2])*(pn-n[2])) / den
+	w2 = 1 - w0 - w1
+	const eps = -1e-9
+	return w0, w1, w2, w0 >= eps && w1 >= eps && w2 >= eps
 }

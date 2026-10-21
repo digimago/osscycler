@@ -23,8 +23,11 @@ const (
 	plantNearM     = 100.0 // full density this close to the route, thinner beyond
 	farDensity     = 0.35
 	clearRoadM     = 1.5 // plants keep this far from a road's edge
+	pruneClearM    = 4.5 // a pruned tree's branches clear the road by this much (a road's clearance)
 	clearHouseM    = 1.5 // and from a building's walls
 	avenueStepM    = 9.0 // trees along open roads, this far apart
+	avenueFromM    = 2.0 // between these off the road's edge
+	avenueToM      = 3.5
 	avenueStretchM = 150 // and of one species for this far
 )
 
@@ -102,6 +105,7 @@ type plant struct {
 // route), off roads, buildings, car parks and water; and trees along open
 // roads.
 func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []scenery.Footprint, parks []scenery.Parking, ways []scenery.Way, route *routeGrid) []plant {
+	sty := styleFor(t.o.Region)
 	sp := newSpots(t, land, fps, parks)
 	roadNear, inArea := sp.roadNear, sp.inArea
 	clearOf := func(e, n, m float64) bool {
@@ -188,15 +192,45 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 	// the sea the lower of it and the sea's counts, not both (owner,
 	// 2026-10-13: the two multiplied made the dunes' trees a quarter of
 	// their height).
+	// canopyCap keeps a tree of species sp at e, n under its altitude
+	// band's canopy: a ceiling, not an average (the size's spread and the
+	// stand's age had put the tallest at 1.44 times it; owner, 2026-10-18,
+	// 19.0 km of the Hohneck loop: spruce at 19 m and beech at 18 m in a
+	// 14 m crest canopy).
+	canopyCap := func(sp int, e, n, size float64) float64 {
+		if b := sty.band(s.stand(e, n)); b != nil && b.canopyM > 0 {
+			return math.Min(size, b.canopyM/allSpecies[sp].h)
+		}
+		return size
+	}
 	add := func(kind int, e, n float64, h uint64, scale, poor float64) {
 		size := plantSize(h, scale)
-		if kind < speciesKinds {
+		if sp := kindSpecies(kind); sp >= 0 {
 			size *= math.Min(poor, seaAt(e, n))
+			size = canopyCap(sp, e, n, size)
 		} else {
 			size *= poor
 		}
 		out = append(out, plant{kind: kind, x: float32(e), y: float32(s.stand(e, n)), z: float32(-n),
 			s: float32(size), yaw: float32(2 * math.Pi * unit(h>>24))})
+	}
+	// pruned is the kind a tree of species sp seeded h (form, kind as
+	// planted) takes at e, n: where its crown reaches over a road it
+	// stands about level with, its pruned form, so no branch hangs lower
+	// than pruneClearM over the road; on a bank above it, as it grows
+	// (owner, 2026-10-15, the D13B: trees on the bank keep their low
+	// branches, those at the road's level have them cut off).
+	pruned := func(sp, form, kind int, e, n float64, h uint64, scale float64) int {
+		k := prunedKind[sp]
+		if k < 0 || kind != treeKind(sp, form, false) {
+			return kind // never pruned, or drawn far off
+		}
+		size := canopyCap(sp, e, n, plantSize(h, scale))
+		i := roadNear(e, n, allSpecies[sp].crownReach()*size, -1)
+		if i < 0 || !belowClearance(allSpecies[sp], form, size, s.stand(e, n), t.fine[i].ele) {
+			return kind
+		}
+		return k
 	}
 	size := t.o.ChunkM
 	cells := int(size / plantCellM)
@@ -212,7 +246,17 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 				if !ok {
 					continue
 				}
+				// z: the ground's height, for a style with altitude bands.
+				z := 0.0
+				if len(sty.bands) > 0 {
+					z = s.stand(e, n)
+				}
 				if l == scenery.LandForest {
+					if b := sty.band(z); b != nil && b.pureShare > 0 && b.pureShare < 1 && (leaf == "needleleaved" || leaf == "broadleaved") && standLeaf(e, n) >= b.pureShare {
+						// A stand of the other kind in a forest tagged as
+						// one kind (altitudeBand.pureShare).
+						leaf = map[string]string{"needleleaved": "broadleaved", "broadleaved": "needleleaved"}[leaf]
+					}
 					switch leaf {
 					case "needleleaved":
 						rule[catConifer], rule[catBroad] = pureTreeM2, pureOtherM2
@@ -250,7 +294,11 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 					// firs, whose crown had counted as nothing, spread
 					// their lowest tier over a forest path at head
 					// height).
-					sp, scale := youngTree(splitmix(h+13), leaf)
+					mix, _ := sty.speciesFor(scenery.LandForest, z)
+					sp, scale := youngTree(splitmix(h+13), leaf, mix, sty.pioneer)
+					if b := sty.band(z); b != nil && b.canopyM > 0 && sp >= 0 && allSpecies[sp].h > b.canopyM {
+						scale *= b.canopyM / allSpecies[sp].h // young relative to what grows here
+					}
 					if clearOf(e, n, math.Max(clearRoadM, allSpecies[sp].crownReach()*plantSize(splitmix(h+1), scale))) && !inArea(e, n) {
 						add(treeKind(sp, formOpen, dist > treeNearM), e, n, splitmix(h+1), scale, 1)
 					}
@@ -263,7 +311,7 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 				switch kind {
 				case catBush:
 					// A species of this land, its own shape and size (bushes.go).
-					kb, sb, ok := pickBush(l, splitmix(h+5))
+					kb, sb, ok := pickBush(sty, l, splitmix(h+5))
 					if !ok {
 						continue
 					}
@@ -290,7 +338,7 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 					if unit(hb) < borderMix {
 						for _, d := range [4][2]float64{{borderMixM, 0}, {-borderMixM, 0}, {0, borderMixM}, {0, -borderMixM}} {
 							if nl, _ := landAt(e+d[0], n+d[1]); nl != l {
-								if _, ok := speciesByLand[nl]; ok {
+								if _, ok := sty.species[nl]; ok {
 									mixLand = nl
 									break
 								}
@@ -304,22 +352,32 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 						sp, scale = 0, 0.4 // fruit trees: small and round, as a young oak
 					case town && kind == catConifer && inGarden(e, n):
 						// A garden's conifer, back from the street.
-						sp = pickSpecies(speciesByLand[scenery.LandBuilt].conifer, unit(hb>>16))
+						sp = pickSpecies(sty.species[scenery.LandBuilt].conifer, unit(hb>>16))
 					case town && kind == catConifer:
 						continue // no conifers in the town's greenery
 					case town:
-						table := townMix
+						table := sty.town
 						if landNear(landAt, e, n, townWaterM, scenery.LandWater, 8) || landNear(landAt, e, n, townWaterM/2, scenery.LandWater, 8) {
-							table = townWaterMix
+							table = sty.townWater
 						}
 						sp = pickSpecies(table, unit(hb>>16))
 					default:
-						mix := speciesByLand[mixLand]
+						// By its height in a style with altitude bands: the
+						// trees of that band, kept to its canopy.
+						mix, _ := sty.speciesFor(mixLand, z)
 						table := mix.broad
 						if kind == catConifer && mix.conifer != nil || table == nil {
 							table = mix.conifer
 						}
 						sp = pickSpecies(table, unit(hb>>16))
+						if b := sty.band(z); b != nil && sp >= 0 {
+							if b.canopyM > 0 && allSpecies[sp].h > b.canopyM {
+								scale *= b.canopyM / allSpecies[sp].h
+							}
+							if b.openSize > 0 && (l == scenery.LandMeadow || l == scenery.LandNone) {
+								scale *= b.openSize
+							}
+						}
 					}
 					if sp < 0 {
 						continue
@@ -334,7 +392,7 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 						// only now and then a solitary one grows full.
 						poor = 0.35 + 0.25*unit(hb>>32)
 					}
-					kind = treeKind(sp, form, dist > treeNearM)
+					kind = pruned(sp, form, treeKind(sp, form, dist > treeNearM), e, n, splitmix(h+1), scale)
 				}
 				add(kind, e, n, splitmix(h+1), scale, poor)
 			}
@@ -368,24 +426,22 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 					wside = 1 - side
 				}
 				h := splitmix(splitmix(key) ^ uint64(int64(k))<<1 ^ uint64(wside))
-				off := edge + 2 + 1.5*unit(h)
+				off := edge + avenueFromM + (avenueToM-avenueFromM)*unit(h)
 				e, n := pe+sign*dn/l*off, pn-sign*de/l*off
-				if lnd, _ := landAt(e, n); lnd != scenery.LandNone && lnd != scenery.LandMeadow && !scenery.Arable(lnd) {
-					continue
-				}
-				if unit(h>>32) > 0.45 || onRoad(e, n) || inArea(e, n) {
+				allowed, townNear := avenueAllowed(sty, landAt, e, n)
+				if !allowed || unit(h>>32) > 0.45 || onRoad(e, n) || inArea(e, n) {
 					continue
 				}
 				// One species along a stretch of road, as avenues are planted;
 				// poplars too along minor country roads, more by water.
 				hs := splitmix(splitmix(key) ^ uint64(int64(k*avenueStepM/avenueStretchM)))
-				mix := avenueMix
+				mix := sty.avenue
 				if a.way >= 0 && a.way < len(ways) && countryRoad[ways[a.way].Class] {
-					mix = countryAvenueMix
+					mix = sty.countryAvenue
 					for _, s := range []float64{-1, 1} {
 						for _, d := range []float64{edge + 6, edge + 12} {
 							if w, _ := landAt(pe+s*dn/l*d, pn-s*de/l*d); w == scenery.LandWater {
-								mix = canalAvenueMix
+								mix = sty.canalAvenue
 							}
 						}
 					}
@@ -394,14 +450,14 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 				// (owner, 2026-10-11: oaks, ashes and beeches lined the
 				// main street on the polder ride, where birches grow by the
 				// canal).
-				if landNear(landAt, e, n, townNearM, scenery.LandBuilt, 4) {
-					mix = townMix
+				if townNear {
+					mix = sty.town
 					if landNear(landAt, e, n, townWaterM, scenery.LandWater, 8) || landNear(landAt, e, n, townWaterM/2, scenery.LandWater, 8) {
-						mix = townWaterMix
+						mix = sty.townWater
 					}
 				}
 				sp := pickSpecies(mix, unit(hs))
-				add(treeKind(sp, formOpen, routeDist(e, n) > treeNearM), e, n, splitmix(h+2), 1, 1)
+				add(pruned(sp, formOpen, treeKind(sp, formOpen, routeDist(e, n) > treeNearM), e, n, splitmix(h+2), 1), e, n, splitmix(h+2), 1, 1)
 			}
 		}
 	}
@@ -411,9 +467,11 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 		add(kind, e, n, h, scale, 1)
 		out[len(out)-1].yaw = float32(yaw)
 	}
-	willows(land, keys, t.o.ChunkM, onRoad, inArea, routeDist, landAt, func(kind int, e, n float64, h uint64, scale float64) {
-		add(kind, e, n, h, scale, 1)
-	}, addTurned)
+	if sty.willows {
+		willows(land, keys, t.o.ChunkM, onRoad, inArea, routeDist, landAt, func(kind int, e, n float64, h uint64, scale float64) {
+			add(kind, e, n, h, scale, 1)
+		}, addTurned)
+	}
 	out = append(out, waterPlants(t, land, keys, onRoad, routeDist)...)
 
 	out = append(out, hedges(t, s, sp, wp)...)
@@ -442,8 +500,8 @@ func clearTrunks(ps []plant) []plant {
 	}
 	grid := map[[2]int][]trunk{}
 	for i, p := range ps {
-		if p.kind < speciesKinds {
-			r := allSpecies[p.kind/(treeVariants+1)].trunkR * float64(p.s)
+		if sp := kindSpecies(p.kind); sp >= 0 {
+			r := allSpecies[sp].trunkR * float64(p.s)
 			k := key(p.x, p.z)
 			grid[k] = append(grid[k], trunk{i, float64(p.x), float64(p.z), r, p.s})
 		}
@@ -460,7 +518,7 @@ func clearTrunks(ps []plant) []plant {
 	}
 	out := ps[:0]
 	for i, p := range ps {
-		isTree, isBush := p.kind < speciesKinds, p.kind >= kBush && p.kind < kHeather
+		isTree, isBush := kindSpecies(p.kind) >= 0, p.kind >= kBush && p.kind < kHeather
 		if !isTree && !isBush {
 			out = append(out, p)
 			continue
@@ -596,8 +654,8 @@ func clearOverhead(ps []plant, fine []sample) []plant {
 	g := newRouteGrid(fine, 20)
 	kept := ps[:0]
 	for _, p := range ps {
-		if p.kind < speciesKinds {
-			sp := allSpecies[p.kind/(treeVariants+1)]
+		if i := kindSpecies(p.kind); i >= 0 {
+			sp := allSpecies[i]
 			s := float64(p.s)
 			reach, base, top := sp.crownReach()*s, float64(p.y)+2, float64(p.y)+sp.h*s+1
 			e, n := float64(p.x), -float64(p.z)
@@ -680,9 +738,10 @@ func packPlants(ps []plant, chunkM float64) ([]byte, []instanceGroup) {
 
 // addTemplates adds the plant models, one hidden node each (extras kind
 // "template"), coloured in their vertices: low-poly, as many are drawn.
-func (w *World) addTemplates() error {
+func (w *World) addTemplates(region string) error {
 	mat := w.doc.AddMaterial(gltf.Material{Name: "vegetation", Color: [4]float32{1, 1, 1, 1}, Roughness: 0.95})
-	for k, kind := range plantKinds {
+	for _, k := range templateKinds(region) {
+		kind := plantKinds[k]
 		p := gltf.Primitive{Material: mat}
 		switch {
 		case k < speciesKinds:
@@ -700,6 +759,11 @@ func (w *World) addTemplates() error {
 			marramTemplate(&p, false)
 		case k == kMarramFlower:
 			marramTemplate(&p, true)
+		case k >= kPruned:
+			// The forest form, its branches cut back to pruneBareM.
+			sp := allSpecies[kindSpecies(k)]
+			sp.bare, sp.forestBare = sp.pruneBareM, 0.001
+			addTreeTemplate(&p, sp, formForest, false)
 		case k >= kHedge:
 			hedgeTemplate(&p, hedgeKinds[k-kHedge])
 		}
@@ -710,6 +774,36 @@ func (w *World) addTemplates() error {
 		w.doc.AddNode("template "+kind.name, mesh, map[string]any{"kind": "template", "plant": kind.name})
 	}
 	return nil
+}
+
+// belowClearance tells whether a tree of species sp, form and size,
+// standing at height base, would hang its lowest branches less than
+// pruneClearM over a road at height road.
+func belowClearance(sp species, form int, size, base, road float64) bool {
+	return base+sp.formBare(form)*size < road+pruneClearM
+}
+
+// templateKinds are the plant kinds whose templates a world of region
+// carries: all but other regions' species, which are never planted there.
+func templateKinds(region string) []int {
+	if region == "" {
+		region = RegionNL
+	}
+	var out []int
+	for k := range plantKinds {
+		if sp := kindSpecies(k); sp >= 0 {
+			if r := allSpecies[sp].region; r != "" && r != region {
+				continue
+			}
+		}
+		if k >= kHedge && k < kPruned {
+			if r := hedgeKinds[k-kHedge].region; r != "" && r != region {
+				continue
+			}
+		}
+		out = append(out, k)
+	}
+	return out
 }
 
 // cone adds a cone (or a cylinder's frustum) of sides faces from y0 up h,
@@ -781,6 +875,7 @@ type spots struct {
 	inArea func(e, n float64) bool
 	// inBuilding tells whether e, n is inside a building's footprint.
 	inBuilding func(e, n float64) bool
+	buildingAt func(e, n float64) int // the footprint at e, n (its index), -1 for none
 	// clearance is how far e, n is from the nearest road's edge (with its
 	// sidewalks), building wall or car park edge: 0 on or in one, at most
 	// max.
@@ -822,24 +917,33 @@ func newSpots(t *terrain, land *scenery.LandMap, fps []scenery.Footprint, parks 
 	type area struct {
 		poly     [][2]float64
 		building bool
+		id       int // the footprint's index, -1 for a car park
 	}
 	blocked := map[[2]int][]area{}
-	addArea := func(poly [][2]float64, pad float64, building bool) {
+	addArea := func(poly [][2]float64, pad float64, building bool, id int) {
 		lo, hi := [2]float64{math.Inf(1), math.Inf(1)}, [2]float64{math.Inf(-1), math.Inf(-1)}
 		for _, q := range poly {
 			lo[0], lo[1], hi[0], hi[1] = math.Min(lo[0], q[0]), math.Min(lo[1], q[1]), math.Max(hi[0], q[0]), math.Max(hi[1], q[1])
 		}
 		for gx := int(math.Floor((lo[0] - pad) / 20)); gx <= int(math.Floor((hi[0]+pad)/20)); gx++ {
 			for gy := int(math.Floor((lo[1] - pad) / 20)); gy <= int(math.Floor((hi[1]+pad)/20)); gy++ {
-				blocked[[2]int{gx, gy}] = append(blocked[[2]int{gx, gy}], area{poly, building})
+				blocked[[2]int{gx, gy}] = append(blocked[[2]int{gx, gy}], area{poly, building, id})
 			}
 		}
 	}
-	for _, f := range fps {
-		addArea(f.Outline, clearHouseM, true)
+	for i, f := range fps {
+		addArea(f.Outline, clearHouseM, true, i)
 	}
 	for _, p := range parks {
-		addArea(p.Outline, 0, false)
+		addArea(p.Outline, 0, false, -1)
+	}
+	sp.buildingAt = func(e, n float64) int {
+		for _, a := range blocked[[2]int{int(math.Floor(e / 20)), int(math.Floor(n / 20))}] {
+			if a.building && inPoly(a.poly, e, n) {
+				return a.id
+			}
+		}
+		return -1
 	}
 	sp.inBuilding = func(e, n float64) bool {
 		for _, a := range blocked[[2]int{int(math.Floor(e / 20)), int(math.Floor(n / 20))}] {
@@ -857,8 +961,28 @@ func newSpots(t *terrain, land *scenery.LandMap, fps []scenery.Footprint, parks 
 		}
 		return false
 	}
+	// Retaining walls by 20 m cell: only the grass keeps off them.
+	walls := map[[2]int][][][2]float64{}
+	for _, w := range t.walls {
+		lo, hi := [2]float64{math.Inf(1), math.Inf(1)}, [2]float64{math.Inf(-1), math.Inf(-1)}
+		for _, q := range w {
+			lo[0], lo[1], hi[0], hi[1] = math.Min(lo[0], q[0]), math.Min(lo[1], q[1]), math.Max(hi[0], q[0]), math.Max(hi[1], q[1])
+		}
+		const pad = 3.0 // what grows needs a metre or two
+		for gx := int(math.Floor((lo[0] - pad) / 20)); gx <= int(math.Floor((hi[0]+pad)/20)); gx++ {
+			for gy := int(math.Floor((lo[1] - pad) / 20)); gy <= int(math.Floor((hi[1]+pad)/20)); gy++ {
+				walls[[2]int{gx, gy}] = append(walls[[2]int{gx, gy}], w)
+			}
+		}
+	}
 	sp.clearance = func(e, n, max float64) float64 {
 		best := max
+		for _, w := range walls[[2]int{int(math.Floor(e / 20)), int(math.Floor(n / 20))}] {
+			if inPoly(w, e, n) {
+				return 0
+			}
+			best = math.Min(best, polyEdgeDist(w, e, n))
+		}
 		if t.surfaces != nil {
 			// Any road surface, junctions and roundabouts too; near ones
 			// only (what grows needs a metre or two).
@@ -913,4 +1037,15 @@ func landNear(landAt func(e, n float64) (scenery.Land, string), e, n, r float64,
 		}
 	}
 	return false
+}
+
+// avenueAllowed tells whether an avenue tree may stand at e, n by the
+// land there (open land, not in a town where the style keeps avenues to
+// towns), and whether a town is near.
+func avenueAllowed(sty *style, landAt func(e, n float64) (scenery.Land, string), e, n float64) (ok, townNear bool) {
+	if lnd, _ := landAt(e, n); lnd != scenery.LandNone && lnd != scenery.LandMeadow && !scenery.Arable(lnd) {
+		return false, false
+	}
+	townNear = landNear(landAt, e, n, townNearM, scenery.LandBuilt, 4)
+	return !sty.townAvenuesOnly || townNear, townNear
 }

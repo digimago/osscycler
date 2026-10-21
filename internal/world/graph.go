@@ -43,6 +43,7 @@ import (
 // course keeps to the network, and the land gives way to the roads.
 func BuildGraph(c *course.Course, o Options) (*World, error) {
 	o.defaults()
+	o.regionScenery()
 	if c.Distance < 2*fineStep {
 		return nil, errors.New("world: course too short")
 	}
@@ -80,7 +81,7 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 	w := &World{doc: gltf.New(o.Generator)}
 	ground := w.doc.AddMaterial(gltf.Material{Name: "terrain", Color: [4]float32{1, 1, 1, 1}, Roughness: 1})
 	waterMat := w.doc.AddMaterial(gltf.Material{Name: "water", Color: [4]float32{0.05, 0.16, 0.36, 1}, Roughness: 0.1})
-	roadMats := addRoadMaterials(w.doc)
+	roadMats := addRoadMaterials(w.doc, styleFor(o.Region))
 	roadMats.ground = ground
 
 	t := terrain{o: o, c: c, coarse: coarse, lift: lift,
@@ -94,6 +95,12 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 	}
 	hasWays := sc != nil && len(sc.Ways) > 0 && len(sc.RouteOn) > 0 && sc.RouteStepM > 0
 	rbs := findRoundabouts(ways, true)
+	roadMats.addRailMaterial(w.doc, rbs)
+	if minR := styleFor(o.Region).rbIslandMinR; minR > 0 {
+		for i := range rbs {
+			rbs[i].island = rbs[i].island || rbs[i].r >= minR
+		}
+	}
 	steps := max(1, int(math.Ceil(c.Distance/pathStep)))
 	step := c.Distance / float64(steps)
 
@@ -119,10 +126,15 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 			// (owner's mark, 2026-10-11: a dike road went up and over the
 			// railway embankment where it goes under the track through a
 			// tunnel, polder ride 5.17 km).
-			heightsStraight(l, &t, ways, func(w scenery.Way) bool { return w.Bridge || w.Tunnel })
+			heightsStraight(l, &t, ways, func(w scenery.Way) bool { return w.Bridge || w.Tunnel }, true)
 		}
+		// After the heights: smoothed over the whole road, a road's end at
+		// a car park's edge keeps its grade (trimmed first, the one-sided
+		// mean left the end a metre low on a 15 % climb, a step up into
+		// the Hohneck's summit car park).
+		lines = trimLinesInLots(lines, o.Scenery.Parking)
 		net := newGnet(lines, ways, rbs)
-		net.anchorHeights()
+		net.anchorHeights(ways)
 		progress(0.05)
 
 		own := make([][4]float64, steps+1)
@@ -258,9 +270,9 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 	lines = dropCoveredStubs(lines, rbs, 0, true, func(a, s sample) bool {
 		return a.way >= 0 && a.way < len(ways) && ways[a.way].Bridge && a.ele-s.ele > bridgeM
 	})
-	joinAlongside(lines, o.CellM)
+	joinAlongside(lines, o.CellM, styleFor(o.Region).junctionLevelM)
 	clearWalksOfBuildings(lines, o.Buildings)
-	patches := networkPatches(lines, ways)
+	patches := networkPatches(lines, ways, styleFor(o.Region).junctionLevelM)
 	for i := range rbs {
 		var nodes [][2]float64
 		for _, p := range patches {
@@ -277,6 +289,12 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 		patches = append(kept, rbs[i].shape(lines))
 	}
 	cutRoads(lines, patches)
+	if styleFor(o.Region).cornerWalk {
+		walksOnSpans(lines, patches, ways)
+	}
+	if styleFor(o.Region).junctionLevelM > 0 {
+		markTerraces(lines, patches)
+	}
 	var overlays []patch
 	for _, p := range patches {
 		if p.overlay {
@@ -303,7 +321,10 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 			}
 		}
 	}
-	markDecks(lines, c.Distance)
+	markDecks(lines, c.Distance, styleFor(o.Region).junctionLevelM > 0)
+	// After markDecks: a deck stays open beneath.
+	deepSkirts(lines)
+	hideOwnWaysInLots(lines, patches, o.Scenery) // before t.fine: the roadside reads those samples
 	for k, l := range lines {
 		for i := range l.samples {
 			l.samples[i].line = k
@@ -314,6 +335,9 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 	roads, decks := roadPrims(lines, patches, o.ChunkM, roadMats, nil)
 	for k, p := range pavedIslands(roads, ground, roadMats.surface[scenery.SurfaceAsphalt], o.ChunkM) {
 		roads[k] = append(roads[k], p)
+	}
+	for k, ps := range terracePrims(lines, roadMats, o.ChunkM) {
+		roads[k] = append(roads[k], ps...)
 	}
 	// The carriageway as drawn: the rider's path again, its turns swept as
 	// wide as it allows, and the riding line kept on it.
@@ -355,6 +379,27 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 		// its outline's few big triangles stood up to 12 cm off it.
 		under = append(under, l.mesh)
 	}
+	// Land shut in between roads and a car park is paved as between roads
+	// (owner, 2026-10-18, 19.51 km of the Hohneck loop: a green triangle
+	// between the road's edge and the car park's outline).
+	if len(lots) > 0 {
+		var lotMeshes []gltf.Primitive
+		for _, l := range lots {
+			lotMeshes = append(lotMeshes, l.mesh)
+		}
+		with := map[[2]int][]gltf.Primitive{}
+		for _, k := range chunkOrder(roads) {
+			with[k] = append(append([]gltf.Primitive(nil), roads[k]...), lotMeshes...)
+		}
+		isl := pavedIslandsGrown(with, ground, roadMats.surface[scenery.SurfaceAsphalt], o.ChunkM, true)
+		for _, k := range chunkOrder(roads) {
+			if p, ok := isl[k]; ok {
+				roads[k] = append(roads[k], p)
+				under = append(under, p)
+			}
+		}
+	}
+	pathOverLots(px, py, pz, lots)
 	// What plants and grass keep off: the roads and car parks (not the
 	// water: its reeds grow along its edge).
 	cut := newCutter()
@@ -369,9 +414,11 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 	sheets := map[[2]int][]gltf.Primitive{}
 	var allSheets []gltf.Primitive
 	dryIx := newSurfaceIndex(under, func(int) bool { return true }, gOutlineMaxTriM) // before the water joins
+	var exacts []exactWater
 	for _, x := range t.waterOutlines(keys, true) {
 		// A verge and a bank between a road and the water (ditchBanks).
 		x.ring = ditchBanks(x.ring, func(e, n, max float64) float64 { return cut.dist(e, -n, max) })
+		exacts = append(exacts, x)
 		p := gWaterSheet(&t, x, pre.dryAt, waterMat)
 		sheets[x.key] = append(sheets[x.key], p)
 		allSheets = append(allSheets, p)
@@ -407,6 +454,9 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 	close(next)
 	wg.Wait()
 	land.underRoads(meshes)
+	if err := w.addQuays(&t, exacts, land.heightAt, ground); err != nil {
+		return nil, err
+	}
 	waterChunks := 0
 	for k, p := range meshes {
 		if len(p.Positions) == 0 {
@@ -415,6 +465,14 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 		if err := w.add(fmt.Sprintf("terrain %d %d", keys[k][0], keys[k][1]),
 			map[string]any{"kind": "terrain", "chunk": keys[k]}, p); err != nil {
 			return nil, err
+		}
+	}
+	if o.FarElevation != nil && o.FarM > 0 {
+		farMat := w.doc.AddMaterial(gltf.Material{Name: "far land", Color: [4]float32{1, 1, 1, 1}, Roughness: 1})
+		if cells, err := w.addFarTerrain(&t, keys, farMat); err != nil {
+			return nil, err
+		} else if cells > 0 {
+			w.Manifest.Terrain.FarM = o.FarM
 		}
 	}
 	for _, k := range chunkOrder(sheets) {
@@ -434,8 +492,19 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 			return nil, err
 		}
 	}
+	// Sidewalks off the carriageways (decks left out: a road passing over
+	// a sidewalk cuts nothing).
+	clearWalksOffRoads(roads, roadMats.walk, roadMats.kerb, func(mat int) bool { return carriageway[w.doc.MaterialName(mat)] })
+	closeOpenWalks(roads, roadMats.walk, roadMats.kerb)
 	for k, ps := range decks {
 		roads[k] = append(roads[k], ps...)
+	}
+	for _, ps := range roads {
+		stitchSlivers(ps) // each chunk's own, decks too; any order
+		joinsWalk := func(mat int) bool { return carriageway[w.doc.MaterialName(mat)] || mat == roadMats.walk }
+		isRoad := func(mat int) bool { return carriageway[w.doc.MaterialName(mat)] }
+		stitchAcross(ps, joinsWalk, isRoad)
+		stitchSeams(ps, joinsWalk, isRoad)
 	}
 	if err := w.addRoads(roads); err != nil {
 		return nil, err
@@ -466,8 +535,12 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 	}
 	// The fences: the course's own (the test tracks' field entrances) and
 	// the meadows' along the roads.
-	fences := append(append([]scenery.Fence{}, o.Fences...), meadowFences(&t, o.Land, o.Buildings, parks)...)
-	if err := w.addFences(&t, fences); err != nil {
+	fences := append(append([]scenery.Fence{}, o.Fences...), meadowFences(&t, o.Land, ways, o.Buildings, parks)...)
+	// The roadside first: a pasture's fence keeps clear of its walls.
+	if err := w.addRoadside(&t, ways, o.Buildings, parks, ground); err != nil {
+		return nil, err
+	}
+	if err := w.addFences(&t, fencesClearOfWalls(fences, t.walls)); err != nil {
 		return nil, err
 	}
 	nearRoute := newRouteGrid(coarse, 400)
@@ -475,7 +548,7 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 	drawn := newLandSurface(w.prims, func(m int) bool { return w.doc.MaterialName(m) == "terrain" })
 	ps := plants(&t, &surface{t: &t, lists: map[[2]int]chunkLists{}, drawn: drawn}, o.Land, keys, o.Buildings, parks, ways, nearRoute)
 	if len(ps) > 0 {
-		if err := w.addTemplates(); err != nil {
+		if err := w.addTemplates(o.Region); err != nil {
 			return nil, err
 		}
 		var groups []instanceGroup
@@ -499,10 +572,14 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 		w.ground = gm
 		g := &w.Manifest.Ground
 		g.File, g.CellM, g.Layout, g.Classes, g.Chunks = GroundFile, groundCellM, GroundLayout, GroundClasses, index
+		g.DryAboveM = styleFor(o.Region).dryAboveM
 	}
 
 	m := &w.Manifest
 	m.Format, m.Version, m.Generator, m.Stamp = Format, Version, o.Generator, o.Stamp
+	if o.Region != "" && o.Region != RegionNL {
+		m.Region = o.Region
+	}
 	m.Course.ID, m.Course.Name, m.Course.DistanceM, m.Course.Loop = c.ID, c.Name, round(c.Distance), c.Loop
 	m.Origin.Lat, m.Origin.Lon = c.Origin()
 	m.Frame = frameNote

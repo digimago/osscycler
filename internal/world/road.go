@@ -15,6 +15,7 @@ const (
 	laneM      = 1.5  // a cycle lane's width, inside the carriageway's edge
 	walkM      = 1.8  // a sidewalk's width, outside it
 	kerbM      = 0.12 // the kerb's height
+	dropKerbM  = 0.02 // a dropped kerb's, where a sidewalk runs on across a service road's mouth
 	walkFootM  = 0.25 // a sidewalk's outer face goes this far into the ground
 	skirtM     = 0.3  // a road's edge without a sidewalk goes this far into the ground
 	taperSteps = 5    // width changes are spread over this many fine steps each way
@@ -24,18 +25,32 @@ const (
 type roadMaterials struct {
 	surface    [5]int // by scenery.Surface
 	lane, walk int
+	walkDrop   int // a sidewalk running on across a junction as a dropped kerb (left to lie over its surface: not clipped off it)
 	kerb       int
-	ground     int // the terrain's
-	island     int // a roundabout's island: grass in its vertices, not land (the cut leaves it)
-	paving     int // a roundabout\'s paved centre circle
+	ground     int     // the terrain's
+	island     int     // a roundabout's island: grass in its vertices, not land (the cut leaves it)
+	paving     int     // a roundabout\'s paved centre circle
+	apronM     float64 // an island roundabout's apron of setts round the island (style.rbApronM)
+	cornerWalk bool    // a junction's sidewalk stops at the corner where only one road has one (style.cornerWalk)
+	rail       int     // a roundabout's railing over a bridge; -1 when no roundabout has one (addRailMaterial)
 }
 
-func addRoadMaterials(d *gltf.Doc) roadMaterials {
+// addRailMaterial gives the road materials a railing's steel when a
+// roundabout lies over a bridge (only then, so other worlds stay as they
+// were).
+func (m *roadMaterials) addRailMaterial(d *gltf.Doc, rbs []roundabout) {
+	m.rail = -1
+	if anyBridged(rbs) {
+		m.rail = d.AddMaterial(gltf.Material{Name: "railing", Color: [4]float32{1, 1, 1, 1}, Roughness: 0.6})
+	}
+}
+
+func addRoadMaterials(d *gltf.Doc, st *style) roadMaterials {
 	mat := func(name string, hex uint32, rough float32) int {
 		c := srgbLinear(hex)
 		return d.AddMaterial(gltf.Material{Name: name, Color: [4]float32{c[0], c[1], c[2], 1}, Roughness: rough})
 	}
-	var m roadMaterials
+	m := roadMaterials{rail: -1} // addRailMaterial gives it one when needed
 	// One grey for every carriageway until roads get textures (owner,
 	// 2026-10-09): the surface (asphalt, concrete, klinkers, unpaved) is
 	// known per road and junction, for the texture to show then.
@@ -44,11 +59,17 @@ func addRoadMaterials(d *gltf.Doc) roadMaterials {
 		m.surface[i] = road
 	}
 	m.surface[scenery.SurfaceTrack] = mat("running track", 0xa5503e, 0.9) // the test oval's
-	m.lane = mat("cycle lane", 0xa04a3c, 0.85)                            // red, as Dutch fietsstroken
+	m.lane = mat("cycle lane", st.cycleLane, 0.85)
 	m.walk = mat("sidewalk", 0x96928a, 0.9)
+	m.walkDrop = m.walk
+	if st.cornerWalk {
+		m.walkDrop = mat("sidewalk", 0x96928a, 0.9)
+	}
 	m.kerb = mat("kerb", 0xc8c6c0, 0.8)
 	m.island = d.AddMaterial(gltf.Material{Name: "island", Color: [4]float32{1, 1, 1, 1}, Roughness: 1})
-	m.paving = mat("roundabout centre", 0x8c5a48, 0.9) // red klinkers
+	m.paving = mat("roundabout centre", st.roundaboutCentre, 0.9)
+	m.apronM = st.rbApronM
+	m.cornerWalk = st.cornerWalk
 	return m
 }
 
@@ -120,20 +141,31 @@ func roadMesh(seg, all []sample, from int, line *smoothLine, loop bool, m roadMa
 		if s.lane[1] {
 			b -= laneM
 		}
+		// A sidewalk: not over a junction's span unless it runs on across
+		// it as a dropped kerb, its kerb lowered by drop (walksOnSpans).
+		walk := func(side int) (on bool, h float64, mat int) {
+			on, h, mat = s.walk[side] && (!s.onPatch || s.walkOn[side]) && s.drop[side] < 1, kerbM, m.walk
+			if s.drop[side] > 0 || s.onPatch && s.walkOn[side] {
+				h, mat = kerbM+s.drop[side]*(dropKerbM-kerbM), m.walkDrop
+			}
+			return
+		}
+		w0, h0, m0 := walk(0)
+		w1, h1, m1 := walk(1)
 		return [11]part{
 			{on: true, a: a, b: b, material: m.surface[s.surface]},
 			{on: s.lane[0], a: -s.hw, b: -s.hw + laneM, material: m.lane},
 			{on: s.lane[1], a: s.hw - laneM, b: s.hw, material: m.lane},
-			{on: s.walk[0], a: -s.hw - s.walkWidth(0), b: -s.hw, ya: kerbM, yb: kerbM, material: m.walk},
-			{on: s.walk[1], a: s.hw, b: s.hw + s.walkWidth(1), ya: kerbM, yb: kerbM, material: m.walk},
-			{on: s.walk[0], a: -s.hw, b: -s.hw, ya: 0, yb: kerbM, material: m.kerb, wall: true},
-			{on: s.walk[1], a: s.hw, b: s.hw, ya: 0, yb: kerbM, material: m.kerb, wall: true, wallLeft: true},
-			{on: s.walk[0], a: -s.hw - s.walkWidth(0), b: -s.hw - s.walkWidth(0), ya: -walkFootM, yb: kerbM, material: m.kerb, wall: true, wallLeft: true},
-			{on: s.walk[1], a: s.hw + s.walkWidth(1), b: s.hw + s.walkWidth(1), ya: -walkFootM, yb: kerbM, material: m.kerb, wall: true},
+			{on: w0, a: -s.hw - s.walkWidth(0), b: -s.hw, ya: h0, yb: h0, material: m0},
+			{on: w1, a: s.hw, b: s.hw + s.walkWidth(1), ya: h1, yb: h1, material: m1},
+			{on: w0, a: -s.hw, b: -s.hw, ya: 0, yb: h0, material: m.kerb, wall: true},
+			{on: w1, a: s.hw, b: s.hw, ya: 0, yb: h1, material: m.kerb, wall: true, wallLeft: true},
+			{on: w0, a: -s.hw - s.walkWidth(0), b: -s.hw - s.walkWidth(0), ya: -walkFootM, yb: h0, material: m.kerb, wall: true, wallLeft: true},
+			{on: w1, a: s.hw + s.walkWidth(1), b: s.hw + s.walkWidth(1), ya: -walkFootM, yb: h1, material: m.kerb, wall: true},
 			// Without a sidewalk, the edge goes on into the ground: the road
 			// sits in the landscape, not on it.
-			{on: !s.walk[0] && !s.butt[0], a: -s.hw - s.wide[0], b: -s.hw - s.wide[0], ya: -skirtM, yb: 0, material: m.surface[s.surface], wall: true, wallLeft: true},
-			{on: !s.walk[1] && !s.butt[1], a: s.hw + s.wide[1], b: s.hw + s.wide[1], ya: -skirtM, yb: 0, material: m.surface[s.surface], wall: true},
+			{on: !s.walk[0] && !s.butt[0], a: -s.hw - s.wide[0], b: -s.hw - s.wide[0], ya: -math.Max(skirtM, s.skirt[0]), yb: 0, material: m.surface[s.surface], wall: true, wallLeft: true},
+			{on: !s.walk[1] && !s.butt[1], a: s.hw + s.wide[1], b: s.hw + s.wide[1], ya: -math.Max(skirtM, s.skirt[1]), yb: 0, material: m.surface[s.surface], wall: true},
 		}
 	}
 	type frame struct {
@@ -267,10 +299,17 @@ func roadMesh(seg, all []sample, from int, line *smoothLine, loop bool, m roadMa
 	drawn := make([][2]bool, len(frames)) // a sidewalk quad from frame k to k+1, per side
 	for k := 0; k+1 < len(frames); k++ {
 		f0, f1 := frames[k], frames[k+1]
-		if f0.onPatch || f1.onPatch || f0.underPatch && f1.underPatch {
+		inPatch := f0.onPatch || f1.onPatch || f0.underPatch && f1.underPatch
+		if inPatch && !m.cornerWalk {
 			continue // the junction draws this surface: the road ends at its edge
 		}
 		for i := range f0.parts {
+			// A French road's sidewalk runs on over a junction's span only
+			// as a dropped kerb across a service road's mouth (the parts
+			// say, walksOnSpans); the carriageway is the junction's.
+			if inPatch && (i < 3 || i > 8) {
+				continue
+			}
 			p0, p1 := f0.parts[i], f1.parts[i]
 			// A sidewalk that starts or stops between two cross-sections
 			// ramps down to the road's edge over them, as a dropped kerb:
@@ -286,6 +325,11 @@ func roadMesh(seg, all []sample, from int, line *smoothLine, loop bool, m roadMa
 					off, of = &p1, f1
 				}
 				switch {
+				case i >= 3 && i <= 8 && m.cornerWalk:
+					// A French sidewalk ends square, its end face closed
+					// (owner's photos of the Rue du Hohneck: it ran on to a
+					// lane's mouth and stopped there; tapered, it read as a
+					// wedge with land showing beside it).
 				case i >= 3 && i <= 8: // sidewalk, kerb, outer face
 					*off = rampEnd(*off, of.parts[9+(i-3)%2].a)
 				case i == 1: // left cycle lane
@@ -354,14 +398,41 @@ func roadMesh(seg, all []sample, from int, line *smoothLine, loop bool, m roadMa
 			}
 			n := [3]float64{dir * f.rz, 0, -dir * f.rx}
 			inner, outer := f.parts[5+side].a, f.parts[7+side].a
+			top := f.parts[3+side].ya // a dropped kerb's end is low
 			pr := prim(m.kerb)
 			v0 := vert(pr, f, inner, 0, 0, n)
-			v1 := vert(pr, f, inner, kerbM, 1, n)
-			v2 := vert(pr, f, outer, kerbM, 1, n)
+			v1 := vert(pr, f, inner, top, 1, n)
+			v2 := vert(pr, f, outer, top, 1, n)
 			v3 := vert(pr, f, outer, -walkFootM, 0, n)
 			tri(pr, v0, v1, v2, n)
 			tri(pr, v0, v2, v3, n)
 		}
+	}
+	// A road's end at a car park's edge: a face across the carriageway down
+	// past the car park's surface, which lies a little under the road
+	// there (trimLinesInLots).
+	for _, end := range [2]int{0, len(frames) - 1} {
+		g := from
+		if end > 0 {
+			g = from + len(seg) - 1
+		}
+		if len(frames) < 2 || !all[g].lotEnd || (end == 0) != (g == 0) || (end > 0) != (g == len(all)-1) {
+			continue
+		}
+		f := frames[end]
+		dir := 1.0
+		if end == 0 {
+			dir = -1
+		}
+		n := [3]float64{dir * f.rz, 0, -dir * f.rx}
+		p0 := f.parts[0]
+		pr := prim(p0.material)
+		v0 := vert(pr, f, p0.a, -skirtM, 0, n)
+		v1 := vert(pr, f, p0.a, 0, 1, n)
+		v2 := vert(pr, f, p0.b, 0, 1, n)
+		v3 := vert(pr, f, p0.b, -skirtM, 0, n)
+		tri(pr, v0, v1, v2, n)
+		tri(pr, v0, v2, v3, n)
 	}
 	out := make([]gltf.Primitive, 0, len(order)+1)
 	for _, mat := range order {

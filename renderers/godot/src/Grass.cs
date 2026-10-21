@@ -60,10 +60,13 @@ public sealed class Grass
         return (over - doy) / (float)(over - fading);
     }
 
-    public Grass(GroundMap map, float relief, ShaderMaterial terrain, float bloom = 0)
+    public Grass(GroundMap map, float relief, ShaderMaterial terrain, float bloom = 0, float dryAboveM = 0)
     {
+        // The plants' ground heights are the scene's, scaled by the relief.
+        float dryAbove = dryAboveM > 0 ? dryAboveM * relief : 1e9f;
         _terrain = terrain;
         _terrain.SetShaderParameter("bloom", bloom);
+        _terrain.SetShaderParameter("dry_above", dryAbove);
         _map = map;
         _relief = relief;
         _groundCell = map.CellM;
@@ -155,6 +158,7 @@ public sealed class Grass
             else
                 mat.SetShaderParameter("kind", l.Kind);
             mat.SetShaderParameter("bloom", bloom);
+            mat.SetShaderParameter("dry_above", dryAbove);
             _materials[k] = mat;
 
             var mm = new MultiMesh

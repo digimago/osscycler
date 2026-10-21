@@ -2,9 +2,11 @@
 // grid in a projected coordinate system, fetched from a web service and
 // cached as GeoTIFF tiles.
 //
-// The first source is the Dutch AHN (Actueel Hoogtebestand Nederland), the
-// bare-ground model (DTM) from PDOK, in RD New (EPSG:28992) with heights
-// above NAP. AHN is open data under CC0.
+// The sources are national bare-ground models (DTM): the Dutch AHN
+// (Actueel Hoogtebestand Nederland) from PDOK, in RD New (EPSG:28992) with
+// heights above NAP, open data under CC0; and France's RGE ALTI from IGN's
+// Géoplateforme, in Lambert-93 (EPSG:2154) with heights above NGF-IGN69,
+// under the Licence Ouverte 2.0.
 package dem
 
 import "math"

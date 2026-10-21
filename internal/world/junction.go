@@ -42,6 +42,13 @@ type patch struct {
 	walks   []walkChain
 	edges   []walkChain     // all its free edges (walks: those with sidewalks)
 	lanes   [][4][2]float64 // cycle lanes across it (lanes.go)
+	// noSkirt says where the patch's edge gets no skirt: over a car park
+	// or a paved area, which is the surface there (hideOwnWaysInLots).
+	noSkirt func(e, n float64) bool
+	// dropWalks: a road's sidewalk runs on across this junction as a
+	// dropped kerb (a service road's mouth, walksOnSpans): the junction
+	// draws no sidewalk of its own where only that road has one.
+	dropWalks bool
 }
 
 // patchArm is a road at a junction: its line, and where along it the
@@ -61,7 +68,32 @@ func (p patch) height(e, n float64) float64 {
 		}
 	}
 	if p.rb != nil {
-		return p.rb.height(e, n)
+		// On its plane, eased to each road it meets within rbEaseM of
+		// where it ends (owner, 2026-10-18, La Bresse: the plane through
+		// the approaches stood 12-18 cm over a climbing approach at the
+		// ring's edge, at 0.10 km the roundabout's edge a raised piece
+		// beside the splitter island, at 0.51 km its sidewalk a block on
+		// the road's).
+		h := p.rb.height(e, n)
+		var dh, w float64
+		for _, c := range p.cuts {
+			de, dn := c.p1[0]-c.p0[0], c.p1[1]-c.p0[1]
+			f := 0.0
+			if l2 := de*de + dn*dn; l2 > 0 {
+				f = math.Max(0, math.Min(1, ((e-c.p0[0])*de+(n-c.p0[1])*dn)/l2))
+			}
+			ce, cn := c.p0[0]+f*de, c.p0[1]+f*dn
+			d := math.Hypot(e-ce, n-cn)
+			if d >= rbEaseM {
+				continue
+			}
+			k := 1 - d/rbEaseM
+			k *= k * (3 - 2*k) // smoothstep: no crease where the easing ends
+			if k > w {
+				dh, w = c.ele-p.rb.height(ce, cn), k
+			}
+		}
+		return h + dh*w
 	}
 	var sum, wsum float64
 	for _, sp := range p.spans {
@@ -118,7 +150,7 @@ func patchMeshes(p patch, m roadMaterials, v *verger) []gltf.Primitive {
 		if walkOnRoad(p, w) {
 			continue
 		}
-		walkMesh(p, w, &walk, &kerb)
+		walkMesh(p, w, &walk, &kerb, m.cornerWalk)
 	}
 	for _, q := range []gltf.Primitive{walk, kerb} {
 		if len(q.Indices) > 0 {
@@ -133,19 +165,31 @@ func patchMeshes(p patch, m roadMaterials, v *verger) []gltf.Primitive {
 			out = append(out, q)
 		}
 	}
-	if p.rb != nil && p.rb.island {
+	if p.rb != nil && p.rb.island && m.apronM > 0 {
+		out = append(out, p.rb.apronMesh(m.paving, m.island, m.kerb, m.apronM)...)
+	} else if p.rb != nil && p.rb.island {
 		out = append(out, p.rb.islandMesh(m.island, m.kerb)...)
 	}
 	if p.rb != nil && p.rb.paved() {
 		out = append(out, p.rb.pavedMesh(m.paving, m.kerb)...)
+	}
+	if p.rb != nil && len(p.rb.bridged) > 0 && m.rail >= 0 {
+		if q := p.rb.railMesh(p, m.rail, m.cornerWalk); len(q.Indices) > 0 {
+			out = append(out, q)
+		}
 	}
 	return out
 }
 
 // walkMesh is a sidewalk a junction carries: on a kerb along its outline,
 // walkM wide, its ends where the roads' sidewalks end. Where only one road
-// has a sidewalk on that side, it goes halfway round and stops.
-func walkMesh(p patch, w walkChain, walk, kerb *gltf.Primitive) {
+// has a sidewalk on that side, it goes halfway round and stops; with
+// corner (the French style) it runs the whole way, round the corner to the
+// other road's edge, and ends square there (owner, 2026-10-18, La
+// Bresse: drawn by the road along its span and clipped to the junction,
+// the slab ended in a diagonal cut with its faces showing), unless the
+// road's own sidewalk runs on across the junction (p.dropWalks).
+func walkMesh(p patch, w walkChain, walk, kerb *gltf.Primitive, corner bool) {
 	k := w.kerb
 	if len(k) < 2 {
 		return
@@ -154,6 +198,14 @@ func walkMesh(p patch, w walkChain, walk, kerb *gltf.Primitive) {
 	total := at[len(k)-1]
 	from, to := 0.0, total
 	switch {
+	case corner && p.dropWalks:
+		// The road's own sidewalks run on across the mouth on both sides
+		// (roadMesh): drawn here too, the far one lay twice at one height
+		// and flickered (owner, 2026-10-18, across from La Bresse's
+		// driveways).
+		return
+	case corner:
+		// The whole way round, capped at both ends.
 	case w.fromA && !w.fromB:
 		to = total / 2
 	case !w.fromA && w.fromB:
@@ -161,6 +213,7 @@ func walkMesh(p patch, w walkChain, walk, kerb *gltf.Primitive) {
 	}
 	// At the ends, a road's end: the junction's height is the road's there.
 	y := func(i int) float64 { return p.height(k[i][0], k[i][1]) }
+
 	vert := func(q *gltf.Primitive, x, h, z float64, n [3]float64) uint32 {
 		q.Positions = append(q.Positions, float32(x), float32(h), float32(-z))
 		q.Normals = append(q.Normals, float32(n[0]), float32(n[1]), float32(n[2]))
@@ -251,6 +304,9 @@ func patchMesh(p patch, material int) gltf.Primitive {
 		if l == 0 || p.cutEdge(a, b) {
 			continue // a road goes on from here: no skirt
 		}
+		if p.noSkirt != nil && p.noSkirt((a[0]+b[0])/2, (a[1]+b[1])/2) {
+			continue // over a car park: its surface goes on
+		}
 		// Outward: the polygon runs counter-clockwise, so right of a→b.
 		nx, nz := (b[1]-a[1])/l, (b[0]-a[0])/l // east, south
 		pieces := max(1, int(math.Ceil(l/drapeCellM)))
@@ -288,6 +344,248 @@ func markPatches(fine []sample, ps []patch) {
 			s := &fine[i]
 			if s.e >= e0 && s.e <= e1 && s.n >= n0 && s.n <= n1 && inPoly(p.poly, s.e, s.n) {
 				s.underPatch = true
+			}
+		}
+	}
+}
+
+// walksOnSpans decides what a French road's sidewalk does at a junction
+// on its way (roadMesh draws it over a junction's span only where walkOn
+// says so). At a service road's mouth (every other road at the junction a
+// service road: a parking aisle, a driveway, a drive-through) it runs on
+// across as a dropped kerb (owner, 2026-10-18, La Bresse: the aisles and
+// driveways along the Rue Paul Claudel and the Rue du Hohneck), lowered
+// to dropKerbM where another road's carriageway or the junction's
+// outline covers its kerb line, ramped over the sample either side; at
+// any other side street it stops at the junction's edge, and the
+// junction's own sidewalk takes it round the corner (walkMesh).
+// rbEaseM: a roundabout's surface eases from its plane to a road it
+// meets within this of where the road ends at it.
+const rbEaseM = 8.0
+
+// dropRampM: a dropped kerb ramps down to a service road's mouth over
+// this length either side; runOnM: it runs on this far past the
+// junction's span while the other road still covers the sidewalk.
+const (
+	dropRampM = 1.5
+	runOnM    = 12.0
+)
+
+func walksOnSpans(ls []*roadLine, ps []patch, ws []scenery.Way) {
+	// A line of service ways only.
+	service := func(l *roadLine) bool {
+		if len(l.ways) == 0 {
+			return false
+		}
+		for _, k := range l.ways {
+			if k < 0 || k >= len(ws) || ws[k].Class != "service" {
+				return false
+			}
+		}
+		return true
+	}
+	// mouthOf is the junction whose span covers l at d, -1 for none;
+	// serviceMouth whether every other road at it is a service road.
+	mouthOf := func(l *roadLine, d float64) int {
+		for i := range ps {
+			for _, sp := range ps[i].spans {
+				if sp.l == l && d > sp.from+1e-6 && d < sp.to-1e-6 {
+					return i
+				}
+			}
+		}
+		return -1
+	}
+	serviceMouth := func(p *patch, self *roadLine) bool {
+		others := 0
+		for _, sp := range p.spans {
+			if sp.l == self {
+				continue
+			}
+			if !service(sp.l) {
+				return false
+			}
+			others++
+		}
+		return others > 0
+	}
+	type box struct{ e0, n0, e1, n1 float64 }
+	boxes := make([]box, len(ps))
+	for i, p := range ps {
+		b := box{math.Inf(1), math.Inf(1), math.Inf(-1), math.Inf(-1)}
+		for _, q := range p.poly {
+			b = box{math.Min(b.e0, q[0]), math.Min(b.n0, q[1]), math.Max(b.e1, q[0]), math.Max(b.n1, q[1])}
+		}
+		boxes[i] = b
+	}
+	// Samples every half metre through each service mouth's span and the
+	// stretch either side the dropped kerb may run on and ramp over: at
+	// the roads' 2 m a ramp had no sample to land on.
+	for _, l := range ls {
+		var add []float64
+		for pi := range ps {
+			if ps[pi].overlay {
+				continue
+			}
+			for _, sp := range ps[pi].spans {
+				if sp.l != l || !serviceMouth(&ps[pi], l) {
+					continue
+				}
+				for d := sp.from - dropRampM - 0.5; d <= sp.to+runOnM+dropRampM; d += 0.5 {
+					add = append(add, d)
+				}
+			}
+		}
+		if len(add) == 0 {
+			continue
+		}
+		for _, d := range add {
+			insertSample(l, d)
+		}
+		// Inserted samples copy their neighbour's flags: within a span or
+		// not, again from the spans.
+		for i := range l.samples {
+			sm := &l.samples[i]
+			sm.onPatch = false
+			for pi := range ps {
+				if ps[pi].overlay {
+					continue
+				}
+				for _, sp := range ps[pi].spans {
+					if sp.l == l && sm.d > sp.from+1e-6 && sm.d < sp.to-1e-6 {
+						sm.onPatch = true
+					}
+				}
+			}
+		}
+	}
+	// Other roads' carriageways, by 10 m cell: a side road's past its cut
+	// covers the band too (the sidewalk had lain across its mouth).
+	type ref struct{ l, i int }
+	const cellM = 10.0
+	grid := map[[2]int][]ref{}
+	key := func(e, n float64) [2]int { return [2]int{int(math.Floor(e / cellM)), int(math.Floor(n / cellM))} }
+	for li, l := range ls {
+		for i := range l.samples {
+			k := key(l.samples[i].e, l.samples[i].n)
+			grid[k] = append(grid[k], ref{li, i})
+		}
+	}
+	covered := func(self int, e, n float64) bool {
+		for i, p := range ps {
+			if b := boxes[i]; e >= b.e0 && e <= b.e1 && n >= b.n0 && n <= b.n1 && inPoly(p.poly, e, n) {
+				return true
+			}
+		}
+		k := key(e, n)
+		for gx := k[0] - 1; gx <= k[0]+1; gx++ {
+			for gy := k[1] - 1; gy <= k[1]+1; gy++ {
+				for _, r := range grid[[2]int{gx, gy}] {
+					ss := ls[r.l].samples
+					if r.l == self || r.i+1 >= len(ss) {
+						continue
+					}
+					a, b := ss[r.i], ss[r.i+1]
+					if a.onPatch || b.onPatch {
+						continue // inside a junction its outline decides, not the road's band
+					}
+					if segDist([2]float64{a.e, a.n}, [2]float64{b.e, b.n}, e, n) < math.Min(a.hw, b.hw) {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}
+	for li, l := range ls {
+		ss := l.samples
+		// Probed at its kerb line, per side; the slab stops only where
+		// this sample and both its neighbours are covered: it runs one
+		// frame into the junction and the cutter trims it to the outline
+		// exactly (stopped at the last clear sample, it ended up to a frame
+		// short, a strip of land too thin for the land's finest cell: a
+		// hole; 1.365 km of the Route des Américains).
+		var cov [2][]bool
+		for side := range 2 {
+			cov[side] = make([]bool, len(ss))
+		}
+		for i := range ss {
+			s := ss[i]
+			if !s.walk[0] && !s.walk[1] {
+				continue
+			}
+			a, b := ss[max(0, i-1)], ss[min(len(ss)-1, i+1)]
+			de, dn := b.e-a.e, b.n-a.n
+			d := math.Hypot(de, dn)
+			if d == 0 {
+				continue
+			}
+			rx, rn := dn/d, -de/d // right of the way
+			for side, sign := range []float64{-1, 1} {
+				// At the kerb line and the slab's outer edge: a road
+				// leaving at a shallow angle covers the outer edge last.
+				if !s.walk[side] {
+					continue
+				}
+				for _, off := range []float64{s.hw + 0.15, s.hw + s.walkWidth(side) - 0.15} {
+					cov[side][i] = cov[side][i] || covered(li, s.e+sign*rx*off, s.n+sign*rn*off)
+				}
+			}
+		}
+		for i := range ss {
+			if !ss[i].onPatch {
+				continue
+			}
+			pi := mouthOf(l, ss[i].d)
+			if pi < 0 || !serviceMouth(&ps[pi], l) {
+				continue
+			}
+			for side := range 2 {
+				if ss[i].walk[side] {
+					ss[i].walkOn[side] = true
+					ps[pi].dropWalks = true
+				}
+			}
+		}
+		// Near a mouth the dropped kerb runs on while another road still
+		// covers the kerb line: a drive leaving at a shallow angle lies
+		// under the sidewalk for metres past the junction's span (owner,
+		// 2026-10-18, 1.55 km of the Route des Américains: the slab sat on
+		// the drive's asphalt there, clipped into slivers and a spike).
+		nearMouth := func(i, side int) bool {
+			for _, dir := range []int{-1, 1} {
+				for j := i; j >= 0 && j < len(ss) && math.Abs(ss[j].d-ss[i].d) <= runOnM; j += dir {
+					if ss[j].walkOn[side] {
+						return true
+					}
+					if !cov[side][j] && j != i {
+						break // a stretch of full kerb between: not this mouth's
+					}
+				}
+			}
+			return false
+		}
+		for i := range ss {
+			for side := range 2 {
+				if !cov[side][i] || !ss[i].walkOn[side] && !nearMouth(i, side) {
+					continue
+				}
+				// Over the mouth no slab (the other road's asphalt is the
+				// surface there: a dropped slab lay under a climbing drive's
+				// and flickered or vanished); either side the kerb ramps
+				// down to it over dropRampM, by distance (samples crowd to
+				// half a metre at a junction's cut: a ramp of one sample was
+				// a step with a face across, 1.55 km).
+				ss[i].drop[side] = 1
+				for _, dir := range []int{-1, 1} {
+					for j := i + dir; j >= 0 && j < len(ss) && !cov[side][j] && ss[j].walk[side]; j += dir {
+						gap := math.Abs(ss[j].d - ss[i].d)
+						if gap >= dropRampM {
+							break
+						}
+						ss[j].drop[side] = math.Max(ss[j].drop[side], math.Min(0.99, 1-gap/dropRampM))
+					}
+				}
 			}
 		}
 	}
@@ -866,6 +1164,7 @@ func sampleBetween(l *roadLine, d float64) sample {
 	s := a
 	s.d, s.e, s.n, s.ele = d, lerp(a.e, b.e), lerp(a.n, b.n), lerp(a.ele, b.ele)
 	s.hw, s.edge, s.flat = lerp(a.hw, b.hw), lerp(a.edge, b.edge), lerp(a.flat, b.flat)
+	s.drop = [2]float64{lerp(a.drop[0], b.drop[0]), lerp(a.drop[1], b.drop[1])}
 	return s
 }
 
@@ -1159,16 +1458,31 @@ func fillet(p [][2]float64) [][2]float64 {
 			out = append(out, q)
 		}
 	}
+	// The arc starts on the edge's first segment's line; where the edge
+	// curves, a kept point can lie past the arc's start, and the outline
+	// went out to it and back (owner, 2026-10-18, La Bresse at 0.10 km: a
+	// triangle of asphalt jutting into the verge). Such points go.
+	ahead := func(prev, q, next [2]float64) bool {
+		return (next[0]-q[0])*(q[0]-prev[0])+(next[1]-q[1])*(q[1]-prev[1]) > 0
+	}
+	for len(out) > 1 && !ahead(out[len(out)-2], out[len(out)-1], t1) {
+		out = out[:len(out)-1]
+	}
 	for k := 0; k <= steps; k++ {
 		ang := a1 + sweep*float64(k)/float64(steps)
 		out = append(out, [2]float64{o[0] + r*math.Cos(ang), o[1] + r*math.Sin(ang)})
 	}
+	var bside [][2]float64
 	for _, q := range p[1 : m-1] {
 		if (q[0]-c[0])*ub[0]+(q[1]-c[1])*ub[1] > t+0.1 && math.Abs((q[0]-c[0])*ub[1]-(q[1]-c[1])*ub[0]) < 1 {
-			out = append(out, q)
+			bside = append(bside, q)
 		}
 	}
-	return append(out, p[m-1])
+	bside = append(bside, p[m-1])
+	for len(bside) > 1 && !ahead(t2, bside[0], bside[1]) {
+		bside = bside[1:]
+	}
+	return append(out, bside...)
 }
 
 // walkOnRoad says whether a junction's sidewalk would lie on one of its own

@@ -73,3 +73,45 @@ func TestLappedCourse(t *testing.T) {
 		t.Errorf("a one-way course lapped: %+v", ow.Lapped().Lap)
 	}
 }
+
+// A course that ends on itself elsewhere than its start is lapped from
+// that point (owner, 2026-10-17: La Bresse to the Hohneck and back: the
+// run-in to the second roundabout, then up, round the summit's car park,
+// down and round the roundabout to where the lap began); an out-and-back
+// that ends beside its own start stretch going the other way is not.
+func TestLapEndsOnItself(t *testing.T) {
+	// 600 m east (the run-in), 1000 m north, a 200 m square loop at the
+	// top, 1000 m back south on a road 10 m west, a circuit round a 20 m
+	// square at the bottom, ending at the run-in's end heading north.
+	c, err := New("hohneck", "Hohneck", pointsAlong([2]float64{0, 0}, [2]float64{600, 0}, [2]float64{600, 1000},
+		[2]float64{700, 1000}, [2]float64{700, 1200}, [2]float64{500, 1200}, [2]float64{500, 1000}, [2]float64{590, 1000},
+		[2]float64{590, 20}, [2]float64{580, 10}, [2]float64{590, 0}, [2]float64{600, 10}, [2]float64{600, 20}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lc := c.Lapped()
+	l := lc.Lap
+	if l == nil || math.Abs(l.StartM-620) > 25 || math.Abs(l.EndM-c.Distance) > 1 {
+		t.Fatalf("lap %+v, want from about 620 m to the course's end %.0f m", l, c.Distance)
+	}
+	at := func(d float64) [2]float64 {
+		e, n := lc.Project(lc.Position(d))
+		return [2]float64{e, n}
+	}
+	if a, b := at(lc.Distance), at(l.StartM+lc.Distance-l.EndM); math.Hypot(a[0]-b[0], a[1]-b[1]) > 1 {
+		t.Errorf("the course's end is %.1f m from the lap's start as far in", math.Hypot(a[0]-b[0], a[1]-b[1]))
+	}
+	// The same without the circuit at the bottom: the way back ends beside
+	// the run-in's end going south: not a lap.
+	c2, _ := New("outback", "Out and back", pointsAlong([2]float64{0, 0}, [2]float64{600, 0}, [2]float64{600, 1000},
+		[2]float64{700, 1000}, [2]float64{700, 1200}, [2]float64{500, 1200}, [2]float64{500, 1000}, [2]float64{590, 1000}, [2]float64{590, 10}))
+	if _, ok := c2.DetectLap(); ok {
+		t.Error("an out-and-back ending beside its own start stretch, going the other way, was taken for a lap")
+	}
+	// A course crossing its own run-in square at its end isn't a lap either.
+	c3, _ := New("cross", "Cross", pointsAlong([2]float64{0, 0}, [2]float64{600, 0}, [2]float64{1200, 0}, [2]float64{1200, 500},
+		[2]float64{300, 500}, [2]float64{300, 5}))
+	if _, ok := c3.DetectLap(); ok {
+		t.Error("a course crossing its own run-in at its end was taken for a lap")
+	}
+}

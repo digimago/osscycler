@@ -47,11 +47,11 @@ func TestMarkDecks(t *testing.T) {
 // A deck's edge beams are closed at the deck's ends (owner, 2026-10-12:
 // the figure 8's overpass showed them open, their faces with nothing
 // across): on each end of a full deck, a 0.4 m wide face across each beam
-// from the abutment's top to the beam's, in both builders.
+// from the abutment's top to the beam's.
 func TestDeckBeamEndsAreClosed(t *testing.T) {
 	c := course.Tracks()[1]
-	for _, engine := range []string{EngineClassic, EngineGraph} {
-		w, err := BuildWith(engine, c, Options{Generator: "test"})
+	for _, engine := range []string{Engine} {
+		w, err := Build(c, Options{Generator: "test"})
 		if err != nil {
 			t.Fatal(err)
 		}

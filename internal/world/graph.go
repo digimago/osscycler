@@ -14,12 +14,13 @@ import (
 	"github.com/digimago/osscycler/internal/scenery"
 )
 
-// BuildGraph is the graph builder (owner, 2026-10-11): the road network
-// first, the land last. The classic builder (Build) lays the terrain,
-// fits the roads into it, cuts them out of it and matches the rider's path
-// to them point by point, then mends what that leaves (holes, land over
-// the road, the rider off the road or hopping between roads). Here each
-// stage is settled before the next and never revisited:
+// Build makes the world for c, road network first, land last (owner,
+// 2026-10-11; the one builder since 2026-10-21). The classic builder it
+// replaced laid the terrain, fitted the roads into it, cut them out of it
+// and matched the rider's path to them point by point, then mended what
+// that left (holes, land over the road, the rider off the road or hopping
+// between roads). Here each stage is settled before the next and never
+// revisited:
 //
 //  1. The network: the map's roads near the route (as the classic builder
 //     draws them), joined into a graph where they share a node and across
@@ -41,7 +42,7 @@ import (
 //
 // Riding over interesting roads matters more than copying the place: the
 // course keeps to the network, and the land gives way to the roads.
-func BuildGraph(c *course.Course, o Options) (*World, error) {
+func Build(c *course.Course, o Options) (*World, error) {
 	o.defaults()
 	o.regionScenery()
 	if c.Distance < 2*fineStep {
@@ -671,6 +672,7 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 	}
 	m.Attribution = append([]string{}, o.Attribution...)
 	progress(1)
+	w.Manifest.Builder = Engine
 	return w, nil
 }
 
@@ -714,7 +716,7 @@ func riddenWays(sc *scenery.Scenery, route []sample) map[int]bool {
 
 const (
 	// A turn at a node (more than gTurnMinRad over gTurnLookM either way)
-	// is swept as the classic builder's smoothTurns does (owner,
+	// is swept as the classic builder's did (owner,
 	// 2026-10-10: a tight right turn at 25.95 km on the Posbank Loop): its
 	// rounding has the line gTurnClearM either way, and keeps within the
 	// first of gTurnDevs of the node that keeps it on the drawn road.

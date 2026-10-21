@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -30,7 +31,12 @@ type Activity struct {
 	// none read): what the rider has shown, not their maximum, and over a
 	// spike of a strap that misreads.
 	HeldMaxHR int
-	Err       error // the file doesn't decode; the rest is empty
+	// HeldThresholdHR is 95 % of the highest heart rate averaged over
+	// ThresholdHRS seconds (0: none that long): Friel's threshold from a
+	// 20-minute all-out effort, so a lower bound on the rider's threshold
+	// unless the activity held one.
+	HeldThresholdHR int
+	Err             error // the file doesn't decode; the rest is empty
 }
 
 // activityName is how the recorder names files; anything else (paths,
@@ -173,7 +179,36 @@ func summarise(path string) Activity {
 		return Activity{Err: errors.New("no session summary")}
 	}
 	a.HeldMaxHR = heldMax(hr, HeldHRS)
+	if best := bestAverage(hr, ThresholdHRS); best > 0 {
+		a.HeldThresholdHR = int(math.Round(thresholdShare * best))
+	}
 	return a
+}
+
+// ThresholdHRS is how long a threshold effort lasts (Friel's 20-minute
+// test), and thresholdShare the share of its average heart rate that is
+// the threshold.
+const (
+	ThresholdHRS   = 1200
+	thresholdShare = 0.95
+)
+
+// bestAverage is the highest average of n values in a row (0 when there
+// are fewer).
+func bestAverage(v []int, n int) float64 {
+	if n <= 0 || len(v) < n {
+		return 0
+	}
+	sum := 0
+	for _, x := range v[:n] {
+		sum += x
+	}
+	best := sum
+	for i := n; i < len(v); i++ {
+		sum += v[i] - v[i-n]
+		best = max(best, sum)
+	}
+	return float64(best) / float64(n)
 }
 
 // HeldHRS: a heart rate counts as reached once held this long (seconds of

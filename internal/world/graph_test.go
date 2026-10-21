@@ -46,30 +46,25 @@ func routeOn(L float64, way func(d float64) int) []int {
 	return out
 }
 
-// Both builders build the test tracks whole, and say which they are.
-func TestEnginesBuildTheTracks(t *testing.T) {
-	for _, engine := range EngineNames() {
-		for _, c := range course.Tracks() {
-			t.Run(engine+"/"+c.ID, func(t *testing.T) {
-				w, err := BuildWith(engine, c, Options{Generator: "test"})
-				if err != nil {
-					t.Fatal(err)
-				}
-				if w.Manifest.Builder != engine {
-					t.Errorf("manifest says builder %q, want %q", w.Manifest.Builder, engine)
-				}
-				if want := 3 * (int(math.Ceil(c.Distance/pathStep)) + 1); len(w.Manifest.Path.XYZ) != want {
-					t.Errorf("path has %d numbers, want %d", len(w.Manifest.Path.XYZ), want)
-				}
-				if r := w.Check(); r.HolesM2 > 0.5 || r.LandOverRoadM2 > 0.5 || r.OffRoadM > 0 {
-					t.Errorf("check: holes %.2f m² %v, land over road %.2f m² %v, off road %.0f m %v",
-						r.HolesM2, r.Holes, r.LandOverRoadM2, r.LandOverRoad, r.OffRoadM, r.OffRoad)
-				}
-			})
-		}
-	}
-	if _, err := BuildWith("nonesuch", course.Tracks()[0], Options{}); err == nil {
-		t.Error("an unknown builder built a world")
+// The builder builds the test tracks whole, and says it made them.
+func TestBuildsTheTracks(t *testing.T) {
+	for _, c := range course.Tracks() {
+		t.Run(c.ID, func(t *testing.T) {
+			w, err := Build(c, Options{Generator: "test"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if w.Manifest.Builder != Engine {
+				t.Errorf("manifest says builder %q, want %q", w.Manifest.Builder, Engine)
+			}
+			if want := 3 * (int(math.Ceil(c.Distance/pathStep)) + 1); len(w.Manifest.Path.XYZ) != want {
+				t.Errorf("path has %d numbers, want %d", len(w.Manifest.Path.XYZ), want)
+			}
+			if r := w.Check(); r.HolesM2 > 0.5 || r.LandOverRoadM2 > 0.5 || r.OffRoadM > 0 {
+				t.Errorf("check: holes %.2f m² %v, land over road %.2f m² %v, off road %.0f m %v",
+					r.HolesM2, r.Holes, r.LandOverRoadM2, r.LandOverRoad, r.OffRoadM, r.OffRoad)
+			}
+		})
 	}
 }
 
@@ -85,7 +80,7 @@ func TestGraphCourseChangesRoadsOnlyWhereTheyMeet(t *testing.T) {
 		{Line: [][2]float64{{-6, 500}, {6, 500}}, Nodes: []int64{2, 5}, Name: "Link", Class: "residential", WidthM: 5},
 	}
 	on := routeOn(c.Distance, func(d float64) int { return int(d/150) % 2 })
-	w, err := BuildGraph(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	w, err := Build(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +144,7 @@ func TestGraphRidesOverTheRoundabout(t *testing.T) {
 	}
 	c := graphCourse(t, "roundabout", pts)
 	on := routeOn(c.Distance, func(float64) int { return -1 })
-	w, err := BuildGraph(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	w, err := Build(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +171,7 @@ func TestGraphLandMeetsTheRoad(t *testing.T) {
 	}
 	ways := []scenery.Way{{Line: [][2]float64{{0, -40}, {0, 440}}, Nodes: []int64{1, 2}, Name: "Holle Weg", Class: "unclassified", WidthM: 5}}
 	on := routeOn(c.Distance, func(float64) int { return 0 })
-	w, err := BuildGraph(c, Options{Generator: "test", Elevation: ground, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	w, err := Build(c, Options{Generator: "test", Elevation: ground, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +238,7 @@ func TestGraphOwnWayMeetsTheRoad(t *testing.T) {
 		}
 		return -1
 	})
-	w, err := BuildGraph(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	w, err := Build(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -336,7 +331,7 @@ func TestGraphRoadEndingAtAnotherJoinsIt(t *testing.T) {
 		return out
 	}
 	on := routeOn(c.Distance, func(float64) int { return 0 })
-	w, err := BuildGraph(c, Options{Generator: "test", Elevation: ground, Scenery: &scenery.Scenery{Ways: shift(ways[:2]), RouteOn: on, RouteStepM: 5}})
+	w, err := Build(c, Options{Generator: "test", Elevation: ground, Scenery: &scenery.Scenery{Ways: shift(ways[:2]), RouteOn: on, RouteStepM: 5}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -384,7 +379,7 @@ func TestGraphDitchBesideTheRoad(t *testing.T) {
 	}
 	ways := []scenery.Way{{Line: [][2]float64{{0, -40}, {0, 340}}, Nodes: []int64{1, 2}, Name: "Dike road", Class: "unclassified", WidthM: 5}}
 	on := routeOn(c.Distance, func(float64) int { return 0 })
-	w, err := BuildGraph(c, Options{Generator: "test", Elevation: ground, Land: lm, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	w, err := Build(c, Options{Generator: "test", Elevation: ground, Land: lm, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -462,7 +457,7 @@ func TestGraphLongCanalBesideTheRoad(t *testing.T) {
 	}
 	ways := []scenery.Way{{Line: [][2]float64{{0, -40}, {0, 740}}, Nodes: []int64{1, 2}, Name: "Main street", Class: "secondary", WidthM: 7}}
 	on := routeOn(c.Distance, func(float64) int { return 0 })
-	w, err := BuildGraph(c, Options{Generator: "test", Elevation: ground, Land: lm, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	w, err := Build(c, Options{Generator: "test", Elevation: ground, Land: lm, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -535,7 +530,7 @@ func TestGraphRoadGoesUnderNotOverInATunnel(t *testing.T) {
 		}
 		return 2
 	})
-	w, err := BuildGraph(c, Options{Generator: "test", Elevation: ground, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	w, err := Build(c, Options{Generator: "test", Elevation: ground, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -565,7 +560,7 @@ func TestTownTrees(t *testing.T) {
 	}}
 	ways := []scenery.Way{{Line: [][2]float64{{0, -40}, {0, 440}}, Nodes: []int64{1, 2}, Name: "Main street", Class: "secondary", WidthM: 7}}
 	on := routeOn(c.Distance, func(float64) int { return 0 })
-	w, err := BuildGraph(c, Options{Generator: "test", Land: scenery.NewLandMap(c, data), Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	w, err := Build(c, Options{Generator: "test", Land: scenery.NewLandMap(c, data), Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -687,7 +682,7 @@ func TestGraphTurnAtANodeIsRounded(t *testing.T) {
 		}
 		return 1
 	})
-	w, err := BuildGraph(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	w, err := Build(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -728,7 +723,7 @@ func TestGraphLeavingTheRoadIsSmooth(t *testing.T) {
 		}
 		return -1
 	})
-	w, err := BuildGraph(c, Options{Generator: "test", Elevation: ground, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	w, err := Build(c, Options{Generator: "test", Elevation: ground, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -764,7 +759,7 @@ func TestGraphDoglegAtANodeIsOneTurn(t *testing.T) {
 		}
 		return 2
 	})
-	w, err := BuildGraph(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	w, err := Build(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -796,7 +791,7 @@ func TestGraphOwnWayGoesUnderABridge(t *testing.T) {
 		{Line: [][2]float64{{20, 200}, {150, 200}}, Nodes: []int64{3, 4}, Name: "N1", Class: "primary", WidthM: 8},
 	}
 	on := routeOn(c.Distance, func(float64) int { return -1 })
-	w, err := BuildGraph(c, Options{Generator: "test", Elevation: ground, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	w, err := Build(c, Options{Generator: "test", Elevation: ground, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -827,7 +822,7 @@ func TestGraphFarLandIsSimplifiedWhereFlat(t *testing.T) {
 		}
 		ways := []scenery.Way{{Line: [][2]float64{{0, -40}, {0, 640}}, Nodes: []int64{1, 2}, Name: "Weg", Class: "unclassified", WidthM: 5}}
 		on := routeOn(c.Distance, func(float64) int { return 0 })
-		w, err := BuildGraph(c, Options{Generator: "test", Elevation: el, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+		w, err := Build(c, Options{Generator: "test", Elevation: el, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -881,7 +876,7 @@ func TestGraphNoDipIntoAStub(t *testing.T) {
 		{Line: [][2]float64{{0, 200}, {11, 200}}, Nodes: []int64{2, 4}, Name: "Stub twin", Class: "service", WidthM: 3},
 	}
 	on := routeOn(c.Distance, func(float64) int { return -1 })
-	w, err := BuildGraph(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	w, err := Build(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -960,7 +955,7 @@ func TestGraphPathAcrossADualRoadKeepsItsWay(t *testing.T) {
 		{Line: [][2]float64{{124, 300}, {124, -100}}, Nodes: []int64{3, 4}, Name: "Parnassiaweg", Class: "unclassified", WidthM: 3.1, Oneway: 1},
 	}
 	on := routeOn(c.Distance, func(float64) int { return -1 })
-	w, err := BuildGraph(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	w, err := Build(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -987,7 +982,7 @@ func TestGraphFreeTurnIsSweptWide(t *testing.T) {
 	// A road 120 m off, so the course is matched (off the roads).
 	ways := []scenery.Way{{Line: [][2]float64{{120, -100}, {120, 400}}, Nodes: []int64{1, 2}, Name: "Elders", Class: "residential", WidthM: 5}}
 	on := routeOn(c.Distance, func(float64) int { return -1 })
-	w, err := BuildGraph(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	w, err := Build(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1005,7 +1000,7 @@ func TestGraphFreeTurnIsSweptWide(t *testing.T) {
 func TestPathStepIsThePointsSpacing(t *testing.T) {
 	pts := along([2]float64{0, 0}, [2]float64{0, 1003}, 20)
 	c := graphCourse(t, "step", append(pts, [2]float64{0, 1003}))
-	for _, build := range []func(*course.Course, Options) (*World, error){Build, BuildGraph} {
+	for _, build := range []func(*course.Course, Options) (*World, error){Build, Build} {
 		w, err := build(c, Options{Generator: "test"})
 		if err != nil {
 			t.Fatal(err)

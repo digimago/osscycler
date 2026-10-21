@@ -123,7 +123,7 @@ func TestGraphLaneBesideTheRoadBehindAWall(t *testing.T) {
 		}
 		return 2
 	})
-	w, err := BuildGraph(c, Options{Generator: "test", Region: RegionFR, Elevation: ground, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	w, err := Build(c, Options{Generator: "test", Region: RegionFR, Elevation: ground, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -378,7 +378,7 @@ func TestGraphBankBetweenRoadsAStepApart(t *testing.T) {
 		{Line: upper, Nodes: []int64{3, 4}, Name: "Upper", Class: "residential", WidthM: 4},
 	}
 	on := routeOn(c.Distance, func(float64) int { return 0 })
-	w, err := BuildGraph(c, Options{Generator: "test", Region: RegionFR, Elevation: ground, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	w, err := Build(c, Options{Generator: "test", Region: RegionFR, Elevation: ground, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
 	if err != nil {
 		t.Fatal(err)
 	}

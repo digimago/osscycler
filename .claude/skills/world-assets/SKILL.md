@@ -98,7 +98,7 @@ shape a region needs (a species, a fence) is made as any asset, its
 choice put in the style. A species only one region plants carries that
 region (`species.region`), so other worlds don't carry its template and
 stay byte-identical; check that with the Dutch worlds (Posbank Loop,
-figure 8, oval, both builders) after any change to a style.
+figure 8, oval) after any change to a style.
 
 ## Outside assets and licences
 

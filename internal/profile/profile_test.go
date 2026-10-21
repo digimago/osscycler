@@ -112,3 +112,29 @@ func TestWorldSettings(t *testing.T) {
 		t.Errorf("read back: %+v", p)
 	}
 }
+
+// Heart rate zones come from the one the rider chose, else whichever is
+// set, the maximum when both are (owner, 2026-10-21).
+func TestHRZoneBasis(t *testing.T) {
+	for _, c := range []struct {
+		p    Profile
+		th   bool
+		bpm  float64
+		name string
+	}{
+		{Profile{}, false, 0, "neither"},
+		{Profile{MaxHRBpm: 190}, false, 190, "only the maximum"},
+		{Profile{ThresholdHRBpm: 165}, true, 165, "only the threshold"},
+		{Profile{MaxHRBpm: 190, ThresholdHRBpm: 165}, false, 190, "both, no choice"},
+		{Profile{MaxHRBpm: 190, ThresholdHRBpm: 165, HRZones: HRZonesThreshold}, true, 165, "both, threshold chosen"},
+		{Profile{MaxHRBpm: 190, HRZones: HRZonesThreshold}, false, 190, "threshold chosen, none set"},
+		{Profile{ThresholdHRBpm: 165, HRZones: HRZonesMax}, true, 165, "maximum chosen, none set"},
+	} {
+		if th, bpm := c.p.HRZoneBasis(); th != c.th || bpm != c.bpm {
+			t.Errorf("%s: threshold %v %v bpm, want %v %v", c.name, th, bpm, c.th, c.bpm)
+		}
+	}
+	if Check(ThresholdHR, 79) == nil || Check(ThresholdHR, 221) == nil || Check(ThresholdHR, 165) != nil {
+		t.Error("threshold heart rate range")
+	}
+}

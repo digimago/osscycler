@@ -262,8 +262,9 @@ func (c commands) SetSimulated(ctx context.Context, on bool) error {
 	return err
 }
 
-func (c commands) SetProfile(ctx context.Context, weightKg, ftpW, heightCm, maxHR *float64) (*pb.RiderProfile, error) {
-	resp, err := c.c.SetProfile(ctx, &pb.SetProfileRequest{WeightKg: weightKg, FtpW: ftpW, HeightCm: heightCm, MaxHrBpm: maxHR})
+func (c commands) SetProfile(ctx context.Context, weightKg, ftpW, heightCm, maxHR, thresholdHR *float64, hrZones *string) (*pb.RiderProfile, error) {
+	resp, err := c.c.SetProfile(ctx, &pb.SetProfileRequest{WeightKg: weightKg, FtpW: ftpW, HeightCm: heightCm, MaxHrBpm: maxHR,
+		ThresholdHrBpm: thresholdHR, HrZones: hrZones})
 	return resp.GetProfile(), err
 }
 

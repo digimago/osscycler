@@ -1221,11 +1221,6 @@ func (p patch) cutEdge(a, b [2]float64) bool {
 	return false
 }
 
-// hasCorner tells whether q is a corner of the patch's outline.
-func (p patch) hasCorner(q [2]float64) bool {
-	return slices.Contains(p.poly, q)
-}
-
 // chainShape is a free edge's length along its kerb at each point, and the
 // line walkM outward of it (the sidewalk's outer edge): the outline runs
 // counter-clockwise, so outward is to the right; at the ends, as the

@@ -12,8 +12,8 @@ import (
 // changes roads only where the network joins them (gnet.between); a road
 // it can't reach from the last costs as much as leaving the roads. So the
 // rider can't hop between roads side by side, onto a road below, or back
-// and forth: what the classic builder mends afterwards (keepToConnected,
-// unfold, keepOnRoad, settleOnRoad, openRuns) has nothing to mend.
+// and forth: what the classic builder mended afterwards has nothing to
+// mend.
 
 // gstate is one step's place: on a road, or off.
 type gstate struct {
@@ -50,6 +50,15 @@ const (
 	gSpurTipCos = -0.7                // the line turns more than 135° at a spur's tip (the way back may start a metre aside)
 	gSpurOffM   = 1.5                 // the way back keeps within this of the way out (a twin line runs a metre beside; a turn within it is a hairpin anyway)
 	gAgainstCos = -0.3                // a net move more than 107° against the route's way is a step back (a hop up a crossing piece to the other carriageway was 116°)
+	// A step onto another road, or off the roads or back onto them, that
+	// climbs or drops more than gDropM plus gDropGrade of a path step is a
+	// road passing over or under, not one to change onto (roads that meet
+	// share their node's height). Of a step, not the hop's length: a hop
+	// off the roads 29 m across onto a road in a cutting 7.7 m below would
+	// pass by its length.
+	gDropM     = 0.5
+	gDropGrade = 0.25
+	gDropCost  = 1e6 // never, whatever the rest costs (a one-way road against its traffic over 250 m costs more than a gBackCost)
 )
 
 // alongOf is how much line l runs the way (re, rn) at t: 1 along it
@@ -175,7 +184,7 @@ func (g *gnet) matchCourse(steps int, step float64, own [][4]float64, heading []
 		// A closed course keeps to the main road: where a road of a higher
 		// class runs alongside within ventM, an access road beside it
 		// (ventweg) or a road the route took for its cycle path costs more
-		// (as the classic builder's courseRoads).
+		// (as the classic builder's matching did).
 		top := -1
 		for _, c := range cands[i][1:] {
 			if r := rank(c.line, c.t); r > top && math.Hypot(c.x-ox, c.y-oy) <= ventM && alongOf(g.lines[c.line], c.t, re, rn) >= parallelCosine {
@@ -216,6 +225,13 @@ func (g *gnet) matchCourse(steps int, step float64, own [][4]float64, heading []
 		// sees).
 		if mx, my := c.x-p.x, c.y-p.y; math.Hypot(mx, my) > gJitterM && (mx*c.he+my*c.hn)/math.Hypot(mx, my) < gAgainstCos {
 			return gBackCost
+		}
+		// Never onto a road metres above or below (owner, 2026-10-10: at
+		// Zandvoort the course hopped 27 m sideways onto the beach access
+		// road 8 m below the boulevard, and the rider fell off stairs; the
+		// classic builder's rule, kept when it was retired, 2026-10-21).
+		if !(p.on && c.on && p.line == c.line) && math.Abs(c.z-p.z) > gDropM+gDropGrade*step {
+			return gDropCost
 		}
 		switch {
 		case !p.on && !c.on:

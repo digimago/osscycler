@@ -95,9 +95,11 @@ func TestPreview(t *testing.T) {
 	// A preview of a real course takes neither ground model nor map data
 	// (none to be had here: no caches, no fetching), has made-up
 	// countryside, and a stamp of its own, never taken for the world's.
+	// The shortest real course: any shows it, and a build under the race
+	// detector takes its time.
 	var c *course.Course
 	for _, x := range course.Included() {
-		if !x.Builtin {
+		if !x.Builtin && (c == nil || x.Distance < c.Distance) {
 			c = x
 		}
 	}

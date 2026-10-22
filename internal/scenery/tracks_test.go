@@ -116,3 +116,76 @@ func inRing(p [2]float64, ring [][2]float64) bool {
 	}
 	return in
 }
+
+// The figure 8 has a village and a river on mapped roads (owner,
+// 2026-10-22: the demo track has every kind of thing a world is built
+// from): its streets meet at shared nodes, the roundabout is one ring of
+// one lane, the river has two bridges over it, and the route is on the
+// map's roads in the village and over the northern bridge, its own way
+// everywhere else (the crossing above all).
+func TestFigureEightVillage(t *testing.T) {
+	c := course.Tracks()[1]
+	data := TrackScenery(c).Data
+	nodes := map[string]map[int64]bool{} // by street name
+	ring := map[int64]bool{}
+	var bridges, rings, parking, river, school int
+	for _, el := range data.Elements {
+		tg := el.Tags
+		switch {
+		case tg["junction"] == "roundabout":
+			rings++
+			for _, n := range el.Nodes {
+				ring[n] = true
+			}
+		case tg["highway"] != "":
+			if nodes[tg["name"]] == nil {
+				nodes[tg["name"]] = map[int64]bool{}
+			}
+			for _, n := range el.Nodes {
+				nodes[tg["name"]][n] = true
+			}
+			if tg["bridge"] == "yes" {
+				bridges++
+			}
+		case tg["amenity"] == "parking":
+			parking++
+		case tg["water"] == "river":
+			river++
+		case tg["building"] == "school":
+			school++
+		}
+	}
+	if rings != 4 || len(ring) != 16 || bridges != 2 || parking != 1 || river < 2 || school != 1 {
+		t.Errorf("%d ring pieces of %d nodes, %d bridges, %d car parks, %d river pieces, %d schools", rings, len(ring), bridges, parking, river, school)
+	}
+	meets := func(a map[int64]bool, b map[int64]bool) bool {
+		for n := range a {
+			if b[n] {
+				return true
+			}
+		}
+		return false
+	}
+	for _, name := range []string{"Dorpsstraat", "Kerkstraat", "Polderweg"} {
+		if !meets(nodes[name], ring) {
+			t.Errorf("%s doesn't meet the roundabout", name)
+		}
+	}
+	for _, name := range []string{"Schoolstraat", ""} { // "": the car park's entrance
+		if !meets(nodes[name], nodes["Dorpsstraat"]) {
+			t.Errorf("%q doesn't meet Dorpsstraat", name)
+		}
+	}
+	if len(nodes["Rivierdijk"]) == 0 {
+		t.Error("no road over the river on the northern arc")
+	}
+	sc := Build(c, data)
+	on := func(d float64) bool { return sc.RouteOn[int(d/sc.RouteStepM)] >= 0 }
+	for d := 0.0; d < c.Distance; d += 50 {
+		mapped := d > villageFromM+20 && d < villageToM-20 || d > 560 && d < 620
+		free := d < 520 || d > 660 && d < villageFromM-20 || d > villageToM+20
+		if mapped && !on(d) || free && on(d) {
+			t.Errorf("at %.0f m the route is on a map road: %v", d, on(d))
+		}
+	}
+}

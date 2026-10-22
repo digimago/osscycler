@@ -711,10 +711,34 @@ type sampleRef struct {
 
 // ownWays are the course's own ways: along the path wherever it isn't
 // wholly on a road (f < 1), a few steps more either side so they meet the
-// roads, just under them.
-func (n *network) ownWays(d, x, y, z, f []float64) []*roadLine {
+// roads, just under them. On a loop, the way across its start and finish
+// is one, from the last stretch off the roads on round into the first
+// (2026-10-22: as two, ending at the line, grass showed between them).
+func (n *network) ownWays(d, x, y, z, f []float64, loop bool) []*roadLine {
 	var out []*roadLine
 	const reach = 3 // path steps either side
+	first, last := 0, len(d)
+	length := 0.0 // a loop's, where its own way runs on past the finish
+	if m := len(d); loop && m > 2 && f[0] <= 0.999 && f[m-1] <= 0.999 {
+		head := 0
+		for head < m && f[head] <= 0.999 {
+			head++
+		}
+		if head < m { // somewhere on the roads
+			// The path again from its start (its first point is its last)
+			// to past the first stretch, on from the finish.
+			end := min(m-1, head-1+reach)
+			wrap := func(v []float64, shift float64) []float64 {
+				w := append([]float64(nil), v...)
+				for k := 1; k <= end; k++ {
+					w = append(w, v[k]+shift)
+				}
+				return w
+			}
+			d, x, y, z, f = wrap(d, d[m-1]), wrap(x, 0), wrap(y, 0), wrap(z, 0), wrap(f, 0)
+			first, last, length = head, m, d[m-1]
+		}
+	}
 	// inside tells whether e, no lies well inside a map road's carriageway:
 	// an own way's ends are trimmed back to just inside it, so it meets the
 	// road rather than lying under it (owner, 2026-10-09: under a dead end's
@@ -755,7 +779,7 @@ func (n *network) ownWays(d, x, y, z, f []float64) []*roadLine {
 		}
 		return false
 	}
-	for i := 0; i < len(d); {
+	for i := first; i < last; {
 		if f[i] > 0.999 {
 			i++
 			continue
@@ -794,7 +818,18 @@ func (n *network) ownWays(d, x, y, z, f []float64) []*roadLine {
 			i = j
 			continue
 		}
+		// Past a loop's finish, the roads from its start again.
+		var past []int
+		for k := range ss {
+			if length > 0 && ss[k].d > length {
+				ss[k].d -= length
+				past = append(past, k)
+			}
+		}
 		applyRoads(ss, n.stretches, n.o.RoadWidthM, n.o.CellM)
+		for _, k := range past {
+			ss[k].d += length
+		}
 		for k := range ss {
 			// A path the map data lacks (a cycle path, a track): no
 			// sidewalks or cycle lanes of a road it meets (owner,

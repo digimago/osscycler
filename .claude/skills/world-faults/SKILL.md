@@ -400,7 +400,10 @@ check within 40 m of the path; builder version 72):
 - La Bresse – Hohneck loop: holes 0.5 m², land over road 0, off road 0,
   height steps at most 1.25 m (17.4 km, the summit car park's climb),
   sharpest turn 54°.
-- Figure 8 and oval: every measure 0 (the oval's turns 8° per step).
+- Figure 8 (with its village and river since 2026-10-22, both ways
+  round) and oval: holes, land over road and off road 0; the figure 8's
+  height steps at most 0.57 m (0.62 reversed), pace 1.05 (the oval's
+  turns 8° per step).
 
 Older numbers, and the classic builder's beside them, are in
 docs/HISTORY.md.

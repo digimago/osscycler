@@ -75,7 +75,7 @@ fmt: ## Fail if any file needs gofmt
 lint: ## staticcheck (pinned, via go run)
 	GOTOOLCHAIN=$(LINT_TOOLCHAIN) go run $(STATICCHECK) ./...
 
-check: fmt vet lint race ## Everything CI should run
+check: fmt vet lint race ## Everything CI runs (CI runs race in shards: scripts/ci-shard.sh)
 
 token: $(TOKEN_FILE) ## Create the API token file if missing
 

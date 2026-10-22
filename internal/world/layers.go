@@ -37,6 +37,9 @@ const (
 	// apart and back (the motorway rising from over the course's southern
 	// arc to under its northern one, 0.5 km on).
 	layerJoinM = 800.0
+	// layerPullMinM: a road joining one that moves eases the change out
+	// over at least this, or neither moves.
+	layerPullMinM = 10.0
 )
 
 // layerHold is a height a road must take near d along it: c more than it
@@ -56,6 +59,18 @@ func (g *gnet) separateLayers(ways []scenery.Way, ridden map[int]bool) {
 			return scenery.Way{}, k, false
 		}
 		return ways[k], k, true
+	}
+	// rides tells whether the route rides line j.
+	rides := func(j int) bool {
+		if lines[j].route {
+			return true
+		}
+		for _, k := range lines[j].ways {
+			if ridden[k] {
+				return true
+			}
+		}
+		return false
 	}
 	holds := make([][]layerHold, len(lines))
 	for _, x := range crossings(lines) {
@@ -121,14 +136,55 @@ func (g *gnet) separateLayers(ways []scenery.Way, ridden map[int]bool) {
 			grade = layerMotorwayGrade
 		}
 		corr := layerCorrection(hs, grade)
-		// A road's nodes shared with others keep their height: what moves
-		// is the road between them (the map splits a motorway at every
-		// change of its tags, not at a bridge's ends only), so a hold that
-		// reaches one is left out (the other road could still move).
+		// A road's nodes shared with others move with it, and the roads
+		// joining there (a motorway's slip roads) take the change at the
+		// node and ease it out along them before their own next node, so
+		// their far ends stay (owner, 2026-10-22: the A13 by Rodange ran
+		// through the bridge the course crosses it on; held still at the
+		// interchange's nodes, it hadn't moved). Not where a road joining
+		// is one the route rides, or has no room to ease out.
+		type pull struct {
+			j     int
+			d, c  float64
+			reach float64
+		}
+		var pulls []pull
 		ok := true
 		for _, st := range g.stops[i] {
-			if math.Abs(corr(st.d)) > 0.01 {
-				ok = false
+			c := corr(st.d)
+			if math.Abs(c) <= 0.01 {
+				continue
+			}
+			for j := range lines {
+				if j == i {
+					continue
+				}
+				for _, sj := range g.stops[j] {
+					if sj.node != st.node {
+						continue
+					}
+					if rides(j) {
+						ok = false
+						continue
+					}
+					gj := layerRoadGrade
+					if lines[j].motorway {
+						gj = layerMotorwayGrade
+					}
+					reach := math.Pi / 2 * math.Abs(c) / gj
+					for _, o := range g.stops[j] {
+						if o.node != st.node {
+							reach = math.Min(reach, math.Abs(o.d-sj.d)-1)
+						}
+					}
+					ss := lines[j].samples
+					reach = math.Min(reach, math.Max(sj.d-ss[0].d, ss[len(ss)-1].d-sj.d))
+					if reach < layerPullMinM {
+						ok = false
+						continue
+					}
+					pulls = append(pulls, pull{j, sj.d, c, reach})
+				}
 			}
 		}
 		if !ok {
@@ -136,6 +192,17 @@ func (g *gnet) separateLayers(ways []scenery.Way, ridden map[int]bool) {
 		}
 		for k := range lines[i].samples {
 			lines[i].samples[k].ele += corr(lines[i].samples[k].d)
+		}
+		for _, st := range g.stops[i] {
+			g.ele[st.node] += corr(st.d)
+		}
+		for _, p := range pulls {
+			for k := range lines[p.j].samples {
+				s := &lines[p.j].samples[k]
+				if x := math.Abs(s.d-p.d) / p.reach; x < 1 {
+					s.ele += p.c * (1 + math.Cos(math.Pi*x)) / 2
+				}
+			}
 		}
 	}
 }

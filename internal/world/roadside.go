@@ -168,6 +168,12 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 		if way >= 0 && way < len(ways) {
 			wy = ways[way]
 		}
+		// A motorway has its own markings and barriers (motorways.go): the
+		// roadside's drains, posts and markings along the A13 by Pétange
+		// stood on it too.
+		if wy.Motorway {
+			continue
+		}
 		// onSurface: a drawn road surface (another road's, a junction's
 		// apron, a car park) is at e, n: nothing stands there.
 		onSurface := func(e, n float64) bool {

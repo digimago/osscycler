@@ -208,3 +208,42 @@ func TestTunnelHeadroomFromItsCover(t *testing.T) {
 			r.HolesM2, r.Holes, r.LandOverRoadM2, r.LandOverRoad, r.OffRoadM, r.OffRoad)
 	}
 }
+
+// A motorway that must go under the course's bridge moves even where a
+// slip road joins it near the crossing: the slip road takes the change at
+// their node and eases it out along it, its far end staying (owner,
+// 2026-10-22: held still at the interchange's nodes, the A13 by Rodange
+// ran through the bridge the course crosses it on).
+func TestMotorwayMovesWithItsSlipRoad(t *testing.T) {
+	c := graphCourse(t, "slip", append(along([2]float64{0, 0}, [2]float64{0, 400}, 20), [2]float64{0, 400}))
+	ways := []scenery.Way{
+		{Line: [][2]float64{{0, -40}, {0, 180}}, Nodes: []int64{1, 2}, Name: "Bosweg", Class: "unclassified", WidthM: 5},
+		{Line: [][2]float64{{0, 180}, {0, 220}}, Nodes: []int64{2, 3}, Name: "Bosweg", Class: "unclassified", WidthM: 5, Bridge: true, Layer: 1},
+		{Line: [][2]float64{{0, 220}, {0, 440}}, Nodes: []int64{3, 4}, Name: "Bosweg", Class: "unclassified", WidthM: 5},
+		{Line: [][2]float64{{-300, 200}, {60, 200}, {300, 200}}, Nodes: []int64{10, 14, 11}, Class: "motorway", WidthM: 11, Motorway: true, Oneway: 1},
+		{Line: [][2]float64{{60, 200}, {90, 215}, {120, 240}}, Nodes: []int64{14, 15, 16}, Class: "motorway", WidthM: 6, Motorway: true, Oneway: 1},
+		{Line: [][2]float64{{120, 160}, {120, 240}, {120, 320}}, Nodes: []int64{20, 16, 21}, Name: "Dorpsweg", Class: "tertiary", WidthM: 6},
+	}
+	on := routeOn(c.Distance, func(d float64) int {
+		switch {
+		case d < 180:
+			return 0
+		case d < 220:
+			return 1
+		}
+		return 2
+	})
+	w, err := Build(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if y, ok := surfaceTop(w, "road", -6, 200); !ok || y > 10-layerM+0.01 {
+		t.Errorf("the motorway beside the bridge: %.2f m (%v), want at most %.2f", y, ok, 10-layerM)
+	}
+	// The road the slip road leads to keeps its height.
+	for _, n := range []float64{170, 290} {
+		if y, ok := surfaceTop(w, "road", 120, n); !ok || math.Abs(y-10) > 0.05 {
+			t.Errorf("the road the slip road joins, at %.0f m north: %.2f m (%v), want it where it was, 10 m", n, y, ok)
+		}
+	}
+}

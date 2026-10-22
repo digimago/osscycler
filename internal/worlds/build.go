@@ -109,6 +109,10 @@ const (
 type Result struct {
 	World   *world.World
 	MapInfo string // "1234 map elements", "no map data", ...
+	// Partial: map data or the coastline was missing (not fetched, the
+	// server down): grass where roads and land should be. Its stamp is
+	// PartialStamp, so it is built again, fetching, when next asked for.
+	Partial bool
 }
 
 // Build builds course c's world; phase reports progress.
@@ -212,6 +216,7 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 		}
 	}
 	mapInfo := "no map data"
+	partial := false
 	if b.Maps != nil && !c.Builtin && !b.Preview {
 		enter(PhaseMaps)
 		// A stretch missing is no reason to stop; the world shows grass
@@ -235,6 +240,7 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 				return Result{}, fmt.Errorf("%w: map data: %v", ErrIncomplete, err)
 			}
 			log.Warn("map data incomplete", "course", c.ID, "err", err)
+			partial = true
 		}
 		if len(d.Elements) > 0 {
 			o.Land = scenery.NewLandMap(c, d)
@@ -285,6 +291,7 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 				return Result{}, fmt.Errorf("%w: coastline: %v", ErrIncomplete, err)
 			}
 			log.Warn("coastline incomplete", "course", c.ID, "err", err)
+			partial = !b.Preview
 		}
 		o.SeaDistance = co.Distance
 		// Sand, scrub and heath by the sea are dunes (scenery/dunes.go).
@@ -307,6 +314,9 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 	if c.Credit != "" {
 		o.Attribution = append(o.Attribution, "route: "+c.Credit)
 	}
+	if partial {
+		o.Stamp = PartialStamp(c)
+	}
 	enter(PhaseBuild)
 	o.Progress = func(f float64) { tr.step(0, 0, f) }
 	buildAt := time.Now()
@@ -317,7 +327,7 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 	if err != nil {
 		return Result{}, err
 	}
-	return Result{World: w, MapInfo: mapInfo}, nil
+	return Result{World: w, MapInfo: mapInfo, Partial: partial}, nil
 }
 
 // Anchor is the regional frame's origin for a course starting at lat, lon:
@@ -333,6 +343,14 @@ func Anchor(lat, lon float64) (float64, float64) {
 
 // PreviewStamp is the stamp of course c's preview world.
 func PreviewStamp(c *course.Course) string { return "preview-" + Stamp(c) }
+
+// PartialStamp is the stamp of course c's world built with map data or
+// the coastline missing (owner, 2026-10-22: the Lakes Route's world was
+// built while the map data server failed, grass and a path in place of
+// the D486 from 5 km on, and stamped current it was never built again).
+// It is never current, so -if-stale builds it again, fetching; until
+// then it is the course's preview.
+func PartialStamp(c *course.Course) string { return "partial-" + Stamp(c) }
 
 // Stamp identifies what course c's world is built from: the course as
 // loaded (its line every 10 m, its profile, its name and length) and the

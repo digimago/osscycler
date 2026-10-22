@@ -254,7 +254,7 @@ func Build(c *course.Course, o Options) (*World, error) {
 			}
 		}
 		n := &network{lines: lines, stretches: stretches, o: o}
-		lines = append(lines, n.ownWays(pd, px, py, pz, f)...)
+		lines = append(lines, n.ownWays(pd, px, py, pz, f, c.Loop)...)
 	} else {
 		// No map roads: the road is the route's, as in the classic builder.
 		lines = routeLines(c, line, stretches, func(float64) int { return -1 }, func(int) bool { return false }, true, o, t.liftAt)

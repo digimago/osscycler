@@ -1112,3 +1112,25 @@ func TestLandBetweenCloseRoadsIsLevel(t *testing.T) {
 		t.Error("roads 9.5 m apart made an island")
 	}
 }
+
+// A loop whose own way runs across its start and finish (a map road
+// elsewhere on it) has one way there, not two ending at the line with
+// grass between them (2026-10-22, the figure 8 after its village was
+// mapped: 2 m off the road at 5.0 km).
+func TestLoopOwnWayCrossesItsLine(t *testing.T) {
+	c := course.Tracks()[0] // the oval, its line at the home straight's start
+	el := scenery.Element{Type: "way", ID: 1, Tags: map[string]string{"highway": "unclassified"}}
+	for d := 210.0; d <= 280; d += 5 { // along the back straight
+		lat, lon := c.Position(d)
+		el.Geometry = append(el.Geometry, scenery.LatLon{Lat: lat, Lon: lon})
+		el.Nodes = append(el.Nodes, int64(len(el.Nodes)+1))
+	}
+	data := &scenery.Data{Elements: []scenery.Element{el}}
+	w, err := Build(c, Options{Generator: "test", Land: scenery.NewLandMap(c, data), Scenery: scenery.Build(c, data)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := w.Check(); r.OffRoadM > 0 {
+		t.Errorf("the riding line %.1f m off the road: %+v", r.OffRoadM, r.OffRoad)
+	}
+}

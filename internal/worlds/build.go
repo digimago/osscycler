@@ -336,12 +336,17 @@ func PreviewStamp(c *course.Course) string { return "preview-" + Stamp(c) }
 
 // Stamp identifies what course c's world is built from: the course as
 // loaded (its line every 10 m, its profile, its name and length) and the
-// builder's version. A GPX edited or a builder that builds differently
-// gives another stamp.
+// builder's version, and for a test track the version of its made-up
+// surroundings. A GPX edited, a builder that builds differently or a
+// track's surroundings remade gives another stamp.
 func Stamp(c *course.Course) string {
 	// As the graph builder's were while there were two builders: "g", its
 	// version, and a hash with its name.
-	return fmt.Sprintf("g%d-%s", BuilderVersion, stampHash(c, world.Engine+" "+strconv.Itoa(BuilderVersion)))
+	version := world.Engine + " " + strconv.Itoa(BuilderVersion)
+	if c.Builtin {
+		version += " tracks " + strconv.Itoa(scenery.TracksVersion)
+	}
+	return fmt.Sprintf("g%d-%s", BuilderVersion, stampHash(c, version))
 }
 
 // Dir is where course id's world goes in the worlds directory out.

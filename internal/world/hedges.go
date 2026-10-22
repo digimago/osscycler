@@ -211,7 +211,7 @@ func hedges(t *terrain, s *surface, sp *spots, wp *wayPlaces) []plant {
 			s: float32(scale), yaw: float32(math.Atan2(dn, de))})
 	}
 	free := func(e, n, margin float64) bool {
-		return sp.roadNear(e, n, margin, -1) < 0 && !sp.inArea(e, n) &&
+		return sp.roadNear(e, n, margin, -1) < 0 && !sp.inArea(e, n) && !sp.byMotorway(e, n) &&
 			(t.surfaces == nil || t.surfaces.dist(e, -n, margin) >= margin)
 	}
 	type plotKey struct {
@@ -282,8 +282,8 @@ func hedges(t *terrain, s *surface, sp *spots, wp *wayPlaces) []plant {
 				off := a.edge + gap/2
 				for k := math.Ceil(math.Min(sa, sb) / hedgeStepM); k*hedgeStepM < math.Max(sa, sb); k++ {
 					e, n := at((k*hedgeStepM-sa)/(sb-sa), rx, rn, off)
-					if sp.roadNear(e, n, 0.4, -1) >= 0 || sp.inArea(e, n) {
-						continue
+					if sp.roadNear(e, n, 0.4, -1) >= 0 || sp.inArea(e, n) || sp.byMotorway(e, n) {
+						continue // a motorway's central reservation is grass
 					}
 					// 0.8-1 m, its height easing from one 20 m stretch's to
 					// the next's (a step showed where it jumped).

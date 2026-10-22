@@ -17,20 +17,31 @@ import (
 // Where the route rides on no road of the map (a cycle path the map data
 // leaves out, or the test tracks) the road is built along the route.
 const (
-	clipM       = 150.0 // roads are drawn this far from the route
-	minLineM    = 10.0  // pieces of road shorter than this are left out, unless they join roads at both ends
-	heightSpanM = 15.0  // a road's height from the ground model is smoothed over this far each way (roads are graded)
-	overlapM    = 10.0  // a stretch built along the route reaches this far onto the roads at its ends
-	routeSinkM  = 0.01  // and lies this much below them, so they show on top
+	clipM = 150.0 // roads are drawn this far from the route
+	// motorwayClipM: motorways this far, out towards the land's edge
+	// (CorridorM, 300 m by default), so one runs on out of the rider's
+	// sight rather than ending on its embankment within it.
+	motorwayClipM = 250.0
+	minLineM      = 10.0 // pieces of road shorter than this are left out, unless they join roads at both ends
+	heightSpanM   = 15.0 // a road's height from the ground model is smoothed over this far each way (roads are graded)
+	// motorwaySpanM: a motorway's, this far (graded for 120 km/h, it
+	// keeps its line over the land's swells rather than following them).
+	motorwaySpanM = 100.0
+	overlapM      = 10.0 // a stretch built along the route reaches this far onto the roads at its ends
+	routeSinkM    = 0.01 // and lies this much below them, so they show on top
 )
 
 // roadLine is one road drawn in the world.
 type roadLine struct {
 	samples []sample // every fineStep or less along it (d: along the line)
 	smooth  *smoothLine
-	loop    bool  // the course's own line on a loop (passes compare round the loop)
-	route   bool  // built along the route
-	ways    []int // the map's ways it is made of
+	loop    bool // the course's own line on a loop (passes compare round the loop)
+	route   bool // built along the route
+	// motorway: a motorway's carriageway, never ridden, clipped further
+	// from the route (motorwayClipM) and met by other roads only on
+	// other levels (layers.go).
+	motorway bool
+	ways     []int // the map's ways it is made of
 	// nodes are where the map's nodes lie along it.
 	nodes map[int64][]float64
 }
@@ -101,11 +112,12 @@ func trimLinesInLots(ls []*roadLine, lots []scenery.Parking) []*roadLine {
 	return out
 }
 
-// drawable says whether way k is drawn: motorways (viaducts and tunnels
-// come later), driveways, and tunnels the route doesn't ride are left
-// out. Bridges are drawn, on decks (bridges.go).
+// drawable says whether way k is drawn: driveways, and tunnels the route
+// doesn't ride are left out. Bridges are drawn, on decks (bridges.go);
+// motorways too, though never ridden or met on the level: where one
+// crosses the route, one lies over the other (layers.go).
 func drawable(w scenery.Way, ridden bool) bool {
-	if w.Motorway || w.Driveway || w.Roundabout {
+	if w.Driveway || w.Roundabout {
 		return false // a roundabout is drawn as one (roundabout.go)
 	}
 	return ridden || !w.Tunnel
@@ -143,8 +155,11 @@ func chains(ws []scenery.Way, ridden map[int]bool) [][]chainPoint {
 		if incid[n] != 2 || len(ends[n]) != 2 {
 			return -1
 		}
+		// A tunnel's piece goes on from the road it leads under, whatever
+		// either is named ("Dike" and "Dike tunnel"): apart, the tunnel was
+		// a line of its own with no portals.
 		for _, o := range ends[n] {
-			if o != k && sameRoad(ws[o], ws[k]) {
+			if o != k && (sameRoad(ws[o], ws[k]) || ws[o].Tunnel != ws[k].Tunnel) {
 				return o
 			}
 		}
@@ -212,8 +227,9 @@ func chains(ws []scenery.Way, ridden map[int]bool) [][]chainPoint {
 }
 
 // networkLines are the map's roads near the route as lines, sampled,
-// with their surface, sidewalks and lanes, clipped to clipM from it.
-func networkLines(ws []scenery.Way, ridden map[int]bool, near func(e, n float64) bool) []*roadLine {
+// with their surface, sidewalks and lanes, clipped where near says (for
+// motorways, which near is told: they reach further, motorwayClipM).
+func networkLines(ws []scenery.Way, ridden map[int]bool, near func(e, n float64, motorway bool) bool) []*roadLine {
 	// How many drawn ways pass each node: a short road with others at both
 	// ends links two junctions and is drawn (2026-10-09: an 8.7 m piece of
 	// Rhenen's Herenstraat between two junctions was left out, and the
@@ -263,16 +279,17 @@ func networkLines(ws []scenery.Way, ridden map[int]bool, near func(e, n float64)
 			}
 			return ch[min(i, len(ch)-1)]
 		}
+		motorway := ws[ch[0].way].Motorway
 		var run []sample
 		flush := func() {
 			if len(run) >= 2 && (run[len(run)-1].d-run[0].d >= minLineM || link) {
-				out = append(out, &roadLine{samples: run, smooth: sl, ways: wayIDs, nodes: nodes})
+				out = append(out, &roadLine{samples: run, smooth: sl, ways: wayIDs, nodes: nodes, motorway: motorway})
 			}
 			run = nil
 		}
 		for _, at := range sl.stations(fineStep) {
 			e, n := sl.at(at)
-			if !near(e, n) {
+			if !near(e, n, motorway) {
 				flush()
 				continue
 			}
@@ -396,7 +413,11 @@ func heightsStraight(l *roadLine, t *terrain, ws []scenery.Way, straight func(sc
 		i = j
 	}
 	if byDistance {
-		smoothByDistance(ss, base)
+		span := heightSpanM
+		if l.motorway {
+			span = motorwaySpanM
+		}
+		smoothByDistance(ss, base, span)
 		return
 	}
 	span := max(1, int(math.Round(heightSpanM/fineStep)))
@@ -412,20 +433,20 @@ func heightsStraight(l *roadLine, t *terrain, ws []scenery.Way, straight func(sc
 }
 
 // smoothByDistance sets each sample's height to base smoothed over
-// heightSpanM each way along the road, a triangle in metres, each sample
+// span each way along the road, a triangle in metres, each sample
 // weighed by the stretch it stands for. Samples aren't evenly spaced
 // (finishRoad adds them through bends and at cuts): counted in samples,
 // the smoothing shrank to a few metres where they crowd, and a short lane
 // climbing beside the Rue du Hohneck (owner, 2026-10-16, 1.34 km of the
 // Route des Américains) kept the ground model's wall as a 40 % ramp.
-func smoothByDistance(ss []sample, base []float64) {
+func smoothByDistance(ss []sample, base []float64, span float64) {
 	n := len(ss)
 	w := make([]float64, n) // the stretch each sample stands for
 	for i := range ss {
 		lo, hi := ss[max(0, i-1)].d, ss[min(n-1, i+1)].d
 		w[i] = math.Max((hi-lo)/2, 1e-3)
 	}
-	r := heightSpanM + fineStep
+	r := span + fineStep
 	a := 0
 	for i := range ss {
 		for a < i && ss[i].d-ss[a].d >= r {
@@ -1249,7 +1270,11 @@ func deepSkirts(ls []*roadLine) {
 			for gy := k[1] - 1; gy <= k[1]+1; gy++ {
 				for _, r := range grid[[2]int{gx, gy}] {
 					ss := ls[r.l].samples
-					if r.l == self || r.i+1 >= len(ss) || ss[r.i].again {
+					// A road in a tunnel is under the ground: an edge over it
+					// skirted down into the tube (owner, 2026-10-22: the
+					// motorway over the figure 8's tunnel "supported by flaps
+					// of dark material").
+					if r.l == self || r.i+1 >= len(ss) || ss[r.i].again || inTunnel(ss, r.i) {
 						continue
 					}
 					a, b := ss[r.i], ss[r.i+1]

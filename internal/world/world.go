@@ -256,6 +256,7 @@ type sample struct {
 	onPatch    bool // within a junction's span: the junction draws the surface
 	underPatch bool // a road not of the junction, lying on its patch
 	aloft      bool // on a bridge or viaduct, off the ground (cut terrain)
+	tunnel     bool // in a tunnel: the land closes over it (tunnels.go)
 	oneway     int8 // traffic only along the line (1), only against it (-1), or both (0)
 	way        int  // the map's way it belongs to (network roads)
 	line       int  // the road line it belongs to (the terrain's samples)
@@ -370,21 +371,24 @@ func (w *World) addBuildings(t *terrain, fps []scenery.Footprint) error {
 // Chunks are what renderers cull and later thin out by distance, as with
 // the terrain and buildings; a stretch split at a chunk's edge ends and
 // goes on at the same sample, so its two halves share their vertices.
-func roadPrims(lines []*roadLine, patches []patch, chunkM float64, m roadMaterials, v *verger) (byChunk, decks map[[2]int][]gltf.Primitive) {
+func roadPrims(lines []*roadLine, patches []patch, chunkM float64, m roadMaterials, v *verger) (byChunk, decks, tunnels map[[2]int][]gltf.Primitive) {
 	key := func(e, n float64) [2]int { return [2]int{int(math.Floor(e / chunkM)), int(math.Floor(n / chunkM))} }
-	byChunk, decks = map[[2]int][]gltf.Primitive{}, map[[2]int][]gltf.Primitive{}
+	byChunk, decks, tunnels = map[[2]int][]gltf.Primitive{}, map[[2]int][]gltf.Primitive{}, map[[2]int][]gltf.Primitive{}
 	for _, l := range lines {
 		ss := l.samples
 		mid := func(i int) [2]int { return key((ss[i].e+ss[i+1].e)/2, (ss[i].n+ss[i+1].n)/2) }
 		for i := 0; i+1 < len(ss); {
-			k, dk := mid(i), onDeck(ss, i)
+			k, dk, tk := mid(i), onDeck(ss, i), inTunnel(ss, i)
 			j := i + 1
-			for j+1 < len(ss) && mid(j) == k && onDeck(ss, j) == dk {
+			for j+1 < len(ss) && mid(j) == k && onDeck(ss, j) == dk && inTunnel(ss, j) == tk {
 				j++
 			}
 			to := byChunk
-			if dk {
+			switch {
+			case dk:
 				to = decks // a bridge's road: kept apart, it cuts nothing
+			case tk:
+				to = tunnels // a tunnel's: the land closes over it (tunnels.go)
 			}
 			to[k] = append(to[k], roadMesh(ss[i:j+1], ss, i, l.smooth, l.loop, m, v)...)
 			i = j
@@ -398,7 +402,7 @@ func roadPrims(lines []*roadLine, patches []patch, chunkM float64, m roadMateria
 		k := key(ce, cn)
 		byChunk[k] = append(byChunk[k], patchMeshes(p, m, v)...)
 	}
-	return byChunk, decks
+	return byChunk, decks, tunnels
 }
 
 // addRoads adds the roads and junctions: a node per chunk, a primitive

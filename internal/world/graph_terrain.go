@@ -61,7 +61,10 @@ type gland struct {
 	t     *terrain
 	roads *landSurface // what the land goes round (decks excluded: the ground goes on under bridges)
 	decks *landSurface // the decks, which the land keeps under (nil: none)
-	water int          // the water material: a shore refines to gWaterS, a road's edge to the smallest cell
+	// tunnels: where the land lies over a tunnel, at least at its roof's
+	// top (nil: none).
+	tunnels *tunnelFloors
+	water   int // the water material: a shore refines to gWaterS, a road's edge to the smallest cell
 	// waters indexes the water sheets alone, so the land tells quickly
 	// whether a ditch is near (ditchBank); nil: none.
 	waters *landSurface
@@ -128,8 +131,8 @@ func newGland(t *terrain, roads *landSurface, lines []*roadLine) *gland {
 	for _, l := range lines {
 		for i := 0; i+1 < len(l.samples); i++ {
 			a := l.samples[i]
-			if a.aloft && l.samples[i+1].aloft {
-				continue // a bridge: the ground goes on under it
+			if a.aloft && l.samples[i+1].aloft || inTunnel(l.samples, i) {
+				continue // a bridge: the ground goes on under it; a tunnel: over it
 			}
 			k := len(g.samps)
 			g.samps = append(g.samps, a, l.samples[i+1])
@@ -522,8 +525,33 @@ func (g *gland) height(e, n float64, wet bool) float64 {
 			}
 		}
 	}
+	// Over a tunnel: at least its roof's top.
+	if f, ok := g.tunnels.at(e, n); ok {
+		h = math.Max(h, f)
+	}
 	return h
 }
+
+// slopePaving is the concrete paving of the slopes under a deck (owner,
+// 2026-10-22: an underpass's banks are paved against erosion).
+var slopePaving = srgbLinear(0x9d9a92)
+
+// underDeck tells whether e, n lies under a deck or within underDeckPadM
+// of its edge.
+func (g *gland) underDeck(e, n float64) bool {
+	if g.decks == nil {
+		return false
+	}
+	for _, d := range [5][2]float64{{0, 0}, {underDeckPadM, 0}, {-underDeckPadM, 0}, {0, underDeckPadM}, {0, -underDeckPadM}} {
+		if _, ok := g.decks.at(e+d[0], n+d[1]); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// underDeckPadM: the paving reaches this far past a deck's edge.
+const underDeckPadM = 0.6
 
 // coarseNear are the route's coarse samples that shape chunk key's ground
 // (as terrain.lists has them).
@@ -792,6 +820,9 @@ var gProbeCos, gProbeSin = func() (c, s [8]float64) {
 // whatever the road's centre line says.
 func (g *gland) landHeight(e, n float64) float64 {
 	h := g.heightAt(e, n)
+	if _, over := g.tunnels.at(e, n); over {
+		return h // over a portal's open end: the headwall closes it
+	}
 	if r, ok := g.roads.low(e, n); ok {
 		h = math.Min(h, r-gSinkM)
 	}
@@ -815,6 +846,9 @@ func (g *gland) crossing(ae, an, be, bn float64) (float64, float64) {
 // edgeHeight is the land's height at a point of its edge: just under the
 // road there.
 func (g *gland) edgeHeight(e, n, towardE, towardN float64) float64 {
+	if _, over := g.tunnels.at(e, n); over {
+		return g.heightAt(e, n) // at a portal: the roof's height, over the open road's end
+	}
 	l := math.Hypot(towardE-e, towardN-n)
 	if l > 0 {
 		if h, ok := g.roads.low(e+0.05*(towardE-e)/l, n+0.05*(towardN-n)/l); ok {
@@ -854,6 +888,9 @@ func (g *gland) chunk(key [2]int, material, waterMaterial int) (ground, water gl
 			land = verdure
 		}
 		c := styleFor(t.o.Region).landColour(land)
+		if g.underDeck(e, n) {
+			c = slopePaving
+		}
 		p.Colors = append(p.Colors, c[0], c[1], c[2])
 		return v
 	}
@@ -1425,6 +1462,9 @@ func (g *gland) underRoads(meshes []gltf.Primitive) {
 	}
 	for _, p := range meshes {
 		for v := 0; 3*v+2 < len(p.Positions); v++ {
+			if _, over := g.tunnels.at(float64(p.Positions[3*v]), -float64(p.Positions[3*v+2])); over {
+				continue // over a tunnel's portal: under the headwall, not the road
+			}
 			if y, ok := low[vkey{p.Positions[3*v], -p.Positions[3*v+2]}]; ok && y < p.Positions[3*v+1] {
 				p.Positions[3*v+1] = y
 			}

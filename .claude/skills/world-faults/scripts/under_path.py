@@ -12,10 +12,12 @@ for the path's own line), the surfaces drawn over it, and a verdict:
     HOLE      nothing at all: the sky shows through
     LAND      terrain 2 cm or more above the uppermost road (World.Check's
               land over road)
+    tunnel    a road with a tunnel's structure over it (the land over that
+              is the tunnel's cover)
     OTHER     something else uppermost (bridge deck, island, running track,
               water...): often right, sometimes not
 
-Runs of the same verdict are merged; only runs that aren't "road" are
+Runs of the same verdict are merged; only runs that aren't "road" (or "tunnel") are
 printed unless -v. The world's own check (World.Check) looks within 40 m
 of the path for holes and land over road; it cannot see a MISSING road,
 since the terrain there is whole.
@@ -26,7 +28,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from glb import LAND, ROAD, Grid, World  # noqa: E402
+from glb import LAND, ROAD, ROOF, Grid, World  # noqa: E402
 
 
 def verdict(hits):
@@ -38,6 +40,9 @@ def verdict(hits):
     names = ", ".join(sorted({f"{m} ({n})" for m, n, _ in hits}))
     if not roads:
         return ("MISSING" if top[0] in LAND else "OTHER"), names
+    roofs = [h for h in hits if h[0] in ROOF]
+    if roofs and max(h[2] for h in roofs) > max(h[2] for h in roads):
+        return "tunnel", names
     if lands and max(h[2] for h in lands) >= max(h[2] for h in roads) + 0.02:
         return "LAND", names
     return ("road" if top[0] in ROAD else "OTHER"), names
@@ -76,9 +81,9 @@ def main():
     line = "centre line" if a.centre else "riding line"
     bad = 0
     for d0, d1, v, names in runs:
-        if v != "road":
+        if v not in ("road", "tunnel"):
             bad += 1
-        if v != "road" or a.v:
+        if v not in ("road", "tunnel") or a.v:
             print(f"{d0:9.1f}-{d1:9.1f} m  {v:8s} {'; '.join(sorted(names))}")
     print(f"{line}, {a.frm:.0f}-{a.to:.0f} m every {a.step:g} m: {bad} run(s) not on a road")
 

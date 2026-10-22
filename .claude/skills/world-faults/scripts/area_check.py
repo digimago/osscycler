@@ -60,9 +60,10 @@ for j in range(int((z1 - z0) / c)):
         hs = g.at(x, z)
         land = [h for m, n, h in hs if m in glb.LAND]
         road = [h for m, n, h in hs if m in road_mats]
+        roof = [h for m, n, h in hs if m in glb.ROOF]
         if not hs:
             holes.append((x, z, np_[1], 0))
-        elif land and road and max(land) > max(road) + 0.02:
+        elif land and road and max(land) > max(road) + 0.02 and not (roof and max(roof) > max(road)):
             over.append((x, z, np_[1], max(land) - max(road)))
 
 

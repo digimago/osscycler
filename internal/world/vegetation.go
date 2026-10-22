@@ -109,7 +109,7 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 	sp := newSpots(t, land, fps, parks)
 	roadNear, inArea := sp.roadNear, sp.inArea
 	clearOf := func(e, n, m float64) bool {
-		return roadNear(e, n, m, -1) < 0 && (t.surfaces == nil || t.surfaces.dist(e, -n, m) >= m)
+		return roadNear(e, n, m, -1) < 0 && (t.surfaces == nil || t.surfaces.dist(e, -n, m) >= m) && !sp.byMotorway(e, n)
 	}
 	onRoad := func(e, n float64) bool { return !clearOf(e, n, clearRoadM) }
 	// inGarden: beside a house (a wall within gardenHouseM) and at least
@@ -880,11 +880,30 @@ type spots struct {
 	// sidewalks), building wall or car park edge: 0 on or in one, at most
 	// max.
 	clearance func(e, n, max float64) float64
-	land      *scenery.LandMap
+	// byMotorway tells whether e, n lies within motorwayClearM of a
+	// motorway's edge, where nothing is planted.
+	byMotorway func(e, n float64) bool
+	land       *scenery.LandMap
 }
 
 func newSpots(t *terrain, land *scenery.LandMap, fps []scenery.Footprint, parks []scenery.Parking) *spots {
 	sp := &spots{roads: newRouteGrid(t.fine, 10), land: land}
+	var mw []sample
+	for _, s := range t.fine {
+		if s.line >= 0 && s.line < len(t.motorways) && t.motorways[s.line] {
+			mw = append(mw, s)
+		}
+	}
+	mwGrid := newRouteGrid(mw, motorwayClearM+motorwayReachM)
+	sp.byMotorway = func(e, n float64) bool {
+		by := false
+		if len(mw) > 0 {
+			mwGrid.within(e, n, motorwayClearM+motorwayReachM, func(i int) {
+				by = by || math.Hypot(mw[i].e-e, mw[i].n-n) < mw[i].edge+motorwayClearM
+			})
+		}
+		return by
+	}
 	sp.roadNear = func(e, n, margin float64, skip int) int {
 		hit := -1
 		sp.roads.within(e, n, 10, func(i int) {

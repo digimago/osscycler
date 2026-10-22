@@ -30,6 +30,8 @@ type terrain struct {
 	// course (0 without one): heights are the model's own.
 	lift  func(d float64) float64
 	loops []bool // by line: the course's own loop
+	// motorways: by line, a motorway's carriageway (motorways.go).
+	motorways []bool
 	// cut: the roads are cut out of the terrain (worlds with a ground
 	// model; see verges.go): the terrain is the ground model, unflattened,
 	// and drops the cells its roads and their verges cover.

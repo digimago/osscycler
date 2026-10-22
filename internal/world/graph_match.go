@@ -97,6 +97,9 @@ func (g *gnet) matchCourse(steps int, step float64, own [][4]float64, heading []
 	grid := map[cell][]sampleRef{}
 	key := func(e, n float64) cell { return cell{int(math.Floor(e / cellM)), int(math.Floor(n / cellM))} }
 	for _, l := range g.lines {
+		if l.motorway {
+			continue // never ridden
+		}
 		for i, s := range l.samples {
 			k := key(s.e, s.n)
 			grid[k] = append(grid[k], sampleRef{l, i})

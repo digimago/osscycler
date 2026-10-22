@@ -154,3 +154,6 @@ class Grid:
 # Materials as World.Check (internal/world/check.go) classes them.
 LAND = {"terrain"}
 ROAD = {"road", "cycle lane", "sidewalk", "kerb", "roundabout centre", "start line"}
+# A tunnel's structure: land over a road with this over the road too is
+# the land over a tunnel, not grass through the asphalt (World.Check).
+ROOF = {"tunnel"}

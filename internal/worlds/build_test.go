@@ -159,3 +159,36 @@ func TestCompleteBuildNeedsEverythingCached(t *testing.T) {
 		}
 	}
 }
+
+// A world built while map data was missing (not cached, the server
+// down) is stamped partial: never current, so it is built again, fetching,
+// when next asked for (owner, 2026-10-22: the Lakes Route's world, built
+// while the map data server failed, had a path over grass where the D486
+// runs, and stamped current it was never built again).
+func TestPartialWorldIsNeverCurrent(t *testing.T) {
+	var c *course.Course
+	for _, x := range course.Included() {
+		if !x.Builtin && (c == nil || x.Distance < c.Distance) {
+			c = x
+		}
+	}
+	maps := scenery.NewStore(scenery.Config{CacheDir: t.TempDir(), Fetch: false}, nil)
+	b := &Builder{Ground: "none", DEMCache: t.TempDir(), Maps: maps, Options: world.Options{Generator: "test"}}
+	res, err := b.Build(context.Background(), c, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Partial || res.World.Manifest.Stamp != PartialStamp(c) {
+		t.Fatalf("partial %v, stamp %q, want %q", res.Partial, res.World.Manifest.Stamp, PartialStamp(c))
+	}
+	dir := t.TempDir()
+	if err := res.World.Write(Dir(dir, c.ID)); err != nil {
+		t.Fatal(err)
+	}
+	if Find([]string{dir}, c.ID, Stamp(c)) != "" {
+		t.Error("the partial world was taken for a current one")
+	}
+	if PartialStamp(c) == Stamp(c) || PartialStamp(c) == PreviewStamp(c) {
+		t.Errorf("stamps %q %q %q", PartialStamp(c), Stamp(c), PreviewStamp(c))
+	}
+}

@@ -454,7 +454,8 @@ func joinNearEnds(ws []scenery.Way, ridden map[int]bool) []scenery.Way {
 	out := append([]scenery.Way(nil), ws...)
 	use := func(k int) bool {
 		w := out[k]
-		return len(w.Line) >= 2 && len(w.Nodes) == len(w.Line) && drawable(w, ridden[k])
+		// Motorways meet only their own slip roads, where the map has them.
+		return len(w.Line) >= 2 && len(w.Nodes) == len(w.Line) && drawable(w, ridden[k]) && !w.Motorway
 	}
 	count := map[int64]int{}
 	for k := range out {

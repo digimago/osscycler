@@ -241,6 +241,10 @@ type Way struct {
 	Sidewalk, CycleLane                 [2]bool
 	Bridge, Tunnel, Embankment, Cutting bool
 	Motorway                            bool
+	// Layer is the map's layer: which of two ways crossing lies over the
+	// other (0 when untagged; a bridge or tunnel that says none is 1 or
+	// -1 by OpenStreetMap's convention).
+	Layer int
 	// Oneway: 1 traffic goes the way's own direction only, -1 against it
 	// only, 0 both ways (roundabouts and motorways are one-way).
 	Oneway int
@@ -281,6 +285,7 @@ func ways(roads []*road, built func(x, y float64) bool) []Way {
 			Sidepath:   t["bicycle"] == "no" || t["bicycle"] == "use_sidepath",
 			Lanes:      atoi(t["lanes"]),
 			Ref:        t["ref"],
+			Layer:      layerOf(t),
 		}
 		for i := range rd.x {
 			w.Line = append(w.Line, [2]float64{rd.x[i], rd.y[i]})
@@ -395,6 +400,21 @@ func oneway(t map[string]string, motorway bool) int {
 }
 
 // atoi is s as a whole number, 0 if it isn't one.
+// layerOf is a way's layer: tagged, else 1 on a bridge and -1 in a
+// tunnel, else 0.
+func layerOf(t map[string]string) int {
+	if v, err := strconv.Atoi(strings.TrimSpace(t["layer"])); err == nil {
+		return v
+	}
+	switch {
+	case yes(t["bridge"]):
+		return 1
+	case yes(t["tunnel"]):
+		return -1
+	}
+	return 0
+}
+
 func atoi(s string) int {
 	n, err := strconv.Atoi(strings.TrimSpace(s))
 	if err != nil {

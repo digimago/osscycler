@@ -31,7 +31,7 @@ func TestSmoothByDistanceIgnoresCrowding(t *testing.T) {
 			base[i] = 1.2
 		}
 	}
-	smoothByDistance(ss, base)
+	smoothByDistance(ss, base, heightSpanM)
 	worst := 0.0
 	for i := 1; i < len(ss); i++ {
 		worst = math.Max(worst, (ss[i].ele-ss[i-1].ele)/(ss[i].d-ss[i-1].d))
@@ -165,7 +165,7 @@ func TestMinorRoadMouthIsFlat(t *testing.T) {
 		{Line: [][2]float64{{-100, 0}, {0, 0}, {100, 0}}, Nodes: []int64{1, 2, 3}, Name: "Main", Class: "secondary", WidthM: 6},
 		{Line: [][2]float64{{0, 0}, {0, 100}}, Nodes: []int64{2, 4}, Name: "Side", Class: "residential", WidthM: 4},
 	}
-	ls := networkLines(ways, nil, func(e, n float64) bool { return true })
+	ls := networkLines(ways, nil, func(e, n float64, _ bool) bool { return true })
 	for _, l := range ls {
 		for i := range l.samples {
 			s := &l.samples[i]
@@ -580,6 +580,24 @@ func TestEdgeSkirtReachesTheLowerRoad(t *testing.T) {
 	}
 	if s.skirt[0] > 0 {
 		t.Errorf("the left skirt, nothing beside it, is %.2f m deep, want the usual", s.skirt[0])
+	}
+}
+
+// A road over a tunnel's road keeps its usual skirts: the tunnel is under
+// the ground, its tube between (owner, 2026-10-22: skirted down past it,
+// the figure 8's motorway stood on "flaps of dark material" in the tube).
+func TestEdgeSkirtStaysOutOfATunnel(t *testing.T) {
+	over, tunnel := &roadLine{}, &roadLine{}
+	for i := 0; i <= 20; i++ {
+		d := float64(i) * fineStep
+		over.samples = append(over.samples, sample{d: d, e: 0, n: d, ele: 15.5, hw: 5.5})
+		tunnel.samples = append(tunnel.samples, sample{d: d, e: d - 20, n: 20, ele: 10, hw: 2.5, tunnel: true})
+	}
+	deepSkirts([]*roadLine{over, tunnel})
+	for _, s := range over.samples {
+		if s.skirt[0] > 0 || s.skirt[1] > 0 {
+			t.Fatalf("at %.0f m the road over the tunnel skirts %.2f, %.2f m down, want the usual", s.d, s.skirt[0], s.skirt[1])
+		}
 	}
 }
 

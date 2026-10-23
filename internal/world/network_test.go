@@ -150,7 +150,7 @@ func TestShortLinksAreDrawn(t *testing.T) {
 	}
 	ways[2].Line = [][2]float64{{-8, 0}, {-50, 0}, {-108, 0}}
 	ways[2].Nodes = []int64{3, 7, 4}
-	ls := networkLines(ways, nil, func(e, n float64) bool { return true })
+	ls := networkLines(ways, nil, func(e, n float64, _ bool) bool { return true })
 	drawn := map[int]bool{}
 	for _, l := range ls {
 		for _, s := range l.samples {

@@ -167,10 +167,15 @@ func run() error {
 				continue
 			}
 		}
-		// The test tracks build in a second or two: no preview for them.
+		// The test tracks build in a second or two: no preview for them. A
+		// world built with data missing is the preview while it is built
+		// again: closer to the real one than made-up countryside.
 		if *ifStale && *preview && !c.Builtin {
-			dir, err := buildPreview(ctx, b, c, *out, phase)
-			if err != nil {
+			if dir := worlds.Dir(*out, id); worlds.ReadStamp(dir) == worlds.PartialStamp(c) {
+				if *progress {
+					fmt.Println(worlds.PreviewPrefix + dir)
+				}
+			} else if dir, err := buildPreview(ctx, b, c, *out, phase); err != nil {
 				log.Warn("no preview world", "course", id, "err", err)
 			} else if *progress {
 				fmt.Println(worlds.PreviewPrefix + dir)

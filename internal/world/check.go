@@ -82,11 +82,14 @@ func (w *World) Check() CheckResult {
 		other = iota
 		land
 		road
+		roof // a tunnel's structure: the land over it is over a road
 	)
 	class := func(mat int) int {
 		switch w.doc.MaterialName(mat) {
 		case "terrain":
 			return land
+		case "tunnel":
+			return roof
 		}
 		if riddenMaterials[w.doc.MaterialName(mat)] {
 			return road
@@ -181,7 +184,7 @@ func (w *World) Check() CheckResult {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			top := make([][3]float32, cells*cells) // highest other, land, road
+			top := make([][4]float32, cells*cells) // highest other, land, road, roof
 			nearest := make([]int32, cells*cells)
 			for {
 				mu.Lock()
@@ -196,7 +199,7 @@ func (w *World) Check() CheckResult {
 				// Cells within reach of the path, and the nearest point.
 				for c := range nearest {
 					nearest[c] = -1
-					top[c] = [3]float32{float32(math.Inf(-1)), float32(math.Inf(-1)), float32(math.Inf(-1))}
+					top[c] = [4]float32{float32(math.Inf(-1)), float32(math.Inf(-1)), float32(math.Inf(-1)), float32(math.Inf(-1))}
 				}
 				best := make([]float64, cells*cells)
 				for _, i := range near[k] {
@@ -270,9 +273,9 @@ func (w *World) Check() CheckResult {
 					s := int(float64(i) * w.Manifest.Path.StepM / checkSpotM)
 					t := top[c]
 					switch {
-					case t[0] == ninf && t[1] == ninf && t[2] == ninf:
+					case t[0] == ninf && t[1] == ninf && t[2] == ninf && t[3] == ninf:
 						h[s] += checkCellM * checkCellM
-					case t[1] != ninf && t[2] != ninf && t[1] > t[2]+checkOverM:
+					case t[1] != ninf && t[2] != ninf && t[1] > t[2]+checkOverM && t[3] <= t[2]:
 						o[s] += checkCellM * checkCellM
 					}
 				}

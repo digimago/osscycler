@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/digimago/osscycler/internal/course"
+	"github.com/digimago/osscycler/internal/gltf"
 	"github.com/digimago/osscycler/internal/scenery"
 )
 
@@ -194,7 +195,7 @@ func TestGraphNodesShareAHeight(t *testing.T) {
 		{Line: [][2]float64{{-100, 0}, {0, 0}, {100, 0}}, Nodes: []int64{1, 2, 3}, Name: "Main", WidthM: 6},
 		{Line: [][2]float64{{0, 0}, {0, 100}}, Nodes: []int64{2, 4}, Name: "Side", WidthM: 4},
 	}
-	ls := networkLines(ways, nil, func(e, n float64) bool { return true })
+	ls := networkLines(ways, nil, func(e, n float64, _ bool) bool { return true })
 	for _, l := range ls {
 		for i := range l.samples {
 			s := &l.samples[i]
@@ -619,7 +620,7 @@ func TestJunctionsStopAtTheNext(t *testing.T) {
 		{Line: [][2]float64{{-80, 40}, {-17, 40}, {-3, 40}, {3, 40}, {80, 40}}, Nodes: []int64{7, 8, 3, 6, 9}, Name: "Side street", Class: "residential", WidthM: 5},
 		{Line: [][2]float64{{-17, -100}, {-17, 40}, {-17, 200}}, Nodes: []int64{10, 8, 11}, Name: "the next side street", Class: "residential", WidthM: 5},
 	}
-	ls := networkLines(ways, nil, func(e, n float64) bool { return true })
+	ls := networkLines(ways, nil, func(e, n float64, _ bool) bool { return true })
 	for _, l := range ls {
 		finishRoad(l.samples, 5)
 	}
@@ -650,7 +651,7 @@ func TestShortLinkOntoARoundaboutIsDrawn(t *testing.T) {
 		{Line: [][2]float64{{20, 0}, {120, 0}}, Nodes: []int64{1, 2}, Name: "Street", Class: "residential", WidthM: 5},
 		{Line: [][2]float64{{20, 0}, {20, 30}}, Nodes: []int64{1, 3}, Name: "Zijstraat", Class: "residential", WidthM: 5},
 	}
-	ls := networkLines(ways, nil, func(e, n float64) bool { return true })
+	ls := networkLines(ways, nil, func(e, n float64, _ bool) bool { return true })
 	drawn := map[int]bool{}
 	for _, l := range ls {
 		for _, s := range l.samples {
@@ -907,7 +908,7 @@ func TestTraceRemovesSpurs(t *testing.T) {
 		{Line: [][2]float64{{0, 100}, {5, 100.4}, {10, 100}}, Nodes: []int64{2, 5, 4}, Name: "Stub", Class: "service", WidthM: 3},
 		{Line: [][2]float64{{0, 100}, {10, 100}}, Nodes: []int64{2, 4}, Name: "Stub twin", Class: "service", WidthM: 3},
 	}
-	ls := networkLines(ways, nil, func(e, n float64) bool { return true })
+	ls := networkLines(ways, nil, func(e, n float64, _ bool) bool { return true })
 	g := newGnet(ls, ways, nil)
 	road, stub := -1, -1
 	for k, l := range g.lines[:g.virtual] {
@@ -1132,5 +1133,100 @@ func TestLoopOwnWayCrossesItsLine(t *testing.T) {
 	}
 	if r := w.Check(); r.OffRoadM > 0 {
 		t.Errorf("the riding line %.1f m off the road: %+v", r.OffRoadM, r.OffRoad)
+	}
+}
+
+// A dual carriageway's two short bridges over the course's own way (owner,
+// 2026-10-22, the N348 over the Posbank Loop's cycle underpass at 26.8
+// km): the way stays down between them, as low as under them, with no
+// bump; each deck rests on a bank seat (nothing of it reaches down to the
+// way, where its abutment had stood out of the bank as a pillar), and the
+// slopes under the decks are paved.
+func TestGraphOwnWayUnderTwoShortBridges(t *testing.T) {
+	c := graphCourse(t, "underpass2", append(along([2]float64{0, 0}, [2]float64{0, 400}, 20), [2]float64{0, 400}))
+	ground := func(lat, lon float64) (float64, bool) {
+		_, n := c.Project(lat, lon)
+		// An embankment 4 m high from 172 to 233 m, both carriageways on it.
+		return 10 + 4*smoothstep(math.Max(0, math.Min(1, (30.5-math.Abs(n-202.5))/6))), true
+	}
+	var ways []scenery.Way
+	for k, n := range []float64{190, 215} {
+		id := int64(10 * (k + 1))
+		ways = append(ways,
+			scenery.Way{Line: [][2]float64{{-150, n}, {-15, n}}, Nodes: []int64{id, id + 1}, Name: "N1", Class: "primary", WidthM: 7, Oneway: 1},
+			scenery.Way{Line: [][2]float64{{-15, n}, {15, n}}, Nodes: []int64{id + 1, id + 2}, Name: "N1", Class: "primary", WidthM: 7, Oneway: 1, Bridge: true, Layer: 1},
+			scenery.Way{Line: [][2]float64{{15, n}, {150, n}}, Nodes: []int64{id + 2, id + 3}, Name: "N1", Class: "primary", WidthM: 7, Oneway: 1})
+	}
+	on := routeOn(c.Distance, func(float64) int { return -1 })
+	w, err := Build(c, Options{Generator: "test", Elevation: ground, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	xyz := w.Manifest.Path.XYZ
+	height := func(n float64) float64 {
+		best, h := math.Inf(1), 0.0
+		for i := 0; 3*i < len(xyz); i++ {
+			if d := math.Abs(-xyz[3*i+2] - n); d < best {
+				best, h = d, xyz[3*i+1]
+			}
+		}
+		return h
+	}
+	a, b := height(190), height(215)
+	for n := 190.0; n <= 215; n += 5 {
+		if h := height(n); h > math.Max(a, b)+0.02 {
+			t.Errorf("between the bridges at %.0f m the way is %.2f m high, over %.2f and %.2f under them: a bump", n, h, a, b)
+		}
+	}
+	low := math.Inf(1)
+	for _, p := range w.prims {
+		if w.doc.MaterialName(p.Material) != "bridge" {
+			continue
+		}
+		for v := 1; v < len(p.Positions); v += 3 {
+			low = math.Min(low, float64(p.Positions[v]))
+		}
+	}
+	deck, _ := surfaceTop(w, "road", 8, 190) // the bridge's road, beside the way
+	// The lowest of a short span is its bank seat's foot, whatever the
+	// ground at its ends.
+	if seat := deck - deckDepthM - bankSeatM; math.Abs(low-seat) > 0.02 {
+		t.Errorf("the bridges reach down to %.2f m, not a bank seat's %.2f: an abutment down to the ground", low, seat)
+	}
+	paved := 0
+	for _, p := range w.prims {
+		if w.doc.MaterialName(p.Material) != "terrain" || len(p.Colors) == 0 {
+			continue
+		}
+		for v := 0; 3*v+2 < len(p.Positions); v++ {
+			e, n := float64(p.Positions[3*v]), -float64(p.Positions[3*v+2])
+			if math.Abs(e) > 3.2 && math.Abs(e) < 5 && math.Abs(n-190) < 2 { // beside the way, under the deck
+				if [3]float32{p.Colors[3*v], p.Colors[3*v+1], p.Colors[3*v+2]} != slopePaving {
+					t.Fatalf("the land under the bridge at %.1f, %.1f isn't paved", e, n)
+				}
+				paved++
+			}
+		}
+	}
+	if paved == 0 {
+		t.Error("no land under the bridge")
+	}
+}
+
+// A block is closed on all six sides (owner, 2026-10-22: a pier's
+// crosshead had no bottom face).
+func TestBoxIsClosed(t *testing.T) {
+	var p gltf.Primitive
+	f := deckFrame{c: [3]float64{0, 10, 0}, r: [3]float64{1, 0, 0}, along: [3]float64{0, 0, -1}}
+	box(&p, f, -1, 1, -0.5, 0.5, 8, -0.5, [3]float32{1, 1, 1})
+	if n := len(p.Indices) / 3; n != 12 {
+		t.Fatalf("%d triangles, want 12 (six faces)", n)
+	}
+	down := false
+	for v := 1; v < len(p.Normals); v += 3 {
+		down = down || p.Normals[v] < -0.99
+	}
+	if !down {
+		t.Error("no face looks down")
 	}
 }

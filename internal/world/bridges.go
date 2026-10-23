@@ -26,6 +26,7 @@ const (
 	footM      = 0.6  // walls and piers reach this far into the ground
 	deckMinM   = 6.0  // a run of deck shorter than this stays a road
 	railMinM   = 3.0  // a tagged bridge shorter than this gets no railings
+	bankSeatM  = 0.8  // a short span's bank seat, under its slab
 )
 
 // markDecks marks the road samples on a deck: over another road more than
@@ -50,12 +51,18 @@ func markDecks(lines []*roadLine, loopM float64, beside bool) {
 		deck := make([]bool, len(l.samples))
 		for i, s := range l.samples {
 			deck[i] = s.aloft
+			if s.tunnel {
+				deck[i] = false
+				continue // under the ground
+			}
 			k := key(s.e, s.n)
 			for gx := k[0] - 1; gx <= k[0]+1 && !deck[i]; gx++ {
 				for gy := k[1] - 1; gy <= k[1]+1 && !deck[i]; gy++ {
 					for _, r := range grid[[2]int{gx, gy}] {
 						o := lines[r.l].samples[r.i]
-						if o.ele > s.ele-bridgeM || math.Hypot(o.e-s.e, o.n-s.n) > o.edge+deckClearM+deckSlope*(s.ele-o.ele-bridgeM) {
+						// Over a tunnel the road lies on the ground (an
+						// embankment), not on a deck.
+						if o.tunnel || o.ele > s.ele-bridgeM || math.Hypot(o.e-s.e, o.n-s.n) > o.edge+deckClearM+deckSlope*(s.ele-o.ele-bridgeM) {
 							continue
 						}
 						if beside && r.l != li && alongsideAt(l.samples, i, lines[r.l].samples, r.i) {
@@ -196,23 +203,28 @@ type deckFrame struct {
 	butt        [2]bool // another road's surface continues at that edge: no beam or railing there
 }
 
+// frameOf is line l's cross-section at sample a: its edges with the
+// sidewalks, or the verges' widening without.
+func frameOf(l *roadLine, a sample) deckFrame {
+	x, y := l.smooth.at(a.d)
+	de, dn, _ := l.smooth.heading(a.d)
+	left, right := a.hw+a.wide[0], a.hw+a.wide[1]
+	if a.walk[0] {
+		left = a.hw + a.walkWidth(0)
+	}
+	if a.walk[1] {
+		right = a.hw + a.walkWidth(1)
+	}
+	return deckFrame{c: [3]float64{x, a.ele, -y}, r: [3]float64{dn, 0, de}, along: [3]float64{de, 0, -dn}, left: left, right: right, butt: a.butt}
+}
+
 // deck builds the structure of line l's deck from sample i to j; not
 // full, only its edge beams and railings (a low bridge drawn as road).
 func deck(prim func(e, n float64) *gltf.Primitive, s *surface, l *roadLine, i, j int, concrete, steel [3]float32, full bool) {
 	ss := l.samples
 	frames := make([]deckFrame, 0, j-i+1)
 	for k := i; k <= j; k++ {
-		a := ss[k]
-		x, y := l.smooth.at(a.d)
-		de, dn, _ := l.smooth.heading(a.d)
-		left, right := a.hw+a.wide[0], a.hw+a.wide[1]
-		if a.walk[0] {
-			left = a.hw + a.walkWidth(0)
-		}
-		if a.walk[1] {
-			right = a.hw + a.walkWidth(1)
-		}
-		frames = append(frames, deckFrame{c: [3]float64{x, a.ele, -y}, r: [3]float64{dn, 0, de}, along: [3]float64{de, 0, -dn}, left: left, right: right, butt: a.butt})
+		frames = append(frames, frameOf(l, ss[k]))
 	}
 	mid := frames[len(frames)/2].c
 	p := prim(mid[0], -mid[2])
@@ -296,13 +308,22 @@ func deck(prim func(e, n float64) *gltf.Primitive, s *surface, l *roadLine, i, j
 		return
 	}
 	// Abutments at both ends: a wall across under the deck's end, down
-	// into the ground, its face towards the span.
+	// into the ground, its face towards the span. A short span (no piers)
+	// rests on a bank seat on the embankment instead, the slope under it
+	// paved (gland, slopePaving): its abutment, down to the lowest ground
+	// across the deck, stood out of the bank as a pillar (owner,
+	// 2026-10-22, the N348 over the Posbank Loop's cycle underpass).
+	span := ss[j].d - ss[i].d
 	for _, end := range []struct {
 		f    deckFrame
 		back float64 // along the road, away from the span
 	}{{frames[0], -1}, {frames[len(frames)-1], 1}} {
 		f := end.f
 		w0, w1 := -f.left-edgeBeamW, f.right+edgeBeamW
+		if span < pierSpanM {
+			box(p, f, w0, w1, 0, end.back*abutmentT, f.c[1]-deckDepthM-bankSeatM, -0.02, concrete)
+			continue
+		}
 		low := math.Inf(1)
 		for x := w0; x <= w1+0.01; x += 1 {
 			q := at(f, x, 0)
@@ -311,7 +332,6 @@ func deck(prim func(e, n float64) *gltf.Primitive, s *surface, l *roadLine, i, j
 		box(p, f, w0, w1, 0, end.back*abutmentT, low-footM, -0.02, concrete)
 	}
 	// Piers under a long span: two columns and a crosshead.
-	span := ss[j].d - ss[i].d
 	if piers := int(span / pierSpanM); piers > 0 {
 		for q := 1; q <= piers; q++ {
 			f := frames[len(frames)*q/(piers+1)]
@@ -342,4 +362,7 @@ func box(p *gltf.Primitive, f deckFrame, x0, x1, a0, a1, low, top float64, c [3]
 	quad(p, lo(x0, a0), lo(x0, a1), hi(x0, a1), hi(x0, a0), scale3(r, -1), c)
 	quad(p, lo(x1, a0), lo(x1, a1), hi(x1, a1), hi(x1, a0), r, c)
 	quad(p, hi(x0, a0), hi(x1, a0), hi(x1, a1), hi(x0, a1), [3]float64{0, 1, 0}, c)
+	// Closed below too (owner, 2026-10-22: a pier's crosshead over the
+	// figure 8's motorway had no bottom face; every block a manifold).
+	quad(p, lo(x0, a0), lo(x1, a0), lo(x1, a1), lo(x0, a1), [3]float64{0, -1, 0}, c)
 }

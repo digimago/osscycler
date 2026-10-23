@@ -12,7 +12,8 @@ import (
 // up here, as map data, and go through the same land use, buildings and
 // road code as a real course's. The figure 8 has polder at its low end
 // (fields in long parcels between ditches, farmsteads, rows of trees) and
-// heath and forest at its high end, a hamlet where its roads cross; the
+// heath and forest at its high end, crossed by a motorway (motorway.go), a
+// hamlet where its roads cross; the
 // oval is a stadium (a running track round a pitch, grandstands along
 // the straights, car parks behind the bends). Seeded, so a track looks the
 // same every time.
@@ -20,7 +21,7 @@ import (
 // TracksVersion goes up when the tracks' made-up surroundings change, so
 // that their worlds are built again (it is in their stamps; other
 // courses' worlds stay current).
-const TracksVersion = 2
+const TracksVersion = 3
 
 // Track is a test track's made-up surroundings.
 type Track struct {
@@ -201,6 +202,7 @@ func (g *trackGen) figureEight() *Track {
 	riverX0 := mid + 80 + riverColumn*50
 	river := riverX0 + 25
 	g.villageRoads(river)
+	g.motorway(mid, s, n)
 
 	// Polder: parcels 50 m wide and 250 m long, north to south, fields and
 	// meadows, a ditch along each one's east side (broken where the road

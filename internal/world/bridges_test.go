@@ -49,45 +49,39 @@ func TestMarkDecks(t *testing.T) {
 // across): on each end of a full deck, a 0.4 m wide face across each beam
 // from the abutment's top to the beam's.
 func TestDeckBeamEndsAreClosed(t *testing.T) {
-	c := course.Tracks()[1]
-	for _, engine := range []string{Engine} {
-		w, err := Build(c, Options{Generator: "test"})
-		if err != nil {
-			t.Fatal(err)
+	w := trackWorld(t, course.Tracks()[1])
+	ends := 0
+	for _, p := range w.prims {
+		if w.doc.MaterialName(p.Material) != "bridge" {
+			continue
 		}
-		ends := 0
-		for _, p := range w.prims {
-			if w.doc.MaterialName(p.Material) != "bridge" {
-				continue
+		for i := 0; i+2 < len(p.Indices); i += 3 {
+			var v [3][3]float64
+			for k := range 3 {
+				j := p.Indices[i+k]
+				v[k] = [3]float64{float64(p.Positions[3*j]), float64(p.Positions[3*j+1]), float64(p.Positions[3*j+2])}
 			}
-			for i := 0; i+2 < len(p.Indices); i += 3 {
-				var v [3][3]float64
-				for k := range 3 {
-					j := p.Indices[i+k]
-					v[k] = [3]float64{float64(p.Positions[3*j]), float64(p.Positions[3*j+1]), float64(p.Positions[3*j+2])}
-				}
-				u, q := sub3(v[1], v[0]), sub3(v[2], v[0])
-				n := cross(u, q)
-				l := math.Sqrt(dot3(n, n))
-				if l == 0 || math.Abs(n[1])/l > 0.1 {
-					continue // not a vertical face
-				}
-				lo, hi := math.Inf(1), math.Inf(-1)
-				var across float64
-				for a := range 3 {
-					lo, hi = math.Min(lo, v[a][1]), math.Max(hi, v[a][1])
-					for b := range 3 {
-						across = math.Max(across, math.Hypot(v[a][0]-v[b][0], v[a][2]-v[b][2]))
-					}
-				}
-				if across > edgeBeamW-0.05 && across < edgeBeamW+0.05 && hi-lo > edgeBeamH && hi-lo < edgeBeamH+0.05 {
-					ends++
+			u, q := sub3(v[1], v[0]), sub3(v[2], v[0])
+			n := cross(u, q)
+			l := math.Sqrt(dot3(n, n))
+			if l == 0 || math.Abs(n[1])/l > 0.1 {
+				continue // not a vertical face
+			}
+			lo, hi := math.Inf(1), math.Inf(-1)
+			var across float64
+			for a := range 3 {
+				lo, hi = math.Min(lo, v[a][1]), math.Max(hi, v[a][1])
+				for b := range 3 {
+					across = math.Max(across, math.Hypot(v[a][0]-v[b][0], v[a][2]-v[b][2]))
 				}
 			}
+			if across > edgeBeamW-0.05 && across < edgeBeamW+0.05 && hi-lo > edgeBeamH && hi-lo < edgeBeamH+0.05 {
+				ends++
+			}
 		}
-		if ends < 8 { // two ends, two beams, two triangles each
-			t.Errorf("%s: %d triangles across the beams' ends, want 8 or more", engine, ends)
-		}
+	}
+	if ends < 8 { // two ends, two beams, two triangles each
+		t.Errorf("%d triangles across the beams' ends, want 8 or more", ends)
 	}
 }
 

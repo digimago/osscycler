@@ -27,7 +27,7 @@ import (
 // on from the graph builder's own version (72) when it became the only
 // one (owner, 2026-10-21; the classic builder's was 63), so the worlds it
 // built stay current.
-const BuilderVersion = 74
+const BuilderVersion = 76
 
 // Builder builds worlds.
 type Builder struct {

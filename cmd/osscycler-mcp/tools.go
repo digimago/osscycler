@@ -53,7 +53,9 @@ var tools = map[string]tool{
 			if err := v.open(o); err != nil {
 				return nil, err
 			}
-			return state(v, 2*time.Second)
+			// The first frames wait on the world loading (a minute for a
+			// large one from a cold disk); the view answers between frames.
+			return state(v, 60*time.Second)
 		},
 	},
 	"view_close": {
@@ -88,6 +90,50 @@ var tools = map[string]tool{
 			"save_to":  str("keep it at this path too (.png or .jpg; relative: from the source tree)"),
 		},
 		run: shot,
+	},
+	"view_camera": {
+		description: "Take the camera off the rider and return a screenshot: orbit (the default) looks at the spot at m (default: where the view is) from outside, as from a helicopter, with a magenta post on the spot; fixed puts it at x, y, z with yaw and pitch, as --camera; rider puts it back on the rider. The HUD is hidden while the camera is off the rider. view_survey takes a whole set at once.",
+		props: map[string]any{
+			"mode":     map[string]any{"type": "string", "enum": []string{"orbit", "fixed", "rider"}, "description": "orbit (default), fixed or rider"},
+			"m":        mArg,
+			"from_deg": num("orbit: the side it looks from, degrees right of the way ahead: 180 from behind (default), 90 from the right, 0 from ahead looking back, -90 from the left"),
+			"elev_deg": num("orbit: degrees above the horizon (default 90: straight down, the way ahead at the top of the picture)"),
+			"radius_m": num("orbit: metres either side of the spot the picture spans top to bottom (default 40); sets the distance"),
+			"dist_m":   num("orbit: the camera's distance from the spot instead of radius_m"),
+			"marker":   map[string]any{"type": "boolean", "description": "orbit: the magenta post on the spot (default true)"},
+			"x":        num("fixed: metres east of the world's origin"),
+			"y":        num("fixed: height, m"),
+			"z":        num("fixed: metres south of the world's origin"),
+			"yaw":      num("fixed: degrees clockwise from north"),
+			"pitch":    num("fixed: degrees up (-90 straight down, north at the top)"),
+			"look_deg": lookArg,
+			"settle":   num("frames to wait before the shot (default 20)"),
+			"width":    num("pixels across (default 1280)"),
+			"save_to":  str("keep the shot at this path too (.png or .jpg; relative: from the source tree)"),
+		},
+		run: func(v *views, a map[string]any) ([]any, error) {
+			if _, err := v.call("camera", pick(a, "mode", "m", "from_deg", "elev_deg", "radius_m", "dist_m", "marker", "x", "y", "z", "yaw", "pitch", "look_deg"), 30*time.Second); err != nil {
+				return nil, err
+			}
+			f := pick(a, "settle", "width", "save_to")
+			if _, ok := f["settle"]; !ok {
+				f["settle"] = 20.0
+			}
+			return shot(v, f)
+		},
+	},
+	"view_survey": {
+		description: "A set of screenshots of one spot for looking at a world's fault or a mark from outside: straight down (the way ahead at the top), at a slant from behind, the right, ahead and the left (a magenta post on the spot), and at the rider's eyes riding up to it and looking back at it. Each is returned with its label and saved; the view is left on the rider at the spot.",
+		props: map[string]any{
+			"m":        mArg,
+			"radius_m": num("metres either side of the spot the pictures span (default 40)"),
+			"elev_deg": num("the slanted views' degrees above the horizon (default 35)"),
+			"eyes":     map[string]any{"type": "boolean", "description": "also the rider's view 30 m before the spot and back from 30 m past it (default true)"},
+			"width":    num("pixels across (default 960)"),
+			"save_dir": str("directory for the set (default _scratch/survey/<course>-<m>; relative: from the source tree)"),
+		},
+		required: []string{"m"},
+		run:      survey,
 	},
 	"view_stats": {
 		description: "Measure the frame over some frames (as --stats): fps, render CPU and GPU time, draw calls, triangles, objects, the frame loop by section and the world's nodes by kind.",
@@ -223,6 +269,9 @@ func shot(v *views, a map[string]any) ([]any, error) {
 		mime = "image/png"
 	}
 	caption := fmt.Sprintf("%.3f km of %v, look %v°, %v view", num0(rep["along_m"])/1000, rep["course_id"], rep["look_deg"], rep["view"])
+	if rep["camera_mode"] == "fixed" {
+		caption = fmt.Sprintf("%.3f km of %v, the camera off the rider at %v", num0(rep["along_m"])/1000, rep["course_id"], rep["camera"])
+	}
 	if keep {
 		caption += ", saved to " + path
 	}
@@ -230,6 +279,72 @@ func shot(v *views, a map[string]any) ([]any, error) {
 		map[string]any{"type": "image", "data": base64.StdEncoding.EncodeToString(b), "mimeType": mime},
 		text(caption),
 	}, nil
+}
+
+// survey takes view_survey's set: one camera placement and shot per view.
+func survey(v *views, a map[string]any) ([]any, error) {
+	m := argNum(a, "m", 0)
+	radius := argNum(a, "radius_m", 40)
+	elev := argNum(a, "elev_deg", 35)
+	width := argNum(a, "width", 960)
+	eyes := true
+	if b, ok := a["eyes"].(bool); ok {
+		eyes = b
+	}
+	dir := argStr(a, "save_dir")
+	if dir == "" {
+		st, err := v.call("state", nil, 5*time.Second)
+		if err != nil {
+			return nil, err
+		}
+		dir = filepath.Join("_scratch", "survey", fmt.Sprintf("%v-%.0f", st["course_id"], m))
+	}
+	if !filepath.IsAbs(dir) {
+		dir = filepath.Join(v.root, dir)
+	}
+	type look struct {
+		name   string
+		camera map[string]any
+		look   float64
+	}
+	looks := []look{{"top", map[string]any{"elev_deg": 90.0}, 0}}
+	for _, s := range []struct {
+		name string
+		from float64
+	}{{"behind", 180}, {"right", 90}, {"ahead", 0}, {"left", -90}} {
+		looks = append(looks, look{"from-" + s.name, map[string]any{"from_deg": s.from, "elev_deg": elev}, 0})
+	}
+	if eyes {
+		looks = append(looks,
+			look{"eyes-before", map[string]any{"mode": "rider", "m": m - 30}, 0},
+			look{"eyes-back", map[string]any{"mode": "rider", "m": m + 30}, 180})
+	}
+	var out []any
+	settle := 60.0 // the first after a jump: grass, shadows and haze catch up
+	for _, l := range looks {
+		f := l.camera
+		if _, ok := f["mode"]; !ok {
+			f["mode"], f["m"], f["radius_m"] = "orbit", m, radius
+		}
+		f["look_deg"] = l.look
+		if l.name == "eyes-before" {
+			settle = 60 // back on the rider: another jump
+		}
+		if _, err := v.call("camera", f, 30*time.Second); err != nil {
+			return nil, fmt.Errorf("%s: %w", l.name, err)
+		}
+		res, err := shot(v, map[string]any{"settle": settle, "width": width, "save_to": filepath.Join(dir, l.name+".jpg")})
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", l.name, err)
+		}
+		settle = 20
+		out = append(out, text(l.name))
+		out = append(out, res...)
+	}
+	if _, err := v.call("camera", map[string]any{"mode": "rider", "m": m, "look_deg": 0.0}, 30*time.Second); err != nil {
+		return nil, err
+	}
+	return append(out, text(fmt.Sprintf("%d views saved in %s; the view is back on the rider at %.0f m", len(looks), dir, m))), nil
 }
 
 // pick is the named arguments that are given, for the view.

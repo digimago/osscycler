@@ -433,3 +433,73 @@ func TestBanksInOpenLandAreGrass(t *testing.T) {
 		t.Error("no wall along the same bank in the woods")
 	}
 }
+
+// Items spaced along a road stand where they stood when another road
+// comes to join it: a line ends at a junction, and counted from the
+// line's start every snow pole and drain after a new junction moved
+// (2026-10-22: the drains along the roads meeting the A13's slip roads,
+// up to 77 m), so building another route's map data, or a motorway,
+// moved them; counted along the map's way they keep their place.
+func TestRoadsideItemsKeepTheirPlace(t *testing.T) {
+	c := graphCourse(t, "poles", append(along([2]float64{0, 0}, [2]float64{0, 600}, 20), [2]float64{0, 600}))
+	ground := func(float64, float64) (float64, bool) { return 900, true } // above the snow poles' 800 m
+	poles := func(side bool) map[[2]int]bool {
+		// The D1 in two ways meeting at node 3: one line while nothing else
+		// meets it there, two once a road joins.
+		ways := []scenery.Way{
+			{Line: [][2]float64{{0, -40}, {0, 300}}, Nodes: []int64{1, 3}, Name: "D1", Class: "secondary", WidthM: 6},
+			{Line: [][2]float64{{0, 300}, {0, 640}}, Nodes: []int64{3, 2}, Name: "D1", Class: "secondary", WidthM: 6},
+		}
+		if side {
+			ways = append(ways, scenery.Way{Line: [][2]float64{{0, 300}, {200, 300}}, Nodes: []int64{3, 4}, Name: "Chemin", Class: "tertiary", WidthM: 5})
+		}
+		w, err := Build(c, Options{Generator: "test", Region: RegionFR, Elevation: ground,
+			Scenery: &scenery.Scenery{Ways: ways, RouteOn: routeOn(c.Distance, func(d float64) int {
+				if d < 300 {
+					return 0
+				}
+				return 1
+			}), RouteStepM: 5}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		// A pole: a column of the roadside's vertices 2 m tall.
+		lo, hi := map[[2]int]float64{}, map[[2]int]float64{}
+		for _, p := range w.prims {
+			if w.doc.MaterialName(p.Material) != "roadside" {
+				continue
+			}
+			for v := 0; v+2 < len(p.Positions); v += 3 {
+				e, y, n := float64(p.Positions[v]), float64(p.Positions[v+1]), -float64(p.Positions[v+2])
+				if math.Abs(e) > 10 || n > 260 && n < 340 { // along the D1, away from the junction
+					continue
+				}
+				k := [2]int{int(math.Round(e)), int(math.Round(n))}
+				if _, ok := lo[k]; !ok {
+					lo[k], hi[k] = y, y
+				}
+				lo[k], hi[k] = math.Min(lo[k], y), math.Max(hi[k], y)
+			}
+		}
+		out := map[[2]int]bool{}
+		for k := range lo {
+			if hi[k]-lo[k] > 1.5 {
+				out[k] = true
+			}
+		}
+		return out
+	}
+	alone, joined := poles(false), poles(true)
+	if len(alone) < 10 {
+		t.Fatalf("%d snow poles along 600 m of road at 900 m, want them every %.0f m each side", len(alone), snowPoleStepM)
+	}
+	moved := 0
+	for k := range alone {
+		if !joined[k] {
+			moved++
+		}
+	}
+	if moved > 0 {
+		t.Errorf("%d of %d snow poles moved when a road joined the D1 at 300 m", moved, len(alone))
+	}
+}

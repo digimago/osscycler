@@ -20,6 +20,13 @@ public sealed partial class Controller
     // scripted run); it quits without asking.
     public bool Watcher { get; set; }
 
+    // WorldReady says whether a course's 3D world is ready (true), will be
+    // built when it is ridden (false: its map data or ground model isn't
+    // all cached, or its build failed), or isn't known yet (null), for the
+    // course picker (owner's list: the picker showing which worlds are
+    // ready). Null: the picker says nothing of worlds.
+    public Func<string, bool?>? WorldReady { get; set; }
+
     // QuitKey: q off the menu, and the question; whether it used the key.
     bool QuitKey(string key, State? st)
     {

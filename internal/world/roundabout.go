@@ -44,9 +44,19 @@ const (
 	rbSides     = 40   // its circles' segments
 	islandKerbM = 0.15
 	rbFitReachM = 15.0 // approaches this far beyond the ring set its plane
-	rbOverhangM = 0.5  // the disc reaches this far past the ring's edge
-	ringHalfM   = 2.9  // half a one-lane ring's width, at least
-	ringHalf2M  = 4.5  // half a two-lane ring's width, at least
+	// rbMaxTilt: a ring's plane tilts no more than this (owner, 2026-10-23:
+	// the Lakes Route's roundabout on the Route d'Épinal lay on a 14.6 %
+	// plane, the rider 3 m up and down over a quarter of it and the ring's
+	// edge over its island; real ones are graded near level).
+	rbMaxTilt = 0.04
+	// The roads reaching a ring are eased from its plane into their own
+	// heights over at least rbEaseMinM, longer where they differ more, so
+	// the easing adds no more than rbEaseGrade to their grade.
+	rbEaseGrade = 0.06
+	rbEaseMinM  = 10.0
+	rbOverhangM = 0.5 // the disc reaches this far past the ring's edge
+	ringHalfM   = 2.9 // half a one-lane ring's width, at least
+	ringHalf2M  = 4.5 // half a two-lane ring's width, at least
 	// A flat one with its ring this big (owner, 2026-10-09: 10-20 m) has
 	// a paved centre circle inside its ring: mountable, slightly raised.
 	centreMinR, centreMaxR = 10.0, 20.0
@@ -371,6 +381,17 @@ func (rb *roundabout) fit(ls []*roadLine, base float64) {
 	a, b, c := s[0][3]/s[0][0], s[1][3]/s[1][1], s[2][3]/s[2][2]
 	// The plane in east and north, from offsets to the centre.
 	rb.plane = [3]float64{a - b*rb.c[0] - c*rb.c[1], b, c}
+}
+
+// capTilt tilts the plane no more than max, keeping its height at the
+// centre.
+func (rb *roundabout) capTilt(max float64) {
+	z := rb.height(rb.c[0], rb.c[1])
+	b, c := rb.plane[1], rb.plane[2]
+	if g := math.Hypot(b, c); g > max {
+		b, c = b*max/g, c*max/g
+	}
+	rb.plane = [3]float64{z - b*rb.c[0] - c*rb.c[1], b, c}
 }
 
 // circle is a circle of radius r round the centre, anticlockwise.

@@ -46,6 +46,7 @@ const (
 	gCloseM     = 8.0                 // a road this near the route is likely the one it rides
 	gFarCost    = 0.05                // per square metre further out
 	gAcrossCost = 16.0                // a road across the route's way (it turns there, through a node, not along it)
+	gHopM       = 15.0                // a hop off the roads this long, with roads either side, takes their heights
 	gSpurM      = 15.0                // a spur of the line through the network, out and back over the same way, this long goes; a longer one is the course's own turn-back
 	gSpurTipCos = -0.7                // the line turns more than 135° at a spur's tip (the way back may start a metre aside)
 	gSpurOffM   = 1.5                 // the way back keeps within this of the way out (a twin line runs a metre beside; a turn within it is a hairpin anyway)
@@ -519,6 +520,28 @@ func (g *gnet) trace(st []gstate) gpathOut {
 	out.s = make([]float64, len(pts))
 	for i := 1; i < len(pts); i++ {
 		out.s[i] = out.s[i-1] + math.Hypot(pts[i].x-pts[i-1].x, pts[i].y-pts[i-1].y)
+	}
+	// A hop off the roads between two points on them, up to gHopM along
+	// the line (a step the matcher found no road for as the course turns
+	// onto a roundabout), keeps to the heights between theirs: the
+	// ground's there can lie metres off a road graded above or below it (a
+	// roundabout levelled on a hillside).
+	for i := 0; i < len(pts); {
+		if pts[i].on {
+			i++
+			continue
+		}
+		j := i
+		for j < len(pts) && !pts[j].on {
+			j++
+		}
+		if i > 0 && j < len(pts) && out.s[j]-out.s[i-1] <= gHopM {
+			a, b, L := pts[i-1].z, pts[j].z, out.s[j]-out.s[i-1]
+			for k := i; k < j; k++ {
+				pts[k].z = a + (out.s[k]-out.s[i-1])/L*(b-a)
+			}
+		}
+		i = j
 	}
 	for _, k := range atIdx {
 		out.at = append(out.at, out.s[kept[k]])

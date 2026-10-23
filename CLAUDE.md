@@ -98,7 +98,7 @@ Packages live under `internal/` (names below mean `internal/<name>`); only `gen/
 
 ### Owner's verdicts on the world's look (still in force)
 
-- Roads are a given of the landscape; the route only maps the rider onto them. Junctions are things of their own; roundabouts too (small ones crossed straight, island ones ridden round with the traffic; rings wider than their roads). The rider never changes onto a road metres above or below.
+- Roads are a given of the landscape; the route only maps the rider onto them. Junctions are things of their own; roundabouts too (small ones crossed straight, island ones ridden round with the traffic; rings wider than their roads; a ring lies on a plane tilted no more than 4 %, its roads eased onto it: owner, 2026-10-23). The rider never changes onto a road metres above or below.
 - Riding line: as on a closed road, the middle of the rider's half, cutting towards the centre in bends, never across it; the eyes 1 m in from the right edge in eye view. Sharp turns at path crossings are rounded wider where the land allows.
 - The camera aims 6 m ahead along the riding line, tilts with 15 % of the grade, leans with 30 % of the bike's lean (capped at 35°).
 - Not wanted: zebra crossings, every side street, roadside parking strips, bus stops and shelters; dirt tracks and cycle paths stay out of the map query; motorways are never junctions (drawn since 2026-10-22, met only on other levels). Public transport only where it makes the view (railway crossings, a passing train, viaducts), far later.
@@ -175,7 +175,6 @@ Packages live under `internal/` (names below mean `internal/<name>`); only `gen/
 
 - 13. Planned routes and recorded rides: rerouting rules suit planned routes but must not break recorded rides imported as courses (follow those as ridden; timestamps on every point could be the switch). How a carried stretch rides (stairs at 30-50 % for a few metres): walking pace, perhaps.
 - 13b. After a one-way route (a planning session of its own): a corridor into a made-up world until a new ride is picked, more world generated from real terrain and roads, or a fixed world of appended real terrain with set intersections.
-- The Lakes route (the owner's Vosges course in `_gpx`) at about 3.34 km: the rider rides through the road (owner, 2026-10-22); look with the `world-faults` skill, its world built with all map data.
 - Faster world builds themselves (the Dunes course 48 s from the caches), and the course picker showing which worlds are ready.
 - TUI: power and HR zone colours on the dashboard.
 - Workouts: repeat groups of 3+ blocks would only be an editing convenience (real files write sets as plain blocks).

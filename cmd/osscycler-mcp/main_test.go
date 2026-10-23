@@ -86,7 +86,7 @@ func fakeView(t *testing.T) (port int, got chan map[string]any) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { l.Close() })
-	got = make(chan map[string]any, 16)
+	got = make(chan map[string]any, 64)
 	go func() {
 		c, err := l.Accept()
 		if err != nil {
@@ -148,6 +148,58 @@ func TestShotThroughTheControlSocket(t *testing.T) {
 	// The view's own error comes back as the tool's.
 	if res := r[2]["result"].(map[string]any); res["isError"] != true || !strings.Contains(res["content"].([]any)[0].(map[string]any)["text"].(string), "no world shown") {
 		t.Errorf("goto error: %v", res)
+	}
+}
+
+// view_survey places the camera round the spot and shoots each view into
+// the set's directory, then puts the view back on the rider there.
+func TestSurvey(t *testing.T) {
+	root := t.TempDir()
+	port, got := fakeView(t)
+	s := newServer(root)
+	defer s.views.close()
+	r := rpc(t, s,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"view_open","arguments":{"port":`+itoa(port)+`}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"view_survey","arguments":{"m":3350}}}`,
+	)
+	res := r[1]["result"].(map[string]any)
+	if res["isError"] == true {
+		t.Fatalf("survey: %v", res)
+	}
+	images := 0
+	for _, c := range res["content"].([]any) {
+		if c.(map[string]any)["type"] == "image" {
+			images++
+		}
+	}
+	if images != 7 {
+		t.Errorf("%d images, want 7 (top, four sides, two at the rider's eyes)", images)
+	}
+	<-got // view_open's state
+	<-got // the state the set's directory is named by
+	dir := filepath.Join(root, "_scratch", "survey", "posbank-3350")
+	var cams []map[string]any
+	for i := 0; i < 7; i++ {
+		cam, sh := <-got, <-got
+		if cam["cmd"] != "camera" || sh["cmd"] != "shot" || filepath.Dir(sh["path"].(string)) != dir {
+			t.Fatalf("view %d: %v then %v", i, cam, sh)
+		}
+		cams = append(cams, cam)
+	}
+	if c := cams[0]; c["mode"] != "orbit" || c["elev_deg"] != 90.0 || c["m"] != 3350.0 || c["radius_m"] != 40.0 {
+		t.Errorf("top: %v", c)
+	}
+	if c := cams[2]; c["from_deg"] != 90.0 || c["elev_deg"] != 35.0 {
+		t.Errorf("from the right: %v", c)
+	}
+	if c := cams[6]; c["mode"] != "rider" || c["m"] != 3380.0 || c["look_deg"] != 180.0 {
+		t.Errorf("looking back: %v", c)
+	}
+	if c := <-got; c["cmd"] != "camera" || c["mode"] != "rider" || c["m"] != 3350.0 {
+		t.Errorf("left on %v, want the rider at the spot", c)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "from-left.jpg")); err != nil {
+		t.Error(err)
 	}
 }
 

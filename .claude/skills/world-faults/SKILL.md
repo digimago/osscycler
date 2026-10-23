@@ -58,7 +58,13 @@ small; fix at the stage that causes it, then make it stay fixed.
    mark's) once, `view_shot` with `m` and `look_deg` per look, and after a
    rebuild `view_reload` to compare the same spots; `view_open` with
    `port` attaches to the rider's own view started with
-   `osscycler 3d --debug --control 7431`. Without them, one Godot start
+   `osscycler 3d --debug --control 7431`. From outside: `view_survey`
+   with the km mark takes the whole set in one call (straight down with
+   the way ahead at the top, slanted from behind, right, ahead and left,
+   the rider's eyes 30 m before and looking back from 30 m past; a
+   magenta post on the spot; saved in `_scratch/survey/<course>-<m>/`,
+   ready to name to the owner), `view_camera` one placement (`from_deg`,
+   `elev_deg`, `radius_m`; `mode: rider` to go back). Without them, one Godot start
    per shot (about 10 s):
    `~/.local/bin/godot --path renderers/godot -- --world "$PWD/_worlds/<id>" --from <m> --shot <scratchpad>/x.png --frames 150 --seed 1`
    (`~/.local/bin` isn't on the PATH of a tool shell; the world path has

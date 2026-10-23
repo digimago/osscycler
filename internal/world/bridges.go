@@ -35,6 +35,9 @@ const (
 	// the first metre off the shoulder (at 1:1 single metres rose at 52°).
 	fillSlope     = 1 / 1.5
 	fillShoulderM = 0.5
+	// underpassClearM: nothing is planted this far past the edge of the
+	// course's own way in an underpass, ramps included (its cut banks).
+	underpassClearM = 6.0
 )
 
 // deckReach is how far past the edge of road o, drop metres below, a deck
@@ -172,6 +175,11 @@ func (w *World) addBridges(t *terrain, lines []*roadLine, ways []scenery.Way) er
 		}
 		return p
 	}
+	var paving map[[2]int]*gltf.Primitive
+	if len(t.pavings) > 0 {
+		paving = drawPavings(t.pavings, t.o.ChunkM, w.pavingMaterial())
+	}
+	below := roadsBelow(lines)
 	for _, l := range lines {
 		ss := l.samples
 		for i := 0; i+1 < len(ss); {
@@ -183,7 +191,7 @@ func (w *World) addBridges(t *terrain, lines []*roadLine, ways []scenery.Way) er
 			for j+1 < len(ss) && onDeck(ss, j) {
 				j++
 			}
-			deck(prim, s, l, i, j, concrete, steel, true)
+			deck(prim, s, l, i, j, below(l, i, j).way, concrete, steel, true)
 			i = j
 		}
 		// A bridge in the map that isn't a deck (a low bridge over a canal
@@ -203,18 +211,83 @@ func (w *World) addBridges(t *terrain, lines []*roadLine, ways []scenery.Way) er
 				j++
 			}
 			if ss[j].d-ss[i].d >= railMinM {
-				deck(prim, s, l, i, j, concrete, steel, false)
+				deck(prim, s, l, i, j, [2]float64{}, concrete, steel, false)
 			}
 			i = j + 1
 		}
 	}
 	for _, k := range chunkOrder(byChunk) {
 		p := byChunk[k]
-		if err := w.add(fmt.Sprintf("bridges %d %d", k[0], k[1]), map[string]any{"kind": "bridges", "chunk": k}, *p); err != nil {
+		ps := []gltf.Primitive{*p}
+		if q := paving[k]; q != nil {
+			ps = append(ps, *q)
+			delete(paving, k)
+		}
+		if err := w.add(fmt.Sprintf("bridges %d %d", k[0], k[1]), map[string]any{"kind": "bridges", "chunk": k}, ps...); err != nil {
+			return err
+		}
+	}
+	for _, k := range chunkOrder(paving) { // paving in a chunk with no deck
+		if err := w.add(fmt.Sprintf("bridges %d %d", k[0], k[1]), map[string]any{"kind": "bridges", "chunk": k}, *paving[k]); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// roadsBelow gives, for a deck (line l's samples i to j), the way of the
+// road under it nearest its middle (unit, east and north; zero: none, a
+// deck over water or a valley): a deck over a road is a skew bridge, its
+// ends parallel to the road below (owner, 2026-10-23: the N348's decks
+// over the Posbank Loop's cycle underpass, cut square to their own road,
+// each had a corner of its bank seat out over the slope, in mid air).
+// deckBelow is the road under a deck: its way there (unit, east and north)
+// and its sample nearest the deck's middle; zero: none.
+type deckBelow struct {
+	way [2]float64
+	o   sample
+}
+
+func roadsBelow(lines []*roadLine) func(l *roadLine, i, j int) deckBelow {
+	type ref struct{ l, i int }
+	const cellM = 10.0
+	grid := map[[2]int][]ref{}
+	key := func(e, n float64) [2]int { return [2]int{int(math.Floor(e / cellM)), int(math.Floor(n / cellM))} }
+	for li, l := range lines {
+		for i, s := range l.samples {
+			if !s.aloft && !s.tunnel {
+				grid[key(s.e, s.n)] = append(grid[key(s.e, s.n)], ref{li, i})
+			}
+		}
+	}
+	return func(l *roadLine, i, j int) deckBelow {
+		m := l.samples[(i+j)/2]
+		best, below := math.Inf(1), deckBelow{}
+		k := key(m.e, m.n)
+		for gx := k[0] - 1; gx <= k[0]+1; gx++ {
+			for gy := k[1] - 1; gy <= k[1]+1; gy++ {
+				for _, r := range grid[[2]int{gx, gy}] {
+					o := lines[r.l].samples[r.i]
+					if lines[r.l] == l || o.ele > m.ele-bridgeM {
+						continue
+					}
+					// Under the deck: within its width of one of its samples.
+					under := false
+					for q := i; q <= j && !under; q++ {
+						s := l.samples[q]
+						under = math.Hypot(o.e-s.e, o.n-s.n) <= s.hw+o.hw
+					}
+					if d := math.Hypot(o.e-m.e, o.n-m.n); under && d < best {
+						de, dn, _ := lines[r.l].smooth.heading(o.d)
+						if h := math.Hypot(de, dn); h > 0 {
+							best, below = d, deckBelow{[2]float64{de / h, dn / h}, o}
+						}
+					}
+				}
+			}
+		}
+		return below
+	}
 }
 
 // deckFrame is a cross-section of a deck: its centre, the direction to
@@ -242,7 +315,9 @@ func frameOf(l *roadLine, a sample) deckFrame {
 
 // deck builds the structure of line l's deck from sample i to j; not
 // full, only its edge beams and railings (a low bridge drawn as road).
-func deck(prim func(e, n float64) *gltf.Primitive, s *surface, l *roadLine, i, j int, concrete, steel [3]float32, full bool) {
+// skew is the way of the road below (unit, east and north; zero: none):
+// the deck's ends run along it, through the ends' middles.
+func deck(prim func(e, n float64) *gltf.Primitive, s *surface, l *roadLine, i, j int, skew [2]float64, concrete, steel [3]float32, full bool) {
 	ss := l.samples
 	frames := make([]deckFrame, 0, j-i+1)
 	for k := i; k <= j; k++ {
@@ -250,18 +325,44 @@ func deck(prim func(e, n float64) *gltf.Primitive, s *surface, l *roadLine, i, j
 	}
 	mid := frames[len(frames)/2].c
 	p := prim(mid[0], -mid[2])
-	at := func(f deckFrame, across, up float64) [3]float64 {
-		return [3]float64{f.c[0] + f.r[0]*across, f.c[1] + up, f.c[2] + f.r[2]*across}
+	dS, dE := ss[i].d, ss[j].d
+	// shift is how far along the road (from an end's middle at d) the end
+	// lies at across x, for it to run along the road below; none where
+	// that road runs nearly along this one, and at most a third of the
+	// span.
+	shift := func(d, x float64) float64 {
+		if skew == ([2]float64{}) {
+			return 0
+		}
+		f := frameOf(l, sampleBetween(l, d))
+		re, rn, ae, an := f.r[0], -f.r[2], f.along[0], -f.along[2]
+		den := ae*skew[1] - an*skew[0]
+		if math.Abs(den) < 0.3 {
+			return 0
+		}
+		lim := (dE - dS) / 3
+		return math.Max(-lim, math.Min(lim, -x*(re*skew[1]-rn*skew[0])/den))
 	}
+	// point is the deck's point at across x, up over the road there, at d
+	// along the road from end end's middle (0 the start, 1 the end): the
+	// end's skew carried across the span, fading to the other end's.
+	point := func(t, x, up, back float64) [3]float64 {
+		d := dS + t*(dE-dS) + (1-t)*shift(dS, x) + t*shift(dE, x) + back
+		f := frameOf(l, sampleBetween(l, d))
+		return [3]float64{f.c[0] + f.r[0]*x, f.c[1] + up, f.c[2] + f.r[2]*x}
+	}
+	tOf := func(k int) float64 { return (ss[i+k].d - dS) / math.Max(dE-dS, 1e-9) }
+	at := func(k int, across, up float64) [3]float64 { return point(tOf(k), across, up, 0) }
 	down := [3]float64{0, -1, 0}
 	for k := 0; k+1 < len(frames); k++ {
 		a, b := frames[k], frames[k+1]
+		ka, kb := k, k+1
 		la, lb := -a.left-edgeBeamW, -b.left-edgeBeamW
 		ra, rb := a.right+edgeBeamW, b.right+edgeBeamW
 		// The slab's underside, and the edge beams: inner face, top,
 		// outer face down to the underside.
 		if full {
-			quad(p, at(a, la, -deckDepthM), at(a, ra, -deckDepthM), at(b, rb, -deckDepthM), at(b, lb, -deckDepthM), down, concrete)
+			quad(p, at(ka, la, -deckDepthM), at(ka, ra, -deckDepthM), at(kb, rb, -deckDepthM), at(kb, lb, -deckDepthM), down, concrete)
 		}
 		for si, side := range []struct {
 			in, out [2]float64 // a's and b's inner and outer offsets
@@ -277,13 +378,13 @@ func deck(prim func(e, n float64) *gltf.Primitive, s *surface, l *roadLine, i, j
 			}
 			outN := scale3(a.r, side.sign)
 			inN := scale3(a.r, -side.sign)
-			quad(p, at(a, side.in[0], -0.05), at(b, side.in[1], -0.05), at(b, side.in[1], edgeBeamH), at(a, side.in[0], edgeBeamH), inN, concrete)
-			quad(p, at(a, side.in[0], edgeBeamH), at(b, side.in[1], edgeBeamH), at(b, side.out[1], edgeBeamH), at(a, side.out[0], edgeBeamH), [3]float64{0, 1, 0}, concrete)
-			quad(p, at(a, side.out[0], -deckDepthM), at(b, side.out[1], -deckDepthM), at(b, side.out[1], edgeBeamH), at(a, side.out[0], edgeBeamH), outN, concrete)
+			quad(p, at(ka, side.in[0], -0.05), at(kb, side.in[1], -0.05), at(kb, side.in[1], edgeBeamH), at(ka, side.in[0], edgeBeamH), inN, concrete)
+			quad(p, at(ka, side.in[0], edgeBeamH), at(kb, side.in[1], edgeBeamH), at(kb, side.out[1], edgeBeamH), at(ka, side.out[0], edgeBeamH), [3]float64{0, 1, 0}, concrete)
+			quad(p, at(ka, side.out[0], -deckDepthM), at(kb, side.out[1], -deckDepthM), at(kb, side.out[1], edgeBeamH), at(ka, side.out[0], edgeBeamH), outN, concrete)
 			// The railing's rails, on the beam's middle.
 			ma, mb := (side.in[0]+side.out[0])/2, (side.in[1]+side.out[1])/2
 			for _, h := range []float64{0.65, railH} {
-				beam(p, at(a, ma, h), at(b, mb, h), 0.06, 0.06, steel)
+				beam(p, at(ka, ma, h), at(kb, mb, h), 0.06, 0.06, steel)
 			}
 		}
 	}
@@ -296,17 +397,19 @@ func deck(prim func(e, n float64) *gltf.Primitive, s *surface, l *roadLine, i, j
 	if full {
 		foot = -0.02
 	}
-	for _, end := range []struct {
+	ends := []struct {
 		f   deckFrame
+		k   int
 		dir float64 // along the road, away from the span
-	}{{frames[0], -1}, {frames[len(frames)-1], 1}} {
+	}{{frames[0], 0, -1}, {frames[len(frames)-1], len(frames) - 1, 1}}
+	for _, end := range ends {
 		f := end.f
-		n := scale3(f.along, end.dir)
 		for si, side := range [][2]float64{{-f.left, -f.left - edgeBeamW}, {f.right, f.right + edgeBeamW}} {
 			if f.butt[si] {
 				continue
 			}
-			quad(p, at(f, side[0], foot), at(f, side[1], foot), at(f, side[1], edgeBeamH), at(f, side[0], edgeBeamH), n, concrete)
+			a, b := at(end.k, side[0], foot), at(end.k, side[1], foot)
+			quad(p, a, b, at(end.k, side[1], edgeBeamH), at(end.k, side[0], edgeBeamH), outward(a, b, scale3(f.along, end.dir)), concrete)
 		}
 	}
 	// Railing posts along each side, every railPostM.
@@ -323,7 +426,7 @@ func deck(prim func(e, n float64) *gltf.Primitive, s *surface, l *roadLine, i, j
 			if f.butt[si] {
 				continue
 			}
-			beam(p, at(f, m, edgeBeamH), at(f, m, railH+0.05), 0.07, 0.07, steel)
+			beam(p, at(k, m, edgeBeamH), at(k, m, railH+0.05), 0.07, 0.07, steel)
 		}
 	}
 	if !full {
@@ -336,34 +439,75 @@ func deck(prim func(e, n float64) *gltf.Primitive, s *surface, l *roadLine, i, j
 	// across the deck, stood out of the bank as a pillar (owner,
 	// 2026-10-22, the N348 over the Posbank Loop's cycle underpass).
 	span := ss[j].d - ss[i].d
-	for _, end := range []struct {
-		f    deckFrame
-		back float64 // along the road, away from the span
-	}{{frames[0], -1}, {frames[len(frames)-1], 1}} {
+	joint := srgbLinear(0x3a3d40)
+	for _, end := range ends {
 		f := end.f
+		t := float64(end.k) / float64(len(frames)-1)
 		w0, w1 := -f.left-edgeBeamW, f.right+edgeBeamW
-		if span < pierSpanM {
-			box(p, f, w0, w1, 0, end.back*abutmentT, f.c[1]-deckDepthM-bankSeatM, -0.02, concrete)
-			continue
+		// The bank seat or abutment: a block along the end, back under
+		// the embankment, in plan the end's line and abutmentT behind it.
+		plan := [4][3]float64{point(t, w0, 0, 0), point(t, w1, 0, 0), point(t, w1, 0, end.dir*abutmentT), point(t, w0, 0, end.dir*abutmentT)}
+		low := f.c[1] - deckDepthM - bankSeatM
+		if span >= pierSpanM {
+			low = math.Inf(1)
+			for x := w0; x <= w1+0.01; x += 1 {
+				q := point(t, x, 0, 0)
+				low = math.Min(low, s.at(q[0], -q[2]))
+			}
+			low -= footM
 		}
-		low := math.Inf(1)
-		for x := w0; x <= w1+0.01; x += 1 {
-			q := at(f, x, 0)
-			low = math.Min(low, s.at(q[0], -q[2]))
-		}
-		box(p, f, w0, w1, 0, end.back*abutmentT, low-footM, -0.02, concrete)
+		block(p, plan, low, f.c[1]-0.02, concrete)
+		// The expansion joint across the road at the deck's end, along the
+		// road below as the end is: a dark steel strip on the surface.
+		a, b := point(t, -f.left, 0.012, 0), point(t, f.right, 0.012, 0)
+		c, d := point(t, f.right, 0.012, -end.dir*jointW), point(t, -f.left, 0.012, -end.dir*jointW)
+		quad(p, a, b, c, d, [3]float64{0, 1, 0}, joint)
 	}
 	// Piers under a long span: two columns and a crosshead.
 	if piers := int(span / pierSpanM); piers > 0 {
 		for q := 1; q <= piers; q++ {
 			f := frames[len(frames)*q/(piers+1)]
 			for _, x := range []float64{-f.left * 0.55, f.right * 0.55} {
-				top := at(f, x, -deckDepthM)
+				top := [3]float64{f.c[0] + f.r[0]*x, f.c[1] - deckDepthM, f.c[2] + f.r[2]*x}
 				box(p, f, x-0.45, x+0.45, -0.45, 0.45, s.at(top[0], -top[2])-footM, -deckDepthM-0.8, concrete)
 			}
 			box(p, f, -f.left, f.right, -0.6, 0.6, f.c[1]-deckDepthM-0.8, -deckDepthM, concrete)
 		}
 	}
+}
+
+// jointW: an expansion joint's width along the road.
+const jointW = 0.12
+
+// outward is the horizontal normal of a face along a to b (seen from
+// above) that points the way of hint.
+func outward(a, b, hint [3]float64) [3]float64 {
+	n := [3]float64{b[2] - a[2], 0, -(b[0] - a[0])}
+	if l := math.Hypot(n[0], n[2]); l > 0 {
+		n = scale3(n, 1/l)
+	}
+	if dot3(n, hint) < 0 {
+		n = scale3(n, -1)
+	}
+	return n
+}
+
+// block is a prism over the quadrilateral plan (its corners in order, at
+// any height), from low up to top, closed on every side.
+func block(p *gltf.Primitive, plan [4][3]float64, low, top float64, c [3]float32) {
+	var mid [3]float64
+	for _, q := range plan {
+		mid[0], mid[2] = mid[0]+q[0]/4, mid[2]+q[2]/4
+	}
+	lo := func(k int) [3]float64 { return [3]float64{plan[k%4][0], low, plan[k%4][2]} }
+	hi := func(k int) [3]float64 { return [3]float64{plan[k%4][0], top, plan[k%4][2]} }
+	for k := range 4 {
+		a, b := lo(k), lo(k+1)
+		out := [3]float64{(a[0]+b[0])/2 - mid[0], 0, (a[2]+b[2])/2 - mid[2]}
+		quad(p, a, b, hi(k+1), hi(k), outward(a, b, out), c)
+	}
+	quad(p, hi(0), hi(1), hi(2), hi(3), [3]float64{0, 1, 0}, c)
+	quad(p, lo(0), lo(1), lo(2), lo(3), [3]float64{0, -1, 0}, c)
 }
 
 // box is a block in frame f: across from x0 to x1, along from a0 to a1

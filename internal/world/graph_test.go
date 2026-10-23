@@ -1254,23 +1254,16 @@ func TestGraphOwnWayUnderTwoShortBridges(t *testing.T) {
 	if seat := deck - deckDepthM - bankSeatM; math.Abs(low-seat) > 0.02 {
 		t.Errorf("the bridges reach down to %.2f m, not a bank seat's %.2f: an abutment down to the ground", low, seat)
 	}
-	paved := 0
-	for _, p := range w.prims {
-		if w.doc.MaterialName(p.Material) != "terrain" || len(p.Colors) == 0 {
-			continue
+	// Beside the way under the deck: paved (owner, 2026-10-22), the
+	// paving its own surface, nothing over it but the deck.
+	for _, e := range []float64{-4, 4} {
+		pave, ok := surfaceTop(w, "slope paving", e, 190)
+		if !ok {
+			t.Fatalf("the land under the bridge at %.0f, 190 isn't paved", e)
 		}
-		for v := 0; 3*v+2 < len(p.Positions); v++ {
-			e, n := float64(p.Positions[3*v]), -float64(p.Positions[3*v+2])
-			if math.Abs(e) > 3.2 && math.Abs(e) < 5 && math.Abs(n-190) < 2 { // beside the way, under the deck
-				if [3]float32{p.Colors[3*v], p.Colors[3*v+1], p.Colors[3*v+2]} != slopePaving {
-					t.Fatalf("the land under the bridge at %.1f, %.1f isn't paved", e, n)
-				}
-				paved++
-			}
+		if land, ok := surfaceTop(w, "terrain", e, 190); ok && land > pave+0.01 {
+			t.Errorf("land %.2f m over the paving under the bridge at %.0f, 190", land-pave, e)
 		}
-	}
-	if paved == 0 {
-		t.Error("no land under the bridge")
 	}
 }
 
@@ -1309,6 +1302,18 @@ func TestCycleUnderpassTakesServiceVehicles(t *testing.T) {
 		return h
 	}
 	maxGrade := math.Tan(47 * math.Pi / 180)
+	// The land, paved under the decks.
+	landTop := func(e, n float64) (float64, bool) {
+		a, okA := surfaceTop(w, "terrain", e, n)
+		b, okB := surfaceTop(w, "slope paving", e, n)
+		switch {
+		case okA && okB:
+			return math.Max(a, b), true
+		case okB:
+			return b, true
+		}
+		return a, okA
+	}
 	// Two cycle paths wide, between the decks and on the ramp down (no deck
 	// over it there to find instead).
 	for _, n := range []float64{202.5, 175} {
@@ -1316,6 +1321,16 @@ func TestCycleUnderpassTakesServiceVehicles(t *testing.T) {
 			if y, ok := surfaceTop(w, "road", side*1.8, n); !ok || math.Abs(y-height(n)) > 0.3 {
 				t.Errorf("no way 1.8 m %s of its middle at %.1f m (%.2f, %v): narrower than two cycle paths", map[float64]string{-1: "left", 1: "right"}[side], n, y, ok)
 			}
+		}
+	}
+	// Paved through the open strip between the decks too, no land over it
+	// (owner, 2026-10-23: one paved plane each side for the underpass).
+	for _, side := range []float64{-1, 1} {
+		pave, ok := surfaceTop(w, "slope paving", side*4, 202.5)
+		if !ok {
+			t.Errorf("no paving 4 m %s of the way between the decks", map[float64]string{-1: "left", 1: "right"}[side])
+		} else if land, ok := surfaceTop(w, "terrain", side*4, 202.5); ok && land > pave+0.01 {
+			t.Errorf("land %.2f m over the paving between the decks, %.0f m out", land-pave, side*4)
 		}
 	}
 	for _, n := range []float64{190, 215} {
@@ -1327,7 +1342,7 @@ func TestCycleUnderpassTakesServiceVehicles(t *testing.T) {
 		for _, side := range []float64{-1, 1} {
 			last := math.NaN()
 			for e := 1.0; e <= 10; e++ {
-				land, ok := surfaceTop(w, "terrain", side*e, n)
+				land, ok := landTop(side*e, n)
 				if !ok {
 					last = math.NaN()
 					continue

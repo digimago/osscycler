@@ -11,6 +11,9 @@ import (
 
 // terrain shapes the ground in square chunks along the route.
 type terrain struct {
+	// pavings are the underpasses' paved areas (paving.go): the land lies
+	// under them and falls to their sides.
+	pavings []*pavedArea
 	// walls are the retaining walls' footprints (e, n), from the face's
 	// foot to the coping's back: no grass grows there (the ground map's
 	// clearance).

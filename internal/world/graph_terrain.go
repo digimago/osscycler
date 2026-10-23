@@ -477,7 +477,10 @@ func (g *gland) height(e, n float64, wet bool) float64 {
 	near := g.coarseNear(key)
 	base := t.base(e, n, near)
 	h, gap, edge := g.blend(e, n, base)
-	h += g.relief(e, n, gap, near)
+	// Made ground under a deck is a plane: no hummocks (owner, 2026-10-23).
+	if !g.underDeck(e, n) {
+		h += g.relief(e, n, gap, near)
+	}
 	// Between a road and a ditch: a verge, then the bank down to the water
 	// (ditchBank), not the land at the water's level right up to the road.
 	if gap < gDitchVergeM+gDitchBankM+1 {
@@ -525,6 +528,10 @@ func (g *gland) height(e, n float64, wet bool) float64 {
 			}
 		}
 	}
+	// Under an underpass's paving, and falling to its sides (paving.go).
+	if c, ok := landCap(g.t.pavings, e, n); ok {
+		h = math.Min(h, c)
+	}
 	// Over a tunnel: at least its roof's top.
 	if f, ok := g.tunnels.at(e, n); ok {
 		h = math.Max(h, f)
@@ -532,9 +539,49 @@ func (g *gland) height(e, n float64, wet bool) float64 {
 	return h
 }
 
-// slopePaving is the concrete paving of the slopes under a deck (owner,
-// 2026-10-22: an underpass's banks are paved against erosion).
-var slopePaving = srgbLinear(0x9d9a92)
+// slopePaving is the paving of the slopes under a deck (owner, 2026-10-22:
+// an underpass's banks are paved against erosion): grey concrete pavers,
+// their pattern the renderer's ("slope paving"; owner, 2026-10-23: a brick
+// texture for some character; grey concrete, not red clay, dry-laid).
+var slopePaving = srgbLinear(0x9b9890)
+
+// splitPrim parts p's triangles: those whose three vertices are all
+// picked, and the rest, each with only the vertices it uses, in order.
+func splitPrim(p gltf.Primitive, pick func(v uint32) bool) (rest, picked gltf.Primitive) {
+	rest.Material, picked.Material = p.Material, p.Material
+	maps := [2]map[uint32]uint32{{}, {}}
+	outs := [2]*gltf.Primitive{&rest, &picked}
+	for i := 0; i+2 < len(p.Indices); i += 3 {
+		t := p.Indices[i : i+3]
+		k := 0
+		if pick(t[0]) && pick(t[1]) && pick(t[2]) {
+			k = 1
+		}
+		o, m := outs[k], maps[k]
+		for _, v := range t {
+			nv, ok := m[v]
+			if !ok {
+				nv = uint32(len(o.Positions) / 3)
+				m[v] = nv
+				o.Positions = append(o.Positions, p.Positions[3*v:3*v+3]...)
+				if len(p.Normals) > 0 {
+					o.Normals = append(o.Normals, p.Normals[3*v:3*v+3]...)
+				}
+				if len(p.Colors) > 0 {
+					o.Colors = append(o.Colors, p.Colors[3*v:3*v+3]...)
+				}
+				if len(p.UVs) > 0 {
+					o.UVs = append(o.UVs, p.UVs[2*v:2*v+2]...)
+				}
+				if len(p.UV2s) > 0 {
+					o.UV2s = append(o.UV2s, p.UV2s[2*v:2*v+2]...)
+				}
+			}
+			o.Indices = append(o.Indices, nv)
+		}
+	}
+	return rest, picked
+}
 
 // underDeck tells whether e, n lies under a deck or within underDeckPadM
 // of its edge.
@@ -552,6 +599,9 @@ func (g *gland) underDeck(e, n float64) bool {
 
 // underDeckPadM: the paving reaches this far past a deck's edge.
 const underDeckPadM = 0.6
+
+// paveSinkM: the land lies this far under an underpass's paving.
+const paveSinkM = 0.15
 
 // coarseNear are the route's coarse samples that shape chunk key's ground
 // (as terrain.lists has them).
@@ -737,6 +787,14 @@ func (g *gland) blend(e, n, base float64) (h, gap, edge float64) {
 	}
 	if !math.IsInf(slope, 1) {
 		h = math.Min(base, slope)
+		// Under a deck the bank is made ground, paved: a plane at that
+		// slope up to just under the slab (height's deck clamp), not
+		// following the ground model where it lies lower (owner,
+		// 2026-10-23: the slopes under the N348's decks should be flat
+		// and straight, artificial surfaces, not natural ones).
+		if g.underDeck(e, n) {
+			h = slope
+		}
 	}
 	return h, gap, edge
 }

@@ -204,6 +204,17 @@ type World struct {
 	// Stats, for the builder's report.
 	Vertices, Triangles, Plants int
 	prims                       []gltf.Primitive // everything drawn, for Check
+	paving                      *int             // the "slope paving" material, once made
+}
+
+// pavingMaterial is the material of paved slopes under decks, made on
+// first use (worlds without keep their bytes).
+func (w *World) pavingMaterial() int {
+	if w.paving == nil {
+		m := w.doc.AddMaterial(gltf.Material{Name: "slope paving", Color: [4]float32{1, 1, 1, 1}, Roughness: 0.9})
+		w.paving = &m
+	}
+	return *w.paving
 }
 
 // sample is a point on the road's centre line.

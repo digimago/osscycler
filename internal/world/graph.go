@@ -412,6 +412,7 @@ func Build(c *course.Course, o Options) (*World, error) {
 		return t.base(e, n, cn)
 	})
 	floors := newTunnelFloors(runs)
+	t.pavings = pavings(lines)
 	tunnelMat := -1
 	if len(runs) > 0 {
 		tunnelMat = w.doc.AddMaterial(gltf.Material{Name: "tunnel", Color: [4]float32{1, 1, 1, 1}, Roughness: 0.9})
@@ -447,6 +448,14 @@ func Build(c *course.Course, o Options) (*World, error) {
 	var under []gltf.Primitive
 	for _, k := range chunkOrder(roads) {
 		under = append(under, roads[k]...)
+	}
+	// An underpass's paving too: the land meets its edges as a road's,
+	// rather than lying under it in cells that spanned over it.
+	if len(t.pavings) > 0 {
+		pav := drawPavings(t.pavings, o.ChunkM, w.pavingMaterial())
+		for _, k := range chunkOrder(pav) {
+			under = append(under, *pav[k])
+		}
 	}
 	// Car parks first take their heights from the land as it will be: the
 	// ground eased to the roads (gland's heights, which don't depend on
@@ -551,8 +560,24 @@ func Build(c *course.Course, o Options) (*World, error) {
 		if len(p.Positions) == 0 {
 			continue // a chunk wholly under roads or water (the river at Rotterdam)
 		}
+		// The slopes under decks are paved, with a material of their own
+		// for the renderer's brick pattern (owner, 2026-10-23).
+		isPaved := func(v uint32) bool {
+			return [3]float32{p.Colors[3*v], p.Colors[3*v+1], p.Colors[3*v+2]} == slopePaving
+		}
+		ps := []gltf.Primitive{p}
+		anyPaved := false
+		for v := range uint32(len(p.Colors) / 3) {
+			anyPaved = anyPaved || isPaved(v)
+		}
+		if anyPaved { // else the chunk as laid, byte for byte
+			if ground, paved := splitPrim(p, isPaved); len(paved.Indices) > 0 {
+				paved.Material = w.pavingMaterial()
+				ps = []gltf.Primitive{ground, paved}
+			}
+		}
 		if err := w.add(fmt.Sprintf("terrain %d %d", keys[k][0], keys[k][1]),
-			map[string]any{"kind": "terrain", "chunk": keys[k]}, p); err != nil {
+			map[string]any{"kind": "terrain", "chunk": keys[k]}, ps...); err != nil {
 			return nil, err
 		}
 	}

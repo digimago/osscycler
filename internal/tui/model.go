@@ -205,7 +205,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.animating = false
 	case StateMsg:
-		shown, old, wasPaused := m.ridePos(), m.ride(), m.paused()
+		shown, old, wasPaused, wasBusy := m.ridePos(), m.ride(), m.paused(), m.busy()
 		m.st, m.connected, m.connErr = msg.State, true, nil
 		if m.firstState.IsZero() {
 			m.firstState = m.now()
@@ -229,8 +229,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.menuPaused && wasPaused && !m.paused() {
 			m.menu, m.menuPaused = nil, false // another screen carried on: back to the ride
 		}
-		if m.menu != nil && m.busy() && !m.menuPaused {
-			m.menu = nil // joined something already running: show it
+		// Something started on another screen while the menu was open:
+		// show it. Not a menu opened over a ride already paused (owner,
+		// 2026-10-22: esc or q on a paused ride opened the menu and the
+		// next state closed it again, a blink).
+		if m.menu != nil && m.busy() && !wasBusy && !m.menuPaused {
+			m.menu = nil
 		}
 		if m.quitting && (!m.underWay() || m.st.GetHeads() > 1) {
 			// Ended, or watched, on another screen meanwhile: nothing to ask.

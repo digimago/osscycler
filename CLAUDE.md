@@ -176,7 +176,6 @@ Packages live under `internal/` (names below mean `internal/<name>`); only `gen/
 - 13. Planned routes and recorded rides: rerouting rules suit planned routes but must not break recorded rides imported as courses (follow those as ridden; timestamps on every point could be the switch). How a carried stretch rides (stairs at 30-50 % for a few metres): walking pace, perhaps.
 - 13b. After a one-way route (a planning session of its own): a corridor into a made-up world until a new ride is picked, more world generated from real terrain and roads, or a fixed world of appended real terrain with set intersections.
 - The Lakes route (the owner's Vosges course in `_gpx`) at about 3.34 km: the rider rides through the road (owner, 2026-10-22); look with the `world-faults` skill, its world built with all map data.
-- The world and worlds tests got slower (owner, 2026-10-22): under the race detector `worlds` 185 → 247 s, `world` 357 → 373 s. Most of it is `TestPartialWorldIsNeverCurrent`, which builds a whole included course as `TestPreview` does (a test track or a short made-up course would do); then the new full builds in `layers_test.go` and `graph_test.go` (tunnels, motorways, underpasses, slip roads), which could share worlds or build smaller ones.
 - Faster world builds themselves (the Dunes course 48 s from the caches), and the course picker showing which worlds are ready.
 - TUI: power and HR zone colours on the dashboard.
 - Workouts: repeat groups of 3+ blocks would only be an editing convenience (real files write sets as plain blocks).

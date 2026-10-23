@@ -47,28 +47,6 @@ func routeOn(L float64, way func(d float64) int) []int {
 	return out
 }
 
-// The builder builds the test tracks whole, and says it made them.
-func TestBuildsTheTracks(t *testing.T) {
-	for _, c := range course.Tracks() {
-		t.Run(c.ID, func(t *testing.T) {
-			w, err := Build(c, Options{Generator: "test"})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if w.Manifest.Builder != Engine {
-				t.Errorf("manifest says builder %q, want %q", w.Manifest.Builder, Engine)
-			}
-			if want := 3 * (int(math.Ceil(c.Distance/pathStep)) + 1); len(w.Manifest.Path.XYZ) != want {
-				t.Errorf("path has %d numbers, want %d", len(w.Manifest.Path.XYZ), want)
-			}
-			if r := w.Check(); r.HolesM2 > 0.5 || r.LandOverRoadM2 > 0.5 || r.OffRoadM > 0 {
-				t.Errorf("check: holes %.2f m² %v, land over road %.2f m² %v, off road %.0f m %v",
-					r.HolesM2, r.Holes, r.LandOverRoadM2, r.LandOverRoad, r.OffRoadM, r.OffRoad)
-			}
-		})
-	}
-}
-
 // The course changes roads only where the network joins them: a route
 // down the middle between two roads 12 m apart, which the map's own match
 // puts on one, then the other, every 150 m, stays on one road until a

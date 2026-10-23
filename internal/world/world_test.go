@@ -5,20 +5,49 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/digimago/osscycler/internal/course"
 	"github.com/digimago/osscycler/internal/scenery"
 )
 
+// trackWorlds holds each test track's world built with the plain test
+// options, built once for the tests that only look at it (a figure 8 takes
+// about 9 s under the race detector). The tests never change a world.
+var trackWorlds struct {
+	sync.Mutex
+	m map[string]*World
+}
+
+// trackWorld is test track c's world built with Options{Generator: "test"}.
+func trackWorld(t *testing.T, c *course.Course) *World {
+	t.Helper()
+	trackWorlds.Lock()
+	defer trackWorlds.Unlock()
+	if w := trackWorlds.m[c.ID]; w != nil {
+		return w
+	}
+	w, err := Build(c, Options{Generator: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if trackWorlds.m == nil {
+		trackWorlds.m = map[string]*World{}
+	}
+	trackWorlds.m[c.ID] = w
+	return w
+}
+
+// The builder builds the test tracks whole, and says it made them.
 func TestBuildTracks(t *testing.T) {
 	for _, c := range course.Tracks() {
 		t.Run(c.ID, func(t *testing.T) {
-			w, err := Build(c, Options{Generator: "test"})
-			if err != nil {
-				t.Fatal(err)
-			}
+			w := trackWorld(t, c)
 			m := w.Manifest
+			if m.Builder != Engine {
+				t.Errorf("manifest says builder %q, want %q", m.Builder, Engine)
+			}
 			if m.Terrain.Source != "course profile" || m.Terrain.Chunks == 0 || w.Vertices == 0 {
 				t.Errorf("terrain %+v, %d vertices", m.Terrain, w.Vertices)
 			}

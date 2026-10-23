@@ -36,7 +36,7 @@ func TestListCoursesSaysMapDataIsComing(t *testing.T) {
 	}
 	sc := stubScenery{
 		have: map[string]*scenery.Scenery{"fetched": {Land: make([]scenery.Land, 4*51),
-			Junctions: []scenery.Junction{{DistanceM: 100, Kind: scenery.JunctionCrossing, Branches: []scenery.Branch{{BearingDeg: 90, WidthM: 7, LengthM: 80}}}},
+			Junctions: []scenery.Junction{{DistanceM: 100, Kind: scenery.JunctionCrossing, Branches: []scenery.Branch{{BearingDeg: 90, WidthM: 7, LengthM: 80, Line: [][2]float64{{0, 100}, {40, 100}, {80, 110}}}}}},
 			Parking:   []scenery.Parking{{DistanceM: 200, OffsetM: 20, LengthM: 40, DepthM: 30, Name: "Bos"}},
 			Signs:     []scenery.PlaceSign{{DistanceM: 300, Name: "Dorp"}}}},
 		pending: map[string]bool{"fetching": true},
@@ -62,6 +62,9 @@ func TestListCoursesSaysMapDataIsComing(t *testing.T) {
 			if len(j) != 1 || j[0].GetKind() != pb.JunctionKind_JUNCTION_KIND_CROSSING || j[0].GetBranches()[0].GetBearingDeg() != 90 ||
 				len(p) != 1 || p[0].GetName() != "Bos" || len(sg) != 1 || sg[0].GetName() != "Dorp" {
 				t.Errorf("junctions %v, parking %v, signs %v", j, p, sg)
+			}
+			if b := j[0].GetBranches()[0]; len(b.GetLineEastM()) != 3 || b.GetLineEastM()[2] != 80 || b.GetLineNorthM()[2] != 110 {
+				t.Errorf("branch line %v %v, want its three points", b.GetLineEastM(), b.GetLineNorthM())
 			}
 		}
 	}

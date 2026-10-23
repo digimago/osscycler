@@ -85,6 +85,50 @@ func TestEscOnAPausedRideOpensTheMenu(t *testing.T) {
 	}
 }
 
+// The menu opened over a paused ride stays open as the core's states come
+// in, and takes keys (owner, 2026-10-22: esc, q or q q on a paused ride
+// opened it for a blink, the next state closing it again).
+func TestMenuOverAPausedRideStays(t *testing.T) {
+	for _, key := range []string{"esc", "q"} {
+		m, cmds := pausing(t)
+		m = paused(m, true)
+		m, cmd := press(m, key)
+		m = run(m, cmd)
+		m = paused(m, true) // the core's next state, still paused
+		m = paused(m, true)
+		if m.menu == nil {
+			t.Fatalf("%s on a paused ride: the next state closed the menu", key)
+		}
+		m, cmd = press(m, "down")
+		run(m, cmd)
+		if m.menu == nil || m.menu.sel != 1 {
+			t.Errorf("%s: the menu didn't take down", key)
+		}
+		if len(cmds.pauses) != 0 {
+			t.Errorf("%s: asked %v, want the pause left as it was", key, cmds.pauses)
+		}
+	}
+}
+
+// A menu open on the dashboard closes when another screen starts a ride,
+// to show it.
+func TestRideStartedElsewhereClosesTheMenu(t *testing.T) {
+	m, _ := pausing(t)
+	idle := proto.Clone(m.st).(*pb.State)
+	idle.Ride = nil
+	next, _ := m.Update(StateMsg{State: idle})
+	m = next.(Model)
+	m, cmd := press(m, "m")
+	m = run(m, cmd)
+	if m.menu == nil {
+		t.Fatal("m on the dashboard: no menu")
+	}
+	next, _ = m.Update(StateMsg{State: rideState(pb.RidePhase_RIDE_PHASE_RIDING, 10)})
+	if next.(Model).menu != nil {
+		t.Error("a ride started on another screen: the menu stayed over it")
+	}
+}
+
 func TestPauseKeysWaitForOpenThings(t *testing.T) {
 	m, cmds := pausing(t)
 	m.input = &input{} // typing a value: space and P are its own

@@ -570,6 +570,12 @@ message JunctionBranch {
   double width_m = 2;
   // How far it runs straight on from the junction (at most 80 m).
   double length_m = 3;
+  // Its centre line from where it meets the route, length_m long, as east
+  // and north pairs in the frame of profile_east_m / profile_north_m: a
+  // branch bends, and a junction merged from nodes a few metres apart has
+  // branches starting at each (empty from an older core: the bearing).
+  repeated float line_east_m = 4;
+  repeated float line_north_m = 5;
 }
 
 // A car park as a box aligned with the road, like Building.

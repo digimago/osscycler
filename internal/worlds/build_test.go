@@ -27,6 +27,24 @@ func track(t *testing.T, id string) *course.Course {
 	return nil
 }
 
+// shortCourse is a real course (not one of the test tracks: map data and a
+// ground model to look for) 1.5 km long, a gentle bend in the polder. Any
+// real course shows what a build of one does without its data, and the
+// shortest included one took a minute under the race detector.
+func shortCourse(t *testing.T) *course.Course {
+	t.Helper()
+	var pts []course.Point
+	for i := 0; i <= 15; i++ {
+		f := float64(i) / 15
+		pts = append(pts, course.Point{Lat: 52.0 + 0.009*f, Lon: 5.0 + 0.012*f*f, Ele: 2 + 3*f})
+	}
+	c, err := course.New("short", "Short", pts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
 // A world is the same every build (the world-assets rule: seeded, never
 // random), so a stamp names its contents and a change shows only what it
 // changed. The figure 8 has everything added per chunk: terrain, roads,
@@ -95,14 +113,7 @@ func TestPreview(t *testing.T) {
 	// A preview of a real course takes neither ground model nor map data
 	// (none to be had here: no caches, no fetching), has made-up
 	// countryside, and a stamp of its own, never taken for the world's.
-	// The shortest real course: any shows it, and a build under the race
-	// detector takes its time.
-	var c *course.Course
-	for _, x := range course.Included() {
-		if !x.Builtin && (c == nil || x.Distance < c.Distance) {
-			c = x
-		}
-	}
+	c := shortCourse(t)
 	b := &Builder{Ground: "auto", DEMCache: t.TempDir(), Preview: true, Options: world.Options{Generator: "test"}}
 	res, err := b.Build(context.Background(), c, nil)
 	if err != nil {
@@ -166,12 +177,7 @@ func TestCompleteBuildNeedsEverythingCached(t *testing.T) {
 // while the map data server failed, had a path over grass where the D486
 // runs, and stamped current it was never built again).
 func TestPartialWorldIsNeverCurrent(t *testing.T) {
-	var c *course.Course
-	for _, x := range course.Included() {
-		if !x.Builtin && (c == nil || x.Distance < c.Distance) {
-			c = x
-		}
-	}
+	c := shortCourse(t)
 	maps := scenery.NewStore(scenery.Config{CacheDir: t.TempDir(), Fetch: false}, nil)
 	b := &Builder{Ground: "none", DEMCache: t.TempDir(), Maps: maps, Options: world.Options{Generator: "test"}}
 	res, err := b.Build(context.Background(), c, nil)

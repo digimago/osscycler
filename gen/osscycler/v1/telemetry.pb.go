@@ -4123,7 +4123,13 @@ type JunctionBranch struct {
 	BearingDeg float64 `protobuf:"fixed64,1,opt,name=bearing_deg,json=bearingDeg,proto3" json:"bearing_deg,omitempty"`
 	WidthM     float64 `protobuf:"fixed64,2,opt,name=width_m,json=widthM,proto3" json:"width_m,omitempty"`
 	// How far it runs straight on from the junction (at most 80 m).
-	LengthM       float64 `protobuf:"fixed64,3,opt,name=length_m,json=lengthM,proto3" json:"length_m,omitempty"`
+	LengthM float64 `protobuf:"fixed64,3,opt,name=length_m,json=lengthM,proto3" json:"length_m,omitempty"`
+	// Its centre line from where it meets the route, length_m long, as east
+	// and north pairs in the frame of profile_east_m / profile_north_m: a
+	// branch bends, and a junction merged from nodes a few metres apart has
+	// branches starting at each (empty from an older core: the bearing).
+	LineEastM     []float32 `protobuf:"fixed32,4,rep,packed,name=line_east_m,json=lineEastM,proto3" json:"line_east_m,omitempty"`
+	LineNorthM    []float32 `protobuf:"fixed32,5,rep,packed,name=line_north_m,json=lineNorthM,proto3" json:"line_north_m,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4177,6 +4183,20 @@ func (x *JunctionBranch) GetLengthM() float64 {
 		return x.LengthM
 	}
 	return 0
+}
+
+func (x *JunctionBranch) GetLineEastM() []float32 {
+	if x != nil {
+		return x.LineEastM
+	}
+	return nil
+}
+
+func (x *JunctionBranch) GetLineNorthM() []float32 {
+	if x != nil {
+		return x.LineNorthM
+	}
+	return nil
 }
 
 // A car park as a box aligned with the road, like Building.
@@ -6842,12 +6862,15 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\n" +
 	"distance_m\x18\x01 \x01(\x01R\tdistanceM\x12.\n" +
 	"\x04kind\x18\x02 \x01(\x0e2\x1a.osscycler.v1.JunctionKindR\x04kind\x128\n" +
-	"\bbranches\x18\x03 \x03(\v2\x1c.osscycler.v1.JunctionBranchR\bbranches\"e\n" +
+	"\bbranches\x18\x03 \x03(\v2\x1c.osscycler.v1.JunctionBranchR\bbranches\"\xa7\x01\n" +
 	"\x0eJunctionBranch\x12\x1f\n" +
 	"\vbearing_deg\x18\x01 \x01(\x01R\n" +
 	"bearingDeg\x12\x17\n" +
 	"\awidth_m\x18\x02 \x01(\x01R\x06widthM\x12\x19\n" +
-	"\blength_m\x18\x03 \x01(\x01R\alengthM\"\x8f\x01\n" +
+	"\blength_m\x18\x03 \x01(\x01R\alengthM\x12\x1e\n" +
+	"\vline_east_m\x18\x04 \x03(\x02R\tlineEastM\x12 \n" +
+	"\fline_north_m\x18\x05 \x03(\x02R\n" +
+	"lineNorthM\"\x8f\x01\n" +
 	"\vParkingArea\x12\x1d\n" +
 	"\n" +
 	"distance_m\x18\x01 \x01(\x01R\tdistanceM\x12\x19\n" +

@@ -25,24 +25,77 @@ const placeShowM = 500.0
 // the view's bands across the road no longer keep them straight.
 const branchDrawM = 40.0
 
-// worldBranch is a road leaving a junction, in the scene's metres.
+// worldBranch is a road leaving a junction, in the scene's metres: its
+// centre line from the route's road, at most branchDrawM long.
 type worldBranch struct {
-	d              float64 // the junction's distance along the course
-	x0, y0, dx, dy float64 // start and unit direction
-	length, half   float64
+	d    float64 // the junction's distance along the course
+	pts  [][2]float64
+	half float64
 }
 
-// branchesOf places a course's junction branches at the scene's smoothed
-// road: they leave from where the view draws the road.
+// branchesOf places a course's junction branches along their own lines
+// (owner, 2026-10-22: in town, drawn straight along their bearing from the
+// junction, side roads ran through houses where they bend, and started
+// out of nowhere where the junction had been merged from nodes metres
+// apart), joined to the scene's smoothed road nearest their start; along
+// the bearing from the junction where the core sends no line (an older
+// core).
 func (sc *roadScene) branchesOf(js []*pb.Junction) []worldBranch {
 	var out []worldBranch
 	for _, j := range js {
 		x, y, _ := sc.at(j.GetDistanceM())
 		for _, b := range j.GetBranches() {
-			rad := b.GetBearingDeg() * math.Pi / 180
-			out = append(out, worldBranch{d: j.GetDistanceM(), x0: x, y0: y, dx: math.Sin(rad), dy: math.Cos(rad),
-				length: math.Min(b.GetLengthM(), branchDrawM), half: math.Max(b.GetWidthM(), 3) / 2})
+			var pts [][2]float64
+			if e, n := b.GetLineEastM(), b.GetLineNorthM(); len(e) >= 2 && len(n) == len(e) {
+				first := [2]float64{float64(e[0]), float64(n[0])}
+				if r := sc.nearestRoad(first, j.GetDistanceM()); math.Hypot(r[0]-first[0], r[1]-first[1]) > 0.3 {
+					pts = append(pts, r)
+				}
+				for i := range e {
+					pts = append(pts, [2]float64{float64(e[i]), float64(n[i])})
+				}
+			} else {
+				rad := b.GetBearingDeg() * math.Pi / 180
+				l := b.GetLengthM()
+				pts = [][2]float64{{x, y}, {x + math.Sin(rad)*l, y + math.Cos(rad)*l}}
+			}
+			out = append(out, worldBranch{d: j.GetDistanceM(), pts: clipLine(pts, branchDrawM), half: math.Max(b.GetWidthM(), 3) / 2})
 		}
+	}
+	return out
+}
+
+// nearestRoad is the scene's road point nearest p within branchJoinM of
+// distance d along it.
+func (sc *roadScene) nearestRoad(p [2]float64, d float64) [2]float64 {
+	best, at := math.Inf(1), [2]float64{}
+	for s := d - branchJoinM; s <= d+branchJoinM; s++ {
+		x, y, _ := sc.at(s)
+		if dd := math.Hypot(x-p[0], y-p[1]); dd < best {
+			best, at = dd, [2]float64{x, y}
+		}
+	}
+	return at
+}
+
+// branchJoinM: a branch's line is joined to the road this far either way
+// of its junction (a merged junction's branches start up to mergeM, 25 m,
+// from it).
+const branchJoinM = 30.0
+
+// clipLine is line pts cut off length metres along it.
+func clipLine(pts [][2]float64, length float64) [][2]float64 {
+	out := [][2]float64{pts[0]}
+	run := 0.0
+	for i := 1; i < len(pts); i++ {
+		a, b := pts[i-1], pts[i]
+		l := math.Hypot(b[0]-a[0], b[1]-a[1])
+		if run+l >= length {
+			f := (length - run) / math.Max(l, 1e-9)
+			return append(out, [2]float64{a[0] + f*(b[0]-a[0]), a[1] + f*(b[1]-a[1])})
+		}
+		run += l
+		out = append(out, b)
 	}
 	return out
 }
@@ -74,13 +127,21 @@ func (sc *roadScene) extras(pos float64) sceneExtras {
 // margin.
 func (ex sceneExtras) onBranch(x, y, margin float64) bool {
 	for _, b := range ex.branches {
-		px, py := x-b.x0, y-b.y0
-		t := px*b.dx + py*b.dy
-		if t < 0 || t > b.length {
-			continue
-		}
-		if math.Abs(px*b.dy-py*b.dx) < b.half+margin {
-			return true
+		for i := 1; i < len(b.pts); i++ {
+			a, c := b.pts[i-1], b.pts[i]
+			dx, dy := c[0]-a[0], c[1]-a[1]
+			l := math.Hypot(dx, dy)
+			if l < 1e-9 {
+				continue
+			}
+			dx, dy = dx/l, dy/l
+			px, py := x-a[0], y-a[1]
+			if t := px*dx + py*dy; t < 0 || t > l {
+				continue
+			}
+			if math.Abs(px*dy-py*dx) < b.half+margin {
+				return true
+			}
 		}
 	}
 	return false
@@ -205,27 +266,35 @@ func drawSign(cv canvas, cam roadCamera, g roadSeg, off float64) {
 // road stays on top, and nearer road (a crest) hides it below clip.
 func (sc *roadScene) drawBranch(cv canvas, onRoad []bool, cam roadCamera, b worldBranch, clip float64) {
 	_, _, z := sc.at(b.d)
-	// Only the part well in front of the eye: depth is linear along it.
-	depth := func(t float64) float64 {
-		return (b.x0+b.dx*t-cam.x)*cam.sinH + (b.y0+b.dy*t-cam.y)*cam.cosH
+	for i := 1; i < len(b.pts); i++ {
+		a, c := b.pts[i-1], b.pts[i]
+		l := math.Hypot(c[0]-a[0], c[1]-a[1])
+		if l < 1e-9 {
+			continue
+		}
+		dx, dy := (c[0]-a[0])/l, (c[1]-a[1])/l
+		// Only the part well in front of the eye: depth is linear along it.
+		depth := func(t float64) float64 {
+			return (a[0]+dx*t-cam.x)*cam.sinH + (a[1]+dy*t-cam.y)*cam.cosH
+		}
+		t0, t1 := 0.0, l
+		d0, d1 := depth(t0), depth(t1)
+		const minDepth = 2.0
+		switch {
+		case d0 < minDepth && d1 < minDepth:
+			continue
+		case d0 < minDepth:
+			t0 += (minDepth - d0) / (d1 - d0) * (t1 - t0)
+		case d1 < minDepth:
+			t1 = t0 + (minDepth-d0)/(d1-d0)*(t1-t0)
+		}
+		px, py := dy*b.half, -dx*b.half // across the branch
+		quad := [4][3]float64{
+			{a[0] + dx*t0 - px, a[1] + dy*t0 - py, z}, {a[0] + dx*t0 + px, a[1] + dy*t0 + py, z},
+			{a[0] + dx*t1 + px, a[1] + dy*t1 + py, z}, {a[0] + dx*t1 - px, a[1] + dy*t1 - py, z},
+		}
+		fillFlat(cv, onRoad, cam, quad, asphaltA, clip)
 	}
-	t0, t1 := 0.0, b.length
-	d0, d1 := depth(t0), depth(t1)
-	const minDepth = 2.0
-	switch {
-	case d0 < minDepth && d1 < minDepth:
-		return
-	case d0 < minDepth:
-		t0 += (minDepth - d0) / (d1 - d0) * (t1 - t0)
-	case d1 < minDepth:
-		t1 = t0 + (minDepth-d0)/(d1-d0)*(t1-t0)
-	}
-	px, py := b.dy*b.half, -b.dx*b.half // across the branch
-	quad := [4][3]float64{
-		{b.x0 + b.dx*t0 - px, b.y0 + b.dy*t0 - py, z}, {b.x0 + b.dx*t0 + px, b.y0 + b.dy*t0 + py, z},
-		{b.x0 + b.dx*t1 + px, b.y0 + b.dy*t1 + py, z}, {b.x0 + b.dx*t1 - px, b.y0 + b.dy*t1 - py, z},
-	}
-	fillFlat(cv, onRoad, cam, quad, asphaltA, clip)
 }
 
 // drawLot lays a car park flat beside the road, from where it is past

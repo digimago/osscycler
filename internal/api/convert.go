@@ -179,7 +179,11 @@ func CourseToProto(c *course.Course, sc *scenery.Scenery) *pb.Course {
 		for _, j := range sc.Junctions {
 			pj := &pb.Junction{DistanceM: j.DistanceM, Kind: pb.JunctionKind(j.Kind)}
 			for _, b := range j.Branches {
-				pj.Branches = append(pj.Branches, &pb.JunctionBranch{BearingDeg: b.BearingDeg, WidthM: b.WidthM, LengthM: b.LengthM})
+				br := &pb.JunctionBranch{BearingDeg: b.BearingDeg, WidthM: b.WidthM, LengthM: b.LengthM}
+				for _, q := range b.Line {
+					br.LineEastM, br.LineNorthM = append(br.LineEastM, float32(q[0])), append(br.LineNorthM, float32(q[1]))
+				}
+				pj.Branches = append(pj.Branches, br)
 			}
 			pc.Junctions = append(pc.Junctions, pj)
 		}

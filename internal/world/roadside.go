@@ -163,6 +163,25 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 			a := t.fine[ln.from+k]
 			return a.e + dir[k][1]*off, a.n - dir[k][0]*off // right of the way's direction
 		}
+		// Items every so many metres are spaced along the map's way from
+		// its first node (onWay), not from the line's start: a line ends
+		// at a junction, and a road joining it (another route's map data,
+		// a motorway's slip road) moved every drain after it, up to 77 m.
+		// every says whether an item every step metres, from offset,
+		// stands between samples k-1 and k (on one way).
+		along := make([]float64, n)
+		for k := range n {
+			along[k] = onWay(ways, t.fine[ln.from+k])
+		}
+		every := func(k int, step, offset float64) bool {
+			if k < 1 {
+				return false
+			}
+			if a, b := t.fine[ln.from+k-1], t.fine[ln.from+k]; a.way != b.way || a.way < 0 {
+				return false
+			}
+			return math.Floor((along[k]-offset)/step) != math.Floor((along[k-1]-offset)/step)
+		}
 		way := t.fine[ln.from].way
 		var wy scenery.Way
 		if way >= 0 && way < len(ways) {
@@ -445,7 +464,7 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 				first := snowPoleStepM / 2 * float64(si)
 				for k := 0; k < n; k++ {
 					a := t.fine[ln.from+k]
-					if k > 0 && math.Floor((dist[k]-first)/snowPoleStepM) == math.Floor((dist[k-1]-first)/snowPoleStepM) {
+					if !every(k, snowPoleStepM, first) {
 						continue
 					}
 					if !near[k] || a.ele < st.snowPoleAboveM || sides[si].rail[k] || sides[si].wall[k] || a.walk[si] || builtUp(a.e, a.n) {
@@ -499,7 +518,7 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 		for si, sign := range []float64{-1, 1} {
 			for k := 1; k < n; k++ {
 				a := t.fine[ln.from+k]
-				if math.Floor((dist[k]+7*float64(si))/30) == math.Floor((dist[k-1]+7*float64(si))/30) {
+				if !every(k, 30, -7*float64(si)) {
 					continue
 				}
 				if !near[k] || !a.walk[si] || a.open[si] || !builtUp(a.e, a.n) {
@@ -519,7 +538,7 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 			if math.Abs(turn) < math.Sin(28*math.Pi/180) {
 				continue
 			}
-			if k > 0 && math.Floor(dist[k]/bendPostStepM) == math.Floor(dist[k-1]/bendPostStepM) {
+			if !every(k, bendPostStepM, 0) {
 				continue
 			}
 			si := 1 // turning right: the right is the inside
@@ -542,7 +561,7 @@ func (w *World) addRoadside(t *terrain, ways []scenery.Way, fps []scenery.Footpr
 				cap = 0xc8402e // national: red
 			}
 			for k := 1; k < n; k++ {
-				if math.Floor(dist[k]/1000) == math.Floor(dist[k-1]/1000) || !near[k] {
+				if !every(k, 1000, 0) || !near[k] {
 					continue
 				}
 				a := t.fine[ln.from+k]
@@ -1010,6 +1029,31 @@ func wallNormal(a, b, c [3]float64, sign float64) [3]float64 {
 	n = scale3(n, 1/l)
 	_ = sign
 	return n
+}
+
+// onWay is how far along its map way (from the way's first node) sample a
+// lies: its place on the way's own line, whatever line of the network it
+// was drawn in. -1 off the map's ways.
+func onWay(ways []scenery.Way, a sample) float64 {
+	if a.way < 0 || a.way >= len(ways) {
+		return -1
+	}
+	l := ways[a.way].Line
+	best, at, sofar := math.Inf(1), 0.0, 0.0
+	for i := 0; i+1 < len(l); i++ {
+		p, q := l[i], l[i+1]
+		de, dn := q[0]-p[0], q[1]-p[1]
+		seg := math.Hypot(de, dn)
+		f := 0.0
+		if seg > 0 {
+			f = math.Max(0, math.Min(1, ((a.e-p[0])*de+(a.n-p[1])*dn)/(seg*seg)))
+		}
+		if d := math.Hypot(a.e-p[0]-f*de, a.n-p[1]-f*dn); d < best {
+			best, at = d, sofar+f*seg
+		}
+		sofar += seg
+	}
+	return at
 }
 
 // snowPole is a jalon: a 2 m pole, black and yellow, its top reflecting.

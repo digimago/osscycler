@@ -27,7 +27,29 @@ const (
 	deckMinM   = 6.0  // a run of deck shorter than this stays a road
 	railMinM   = 3.0  // a tagged bridge shorter than this gets no railings
 	bankSeatM  = 0.8  // a short span's bank seat, under its slab
+	// The fill under a deck, from fillShoulderM past the edge of the road
+	// below up to the deck's bank seat, stands no steeper than fillSlope
+	// (rise over run; owner, 2026-10-23: packed sand stands at 47° at
+	// most, so a road lowered under a deck widens the gap the deck spans):
+	// 1:1.5, 34°, an embankment's usual slope, as the land's mesh steepens
+	// the first metre off the shoulder (at 1:1 single metres rose at 52°).
+	fillSlope     = 1 / 1.5
+	fillShoulderM = 0.5
 )
+
+// deckReach is how far past the edge of road o, drop metres below, a deck
+// reaches. Over the course's own underpass (a cut through an embankment):
+// over the shoulder and the fill up to its bank seat, and the abutment on
+// it. Elsewhere as before (deckClearM, deckSlope): the fill's reach on
+// every road under another would also lay decks between roads merely
+// passing near each other at different heights (hairpin legs).
+func deckReach(o sample, drop float64) float64 {
+	r := deckClearM + deckSlope*(drop-bridgeM)
+	if o.underpass {
+		r = math.Max(deckClearM, fillShoulderM+math.Max(0, drop-deckDepthM-bankSeatM)/fillSlope+abutmentT)
+	}
+	return r
+}
 
 // markDecks marks the road samples on a deck: over another road more than
 // bridgeM lower (within its edge and deckClearM, more the deeper it lies), or aloft. Short gaps
@@ -62,7 +84,7 @@ func markDecks(lines []*roadLine, loopM float64, beside bool) {
 						o := lines[r.l].samples[r.i]
 						// Over a tunnel the road lies on the ground (an
 						// embankment), not on a deck.
-						if o.tunnel || o.ele > s.ele-bridgeM || math.Hypot(o.e-s.e, o.n-s.n) > o.edge+deckClearM+deckSlope*(s.ele-o.ele-bridgeM) {
+						if o.tunnel || o.ele > s.ele-bridgeM || math.Hypot(o.e-s.e, o.n-s.n) > o.edge+deckReach(o, s.ele-o.ele) {
 							continue
 						}
 						if beside && r.l != li && alongsideAt(l.samples, i, lines[r.l].samples, r.i) {

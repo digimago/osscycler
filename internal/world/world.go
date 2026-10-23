@@ -220,6 +220,10 @@ type sample struct {
 	open           [2]bool    // a junction's patch on that side: no sidewalk or lane
 	again          bool       // an earlier pass of the route rides the same road here: drawn once, by it
 	wide           [2]float64 // the carriageway reaches this much further left and right, to a road alongside
+	// underpass: the course's own way under a bridge, or on a ramp to it,
+	// cut through the embankment: the land beside it rises no steeper
+	// than the fill under a deck (fillSlope).
+	underpass bool
 	// butt: another road's surface continues at that edge (joinAlongside):
 	// no skirt there, whose face showed as a dark line along the seam
 	// (owner, 2026-10-11: two carriageways side by side, 1 cm apart).

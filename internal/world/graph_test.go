@@ -1274,6 +1274,73 @@ func TestGraphOwnWayUnderTwoShortBridges(t *testing.T) {
 	}
 }
 
+// A cycle underpass the map lacks, under a dual carriageway's two short
+// bridges on an embankment, takes service vehicles and two cycle paths,
+// and its banks stand as packed sand does (owner, 2026-10-23: the Posbank
+// Loop's under the N348 was 2.2 m under the decks, 3.5 m across, its
+// banks at 50-60°).
+func TestCycleUnderpassTakesServiceVehicles(t *testing.T) {
+	c := graphCourse(t, "underpass3", append(along([2]float64{0, 0}, [2]float64{0, 400}, 20), [2]float64{0, 400}))
+	ground := func(lat, lon float64) (float64, bool) {
+		_, n := c.Project(lat, lon)
+		return 10 + 4*smoothstep(math.Max(0, math.Min(1, (30.5-math.Abs(n-202.5))/6))), true
+	}
+	var ways []scenery.Way
+	for k, n := range []float64{190, 215} {
+		id := int64(10 * (k + 1))
+		ways = append(ways,
+			scenery.Way{Line: [][2]float64{{-150, n}, {-15, n}}, Nodes: []int64{id, id + 1}, Name: "N1", Class: "primary", WidthM: 7, Oneway: 1},
+			scenery.Way{Line: [][2]float64{{-15, n}, {15, n}}, Nodes: []int64{id + 1, id + 2}, Name: "N1", Class: "primary", WidthM: 7, Oneway: 1, Bridge: true, Layer: 1},
+			scenery.Way{Line: [][2]float64{{15, n}, {150, n}}, Nodes: []int64{id + 2, id + 3}, Name: "N1", Class: "primary", WidthM: 7, Oneway: 1})
+	}
+	w, err := Build(c, Options{Generator: "test", Elevation: ground, RoadWidthM: 3,
+		Scenery: &scenery.Scenery{Ways: ways, RouteOn: routeOn(c.Distance, func(float64) int { return -1 }), RouteStepM: 5}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	xyz := w.Manifest.Path.XYZ
+	height := func(n float64) float64 {
+		best, h := math.Inf(1), 0.0
+		for i := 0; 3*i < len(xyz); i++ {
+			if d := math.Abs(-xyz[3*i+2] - n); d < best {
+				best, h = d, xyz[3*i+1]
+			}
+		}
+		return h
+	}
+	maxGrade := math.Tan(47 * math.Pi / 180)
+	// Two cycle paths wide, between the decks and on the ramp down (no deck
+	// over it there to find instead).
+	for _, n := range []float64{202.5, 175} {
+		for _, side := range []float64{-1, 1} {
+			if y, ok := surfaceTop(w, "road", side*1.8, n); !ok || math.Abs(y-height(n)) > 0.3 {
+				t.Errorf("no way 1.8 m %s of its middle at %.1f m (%.2f, %v): narrower than two cycle paths", map[float64]string{-1: "left", 1: "right"}[side], n, y, ok)
+			}
+		}
+	}
+	for _, n := range []float64{190, 215} {
+		path := height(n)
+		deck, _ := surfaceTop(w, "road", 8, n) // the bridge's road, beside the way
+		if clear := deck - deckDepthM - path; clear < gUnderClearM-0.05 {
+			t.Errorf("under the bridge at %.0f m: %.2f m under its slab, want %.1f", n, clear, gUnderClearM)
+		}
+		for _, side := range []float64{-1, 1} {
+			last := math.NaN()
+			for e := 1.0; e <= 10; e++ {
+				land, ok := surfaceTop(w, "terrain", side*e, n)
+				if !ok {
+					last = math.NaN()
+					continue
+				}
+				if !math.IsNaN(last) && land-last > maxGrade+0.05 {
+					t.Errorf("the bank at %.0f m, %.0f m out: rises %.2f m in a metre, steeper than packed sand", n, side*e, land-last)
+				}
+				last = land
+			}
+		}
+	}
+}
+
 // A block is closed on all six sides (owner, 2026-10-22: a pier's
 // crosshead had no bottom face).
 func TestBoxIsClosed(t *testing.T) {

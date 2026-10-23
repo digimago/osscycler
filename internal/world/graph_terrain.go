@@ -612,14 +612,14 @@ func (g *gland) blend(e, n, base float64) (h, gap, edge float64) {
 				for i := range pieces {
 					if pieces[i].k == pk {
 						if gap < pieces[i].gap {
-							pieces[i] = piece{pk, gap, ele, qe, qn, ue, un}
+							pieces[i] = piece{pk, gap, ele, qe, qn, ue, un, a.underpass}
 						}
 						found = true
 						break
 					}
 				}
 				if !found && len(pieces) < cap(pieces) {
-					pieces = append(pieces, piece{pk, gap, ele, qe, qn, ue, un})
+					pieces = append(pieces, piece{pk, gap, ele, qe, qn, ue, un, a.underpass})
 				}
 			}
 		}
@@ -720,7 +720,25 @@ func (g *gland) blend(e, n, base float64) (h, gap, edge float64) {
 			return h, gap, edge
 		}
 	}
-	return (road-gSinkM)*(1-f) + base*f, gap, edge
+	h = (road-gSinkM)*(1-f) + base*f
+	// Beside an underpass's way the cutting's banks stand no steeper than
+	// the fill under a deck (they had risen at 50-60°, 1.8 m within a
+	// metre, beside the Posbank Loop's cycle underpass under the N348).
+	// The bank is that slope itself, from the shoulder up to where it
+	// meets the ground model, and the ground beyond (eased, it climbed
+	// under the slope at 50° where it caught up with the ground). Any
+	// such way within reach sets it, not only the nearest road: by a
+	// deck's end the nearest is the embankment's own road.
+	slope := math.Inf(1)
+	for _, p := range pieces {
+		if p.cut {
+			slope = math.Min(slope, p.ele-gSinkM+fillSlope*math.Max(0, p.gap-fillShoulderM))
+		}
+	}
+	if !math.IsInf(slope, 1) {
+		h = math.Min(base, slope)
+	}
+	return h, gap, edge
 }
 
 // bankBetween is the land's height where e, n lies between two different
@@ -767,6 +785,7 @@ type gPiece struct {
 	ele    float64
 	qe, qn float64
 	de, dn float64 // the road's way there (unit; 0 for none)
+	cut    bool    // an underpass's way, cut through an embankment
 }
 
 // island is the lower road's height when e, n lies between two different

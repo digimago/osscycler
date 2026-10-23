@@ -253,7 +253,13 @@ func shot(v *views, a map[string]any) ([]any, error) {
 	f := pick(a, "m", "look_deg", "settle")
 	f["path"] = path
 	f["width"] = argNum(a, "width", 1280)
-	rep, err := v.call("shot", f, 60*time.Second)
+	// Its settle frames come slowly while a large world is still loading
+	// (1 fps on the Posbank Loop's first seconds): give each up to 2 s.
+	wait := 60 * time.Second
+	if settle, ok := f["settle"].(float64); ok {
+		wait = max(wait, time.Duration(settle*2)*time.Second)
+	}
+	rep, err := v.call("shot", f, wait)
 	if err != nil {
 		return nil, err
 	}

@@ -27,6 +27,9 @@ type gnet struct {
 	// virtual: lines from this index on are ways across roundabouts
 	// (linkLine), part of the network but not drawn.
 	virtual int
+	// ringOf is, per way across a roundabout (from virtual on), the index
+	// of the roundabout drawn there (-1: none).
+	ringOf []int
 }
 
 // gstop is a node on a line: where along it, and which.
@@ -124,9 +127,10 @@ func newGnet(lines []*roadLine, ws []scenery.Way, rbs []roundabout) *gnet {
 		}
 		sort.Slice(ends, func(i, j int) bool { return ends[i] < ends[j] })
 		var rb *roundabout
+		ri := -1
 		for i := range rbs {
 			if math.Hypot(rbs[i].c[0]-r.c[0], rbs[i].c[1]-r.c[1]) < 1 {
-				rb = &rbs[i]
+				rb, ri = &rbs[i], i
 			}
 		}
 		hw := ringHalfM
@@ -145,6 +149,7 @@ func newGnet(lines []*roadLine, ws []scenery.Way, rbs []roundabout) *gnet {
 				g.lineOf[vl] = k
 				L := vl.samples[len(vl.samples)-1].d
 				g.stops = append(g.stops, []gstop{{0, x}, {L, y}})
+				g.ringOf = append(g.ringOf, ri)
 				g.adj[x] = append(g.adj[x], gedge{to: y, length: L, line: k, a: 0, b: L})
 				if lk.flat {
 					g.adj[y] = append(g.adj[y], gedge{to: x, length: L, line: k, a: L, b: 0})

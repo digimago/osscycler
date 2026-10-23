@@ -157,6 +157,7 @@ func Build(c *course.Course, o Options) (*World, error) {
 		lines = trimLinesInLots(lines, o.Scenery.Parking)
 		net := newGnet(lines, ways, rbs)
 		net.anchorHeights(ways)
+		net.levelRoundabouts(rbs, func(e, n float64) float64 { return t.base(e, n, coarse) })
 		net.separateLayers(ways, ridden)
 		progress(0.05)
 
@@ -343,8 +344,7 @@ func Build(c *course.Course, o Options) (*World, error) {
 		for _, p := range patches {
 			nodes = append(nodes, p.nodes...)
 		}
-		rbs[i].absorb(nodes, lines)
-		rbs[i].fit(lines, t.base(rbs[i].c[0], rbs[i].c[1], coarse))
+		rbs[i].absorb(nodes, lines) // its plane set with the heights (levelRoundabouts)
 		kept := patches[:0]
 		for _, p := range patches {
 			if math.Hypot(p.node[0]-rbs[i].c[0], p.node[1]-rbs[i].c[1]) > rbs[i].outer()+5 {

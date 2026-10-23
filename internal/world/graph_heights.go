@@ -223,3 +223,86 @@ func bandNear(ss []sample, d float64) float64 {
 	}
 	return w
 }
+
+// levelRoundabouts puts each roundabout drawn on its plane, fitted to the
+// roads reaching it (base where there are too few) and tilted no more than
+// rbMaxTilt: the nodes on its ring and the ways across it at the plane's
+// height, so the course goes round on the ring as drawn, and the roads
+// reaching it on the plane within its edge, then eased into their own
+// heights (rbEaseGrade). Before this the ring's nodes took their roads'
+// heights, which on a hillside lay metres off the plane the ring is drawn
+// on.
+func (g *gnet) levelRoundabouts(rbs []roundabout, base func(e, n float64) float64) {
+	if len(rbs) == 0 {
+		return
+	}
+	for i := range rbs {
+		rbs[i].fit(g.lines[:g.virtual], base(rbs[i].c[0], rbs[i].c[1]))
+		rbs[i].capTilt(rbMaxTilt)
+	}
+	ring := map[int64]int{} // node on a ring → its roundabout
+	for k, ri := range g.ringOf {
+		if ri >= 0 {
+			for _, st := range g.stops[g.virtual+k] {
+				ring[st.node] = ri
+			}
+		}
+	}
+	for node, ri := range ring {
+		p := g.pos[node]
+		g.ele[node] = rbs[ri].height(p[0], p[1])
+	}
+	for k, l := range g.lines[:g.virtual] {
+		for si, st := range g.stops[k] {
+			ri, ok := ring[st.node]
+			if !ok {
+				continue
+			}
+			rb := &rbs[ri]
+			R := rb.outer()
+			for _, dir := range []int{-1, 1} {
+				// Not past the line's next node the other way.
+				limit := math.Inf(dir)
+				if n := si + dir; n >= 0 && n < len(g.stops[k]) {
+					limit = g.stops[k][n].d
+				}
+				past := func(d float64) bool { return float64(dir)*(d-limit) >= 0 }
+				i := sort.Search(len(l.samples), func(i int) bool { return l.samples[i].d >= st.d })
+				if dir < 0 {
+					i--
+				}
+				// On the plane within the ring's edge.
+				edge, z := st.d, g.ele[st.node]
+				for ; i >= 0 && i < len(l.samples) && !past(l.samples[i].d); i += dir {
+					s := &l.samples[i]
+					if math.Hypot(s.e-rb.c[0], s.n-rb.c[1]) >= R && s.d != st.d {
+						break
+					}
+					s.ele = rb.height(s.e, s.n)
+					edge, z = s.d, s.ele
+				}
+				if i < 0 || i >= len(l.samples) {
+					continue
+				}
+				// Then eased into its own heights.
+				ease := math.Max(rbEaseMinM, 1.5*math.Abs(l.samples[i].ele-z)/rbEaseGrade)
+				for ; i >= 0 && i < len(l.samples) && !past(l.samples[i].d); i += dir {
+					s := &l.samples[i]
+					dd := math.Abs(s.d - edge)
+					if dd >= ease {
+						break
+					}
+					f := smoothstep(dd / ease)
+					s.ele = z*(1-f) + s.ele*f
+				}
+			}
+		}
+	}
+	for k, l := range g.lines[g.virtual:] {
+		if ri := g.ringOf[k]; ri >= 0 {
+			for i := range l.samples {
+				l.samples[i].ele = rbs[ri].height(l.samples[i].e, l.samples[i].n)
+			}
+		}
+	}
+}

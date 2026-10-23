@@ -162,6 +162,89 @@ func TestGraphRidesOverTheRoundabout(t *testing.T) {
 	}
 }
 
+// A roundabout on a hillside lies on a plane tilted no more than
+// rbMaxTilt, its roads eased onto it, and the rider rides round on its
+// surface (owner, 2026-10-23: on the Lakes Route's ring on a 14.6 % plane
+// the rider went 3 m up and down over a quarter of it, the ring's edge
+// over its island).
+func TestRoundaboutOnAHillsideLiesNearLevel(t *testing.T) {
+	const r = 22.0 // an island
+	var ring [][2]float64
+	var ringNodes []int64
+	for k := 0; k <= 16; k++ {
+		a := -math.Pi/2 + 2*math.Pi*float64(k%16)/16
+		ring = append(ring, [2]float64{r * math.Cos(a), 300 + r*math.Sin(a)})
+		ringNodes = append(ringNodes, int64(100+k%16))
+	}
+	ways := []scenery.Way{
+		{Line: [][2]float64{{0, -40}, {0, 300 - r}}, Nodes: []int64{1, 100}, Name: "South", Class: "secondary", WidthM: 7},
+		{Line: [][2]float64{{r, 300}, {300, 300}}, Nodes: []int64{104, 2}, Name: "East", Class: "secondary", WidthM: 7},
+		{Line: [][2]float64{{0, 300 + r}, {0, 600}}, Nodes: []int64{108, 3}, Name: "North", Class: "primary", WidthM: 7},
+		{Line: [][2]float64{{-r, 300}, {-400, 300}}, Nodes: []int64{112, 4}, Name: "West", Class: "secondary", WidthM: 7},
+		{Line: ring, Nodes: ringNodes, Class: "secondary", WidthM: 8, Roundabout: true, Oneway: 1},
+	}
+	// In from the south, round past the east and north roads, out west.
+	var pts [][2]float64
+	pts = append(pts, along([2]float64{0, 0}, [2]float64{0, 300 - r}, 20)...)
+	for k := 0; k <= 12; k++ {
+		a := -math.Pi/2 + 1.5*math.Pi*float64(k)/12
+		pts = append(pts, [2]float64{r * math.Cos(a), 300 + r*math.Sin(a)})
+	}
+	pts = append(pts, along([2]float64{-r - 5, 300}, [2]float64{-380, 300}, 20)...)
+	pts = append(pts, [2]float64{-380, 300})
+	c := graphCourse(t, "hillside roundabout", pts)
+	ground := func(lat, lon float64) (float64, bool) {
+		_, n := c.Project(lat, lon)
+		return 10 + 0.12*n, true // rising 12 % to the north
+	}
+	on := routeOn(c.Distance, func(d float64) int {
+		switch {
+		case d < 300-r:
+			return 0
+		case d < 300-r+1.5*math.Pi*r:
+			return 4
+		}
+		return 3
+	})
+	w, err := Build(c, Options{Generator: "test", Elevation: ground, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The ring's surface round its centre line: no more than the tilt
+	// allows across it.
+	lo, hi := math.Inf(1), math.Inf(-1)
+	for k := 0; k < 32; k++ {
+		a := 2 * math.Pi * float64(k) / 32
+		y, ok := surfaceTop(w, "road", r*math.Cos(a), 300+r*math.Sin(a))
+		if !ok {
+			t.Fatalf("no ring at %.0f°", a*180/math.Pi)
+		}
+		lo, hi = math.Min(lo, y), math.Max(hi, y)
+	}
+	if hi-lo > rbMaxTilt*2*r+0.1 {
+		t.Errorf("the ring rises %.2f m across, more than %.0f %% over its %.0f m", hi-lo, 100*rbMaxTilt, 2*r)
+	}
+	// The rider on it, all the way round.
+	xyz := w.Manifest.Path.XYZ
+	round := 0
+	for i := 0; 3*i < len(xyz); i++ {
+		e, n, y := xyz[3*i], -xyz[3*i+2], xyz[3*i+1]
+		if math.Abs(math.Hypot(e, n-300)-r) > 3 {
+			continue
+		}
+		round++
+		// Within 0.15 m: where the turn onto the ring is swept up to 3 m off
+		// the network's line, the path keeps the line's height, 0.12 m off
+		// the plane at 4 %.
+		if top, ok := surfaceTop(w, "road", e, n); !ok || math.Abs(y-top) > 0.15 {
+			t.Errorf("the rider at %.0f, %.0f is at %.2f m, the ring's surface at %.2f (%v)", e, n, y, top, ok)
+		}
+	}
+	if round < 10 {
+		t.Errorf("only %d path points on the ring, want the course round it", round)
+	}
+}
+
 // The land meets the road: a road in a cutting 3 m deep, its banks rising
 // within metres of its edge, has no holes beside it and no land over it.
 func TestGraphLandMeetsTheRoad(t *testing.T) {

@@ -145,6 +145,9 @@ public sealed class ControlSocket : IDisposable
         public double? Num(string name) =>
             Args[name] is JsonValue v && v.TryGetValue<double>(out var d) && double.IsFinite(d) ? d : null;
 
+        public bool? Bool(string name) =>
+            Args[name] is JsonValue v && v.TryGetValue<bool>(out var b) ? b : null;
+
         public string[] Strs(string name) =>
             Args[name] is JsonArray a ? [.. a.Select(x => x is JsonValue v && v.TryGetValue<string>(out var s) ? s : "")] : [];
 

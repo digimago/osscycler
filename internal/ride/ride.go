@@ -227,11 +227,16 @@ func (s *Session) start(courseID string, against *time.Time) error {
 	}
 	s.mu.Lock()
 	start := math.Max(0, math.Min(s.cfg.StartDistanceM, c.Distance-minRideM))
+	// A start partway round a lap (practising a section of it) joins the
+	// lap untimed until its line, as turning round does: the timing lines
+	// are timer portals (owner, 2026-10-20). It was put back to the lap's
+	// start, so a section of a lapped course couldn't be practised.
+	midLap := false
 	switch {
 	case c.Loop:
 		start = 0 // laps count from the line
-	case c.Lap != nil:
-		start = math.Min(start, c.Lap.StartM) // on the run-in: laps count from the lap's start
+	case c.Lap != nil && start > c.Lap.StartM:
+		start, midLap = math.Min(start, c.Lap.EndM-minRideM), true
 	}
 	ghosts := s.cfg.Ghosts
 	s.mu.Unlock()
@@ -260,7 +265,10 @@ func (s *Session) start(courseID string, against *time.Time) error {
 	ele, grade := c.At(start)
 	r := &run{c: c, rider: sim.Rider{Params: s.cfg.Params, DistanceM: start}, phase: telemetry.RideArmed, lastEle: ele, startM: start,
 		ghost: ghost, chosen: against != nil, yielded: c.Lap != nil && drivenElsewhere(st)}
-	if c.Lap != nil && start >= c.Lap.StartM {
+	switch {
+	case midLap && against == nil:
+		r.untimed, r.joined, r.lapDist = true, true, start-c.Lap.StartM
+	case c.Lap != nil && start >= c.Lap.StartM:
 		r.lap = 1 // the ride starts on the lap (a test track's): it begins at the first pedal stroke
 	}
 	switch {

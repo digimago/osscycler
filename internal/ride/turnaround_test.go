@@ -101,6 +101,36 @@ func TestTurnAroundOnTheLap(t *testing.T) {
 	}
 }
 
+// A ride practising a section of a lap (-ride-start-m past the lap's
+// line) starts there, untimed until the line, as turning round does; it
+// was put back to the lap's start.
+func TestStartPartwayRoundALap(t *testing.T) {
+	c := square(t).Lapped()
+	cfg := DefaultConfig(sim.DefaultParams(87, 9))
+	cfg.StartDistanceM = c.Lap.StartM + 1000
+	hub := telemetry.NewHub()
+	s := NewSession(hub, &recordingTrainer{}, []*course.Course{c}, cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err := s.Start(c.ID); err != nil {
+		t.Fatal(err)
+	}
+	r := ride(hub)
+	if math.Abs(r.DistanceM-cfg.StartDistanceM) > 1 || !r.Untimed || r.Lap != 0 || r.LapDistanceM >= 0 {
+		t.Fatalf("starting %.0f m into a lapped course: %+v", cfg.StartDistanceM, r)
+	}
+	var first telemetry.Lap
+	pedal(s, hub, time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC), 10*time.Minute, 300, func(r telemetry.Ride) {
+		if r.Lap == 0 && r.LastLap.N > 0 {
+			t.Fatalf("a lap ended before the line: %+v", r.LastLap)
+		}
+		if first.N == 0 && r.LastLap.N == 1 {
+			first = r.LastLap
+		}
+	})
+	if first.N != 1 || first.Elapsed < 2*time.Minute || first.Elapsed > 5*time.Minute {
+		t.Errorf("the first timed lap after the line: %+v", first)
+	}
+}
+
 // On the run-in out the other way has no way back to the start: turning
 // round is refused there (owner, 2026-10-20: ending the ride was a
 // surprise), and the ride goes on.

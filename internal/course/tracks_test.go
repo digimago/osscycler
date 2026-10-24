@@ -46,7 +46,7 @@ func TestTracks(t *testing.T) {
 		t.Errorf("figure 8 grades %.1f %% to %.1f %%", eight.MinGrade, eight.MaxGrade)
 	}
 	// The roads cross in the middle, a quarter and three quarters round:
-	// the second pass on a bridge well over the first.
+	// the second pass on a bridge over the first.
 	east, north := eight.Track()
 	q1, q3 := len(east)/4, 3*len(east)/4
 	if d := math.Hypot(east[q1]-east[q3], north[q1]-north[q3]); d > 5 {
@@ -54,8 +54,10 @@ func TestTracks(t *testing.T) {
 	}
 	under, _ := eight.At(eight.Distance / 4)
 	over, _ := eight.At(3 * eight.Distance / 4)
-	if over-under < 8 {
-		t.Errorf("bridge clearance %.1f m (%.1f over %.1f)", over-under, over, under)
+	// 2.7 m under the deck's 0.9 m slab, as a cycle underpass (owner,
+	// 2026-10-24: no more, or the dike stands steep).
+	if over-under < 3.6 || over-under > 5 {
+		t.Errorf("bridge clearance %.1f m (%.1f over %.1f), want 3.6-5", over-under, over, under)
 	}
 }
 

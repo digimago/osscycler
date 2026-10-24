@@ -161,6 +161,7 @@ func Build(c *course.Course, o Options) (*World, error) {
 		net.separateLayers(ways, ridden)
 		progress(0.05)
 
+		var wide [][2]float64 // stretches of the course's own way under bridges, with their ramps
 		own := make([][4]float64, steps+1)
 		heading := make([][2]float64, steps+1)
 		fineD := c.Distance / float64(len(route)-1)
@@ -236,6 +237,12 @@ func Build(c *course.Course, o Options) (*World, error) {
 					continue
 				}
 				under = append(under, i)
+				d := step * float64(i)
+				if k := len(wide) - 1; k >= 0 && d-gUnderRampM <= wide[k][1] {
+					wide[k][1] = d + gUnderRampM
+				} else {
+					wide = append(wide, [2]float64{d - gUnderRampM, d + gUnderRampM})
+				}
 				if low < own[i][2] {
 					own[i][2] = low
 					lowered = append(lowered, i)
@@ -318,7 +325,7 @@ func Build(c *course.Course, o Options) (*World, error) {
 				f[i] = 1
 			}
 		}
-		n := &network{lines: lines, stretches: stretches, o: o}
+		n := &network{lines: lines, stretches: stretches, o: o, underpasses: wide}
 		lines = append(lines, n.ownWays(pd, px, py, pz, f, c.Loop)...)
 	} else {
 		// No map roads: the road is the route's, as in the classic builder.
@@ -386,7 +393,10 @@ func Build(c *course.Course, o Options) (*World, error) {
 			}
 		}
 	}
-	markDecks(lines, c.Distance, styleFor(o.Region).junctionLevelM > 0)
+	markDecks(lines, c.Distance, styleFor(o.Region).junctionLevelM > 0, o.Elevation == nil)
+	if o.Elevation == nil {
+		markDikes(lines)
+	}
 	// After markDecks: a deck stays open beneath.
 	deepSkirts(lines)
 	hideOwnWaysInLots(lines, patches, o.Scenery) // before t.fine: the roadside reads those samples
@@ -405,6 +415,7 @@ func Build(c *course.Course, o Options) (*World, error) {
 		return t.base(e, n, cn)
 	})
 	floors := newTunnelFloors(runs)
+	t.pavings = pavings(lines)
 	tunnelMat := -1
 	if len(runs) > 0 {
 		tunnelMat = w.doc.AddMaterial(gltf.Material{Name: "tunnel", Color: [4]float32{1, 1, 1, 1}, Roughness: 0.9})
@@ -440,6 +451,14 @@ func Build(c *course.Course, o Options) (*World, error) {
 	var under []gltf.Primitive
 	for _, k := range chunkOrder(roads) {
 		under = append(under, roads[k]...)
+	}
+	// An underpass's paving too: the land meets its edges as a road's,
+	// rather than lying under it in cells that spanned over it.
+	if len(t.pavings) > 0 {
+		pav := drawPavings(t.pavings, o.ChunkM, w.pavingMaterial())
+		for _, k := range chunkOrder(pav) {
+			under = append(under, *pav[k])
+		}
 	}
 	// Car parks first take their heights from the land as it will be: the
 	// ground eased to the roads (gland's heights, which don't depend on
@@ -544,8 +563,24 @@ func Build(c *course.Course, o Options) (*World, error) {
 		if len(p.Positions) == 0 {
 			continue // a chunk wholly under roads or water (the river at Rotterdam)
 		}
+		// The slopes under decks are paved, with a material of their own
+		// for the renderer's brick pattern (owner, 2026-10-23).
+		isPaved := func(v uint32) bool {
+			return [3]float32{p.Colors[3*v], p.Colors[3*v+1], p.Colors[3*v+2]} == slopePaving
+		}
+		ps := []gltf.Primitive{p}
+		anyPaved := false
+		for v := range uint32(len(p.Colors) / 3) {
+			anyPaved = anyPaved || isPaved(v)
+		}
+		if anyPaved { // else the chunk as laid, byte for byte
+			if ground, paved := splitPrim(p, isPaved); len(paved.Indices) > 0 {
+				paved.Material = w.pavingMaterial()
+				ps = []gltf.Primitive{ground, paved}
+			}
+		}
 		if err := w.add(fmt.Sprintf("terrain %d %d", keys[k][0], keys[k][1]),
-			map[string]any{"kind": "terrain", "chunk": keys[k]}, p); err != nil {
+			map[string]any{"kind": "terrain", "chunk": keys[k]}, ps...); err != nil {
 			return nil, err
 		}
 	}
@@ -896,11 +931,17 @@ const (
 	// The course's own way under a bridge the map has: this far below the
 	// bridge's road (more than bridgeM, so the bridge is a deck), where the
 	// course crosses it (the bridge's way within gUnderCos of across), the
-	// approaches at most gUnderGrade over gUnderRampM.
-	gUnderM     = 3.0
-	gUnderGrade = 0.08
-	gUnderRampM = 60.0
-	gUnderJoinM = 40.0 // underpasses this close are one
+	// approaches at most gUnderGrade over gUnderRampM. A cycle underpass
+	// takes service vehicles and two cycle paths (owner, 2026-10-23: the
+	// Posbank Loop's under the N348 was neither deep nor wide enough, 2.2 m
+	// under the deck and 3.5 m across): gUnderClearM under the deck's
+	// slab, gUnderHalfM either side of its middle, ramps included.
+	gUnderClearM = 2.7 // 2.4-2.7 m for service vehicles
+	gUnderHalfM  = 2.0 // two cycle paths of 1.5-1.8 m, and a margin
+	gUnderM      = gUnderClearM + deckDepthM
+	gUnderGrade  = 0.08
+	gUnderRampM  = 60.0
+	gUnderJoinM  = 40.0 // underpasses this close are one
 	// The riding line keeps this far inside the drawn carriageway's edge
 	// (owner's A/B, 2026-10-12: single metres off road on the the polder ride
 	// ride at 0.93 and 7.89 km, the rider on the edge of a 2.4 m road).

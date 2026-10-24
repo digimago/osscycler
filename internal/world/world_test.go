@@ -133,13 +133,14 @@ func (t *terrain) at(e, n float64) float64 {
 
 func TestBridge(t *testing.T) {
 	// The figure of eight crosses itself a quarter of the way round, under
-	// the bridge it comes back over at three quarters, 10 m higher.
+	// the bridge it comes back over at three quarters, 4 m higher (a cycle
+	// underpass's headroom and the deck: owner, 2026-10-24).
 	c := course.Tracks()[1]
 	tr := testTerrain(c, Options{})
 	e, n := c.Project(c.Position(c.Distance / 4))
 	under, _ := c.At(c.Distance / 4)
 	over, _ := c.At(3 * c.Distance / 4)
-	if over-under < 8 {
+	if over-under < 3.6 {
 		t.Fatalf("the fixture changed: roads at %.1f and %.1f m", under, over)
 	}
 	if h := tr.at(e, n); math.Abs(h-(under-sinkM)) > 0.3 {

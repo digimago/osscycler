@@ -723,6 +723,9 @@ type network struct {
 
 	o         Options
 	stretches []scenery.RoadStretch
+	// underpasses are the stretches (along the course) where its own way
+	// goes under a bridge, ramps included: drawn gUnderHalfM wide at least.
+	underpasses [][2]float64
 }
 
 type sampleRef struct {
@@ -850,6 +853,15 @@ func (n *network) ownWays(d, x, y, z, f []float64, loop bool) []*roadLine {
 		applyRoads(ss, n.stretches, n.o.RoadWidthM, n.o.CellM)
 		for _, k := range past {
 			ss[k].d += length
+		}
+		for k := range ss {
+			for _, u := range n.underpasses {
+				if ss[k].d >= u[0] && ss[k].d <= u[1] {
+					ss[k].hw = math.Max(ss[k].hw, gUnderHalfM)
+					ss[k].edge = math.Max(ss[k].edge, ss[k].hw)
+					ss[k].underpass = true
+				}
+			}
 		}
 		for k := range ss {
 			// A path the map data lacks (a cycle path, a track): no

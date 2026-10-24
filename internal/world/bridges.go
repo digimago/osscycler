@@ -35,6 +35,12 @@ const (
 	// the first metre off the shoulder (at 1:1 single metres rose at 52°).
 	fillSlope     = 1 / 1.5
 	fillShoulderM = 0.5
+	// dikeSlope: where the builder shapes the land (no ground model), the
+	// fill by a deck over a road falls no steeper than 1:2, grassed, for a
+	// natural look (owner, 2026-10-24); dikeReachM along each road from
+	// the deck.
+	dikeSlope  = 0.5
+	dikeReachM = 40.0
 	// underpassClearM: nothing is planted this far past the edge of the
 	// course's own way in an underpass, ramps included (its cut banks).
 	underpassClearM = 6.0
@@ -46,12 +52,21 @@ const (
 // it. Elsewhere as before (deckClearM, deckSlope): the fill's reach on
 // every road under another would also lay decks between roads merely
 // passing near each other at different heights (hairpin legs).
-func deckReach(o sample, drop float64) float64 {
-	r := deckClearM + deckSlope*(drop-bridgeM)
-	if o.underpass {
-		r = math.Max(deckClearM, fillShoulderM+math.Max(0, drop-deckDepthM-bankSeatM)/fillSlope+abutmentT)
+//
+// With dike (a world without a ground model: its land shaped by the
+// builder), a deck spans as far as a dike at dikeSlope needs (owner,
+// 2026-10-24: the figure 8's crossing stood unnaturally steep).
+func deckReach(o sample, drop float64, dike bool) float64 {
+	fill := func(slope float64) float64 {
+		return math.Max(deckClearM, fillShoulderM+math.Max(0, drop-deckDepthM-bankSeatM)/slope+abutmentT)
 	}
-	return r
+	switch {
+	case o.underpass:
+		return fill(fillSlope)
+	case dike:
+		return fill(dikeSlope)
+	}
+	return deckClearM + deckSlope*(drop-bridgeM)
 }
 
 // markDecks marks the road samples on a deck: over another road more than
@@ -61,7 +76,7 @@ func deckReach(o sample, drop float64) float64 {
 // another on a mountainside stands behind a wall, owner, 2026-10-16,
 // 1.48 km of the Route des Américains: drawn as a bridge, with an
 // abutment and grass spikes beside the Rue du Hohneck).
-func markDecks(lines []*roadLine, loopM float64, beside bool) {
+func markDecks(lines []*roadLine, loopM float64, beside, dike bool) {
 	type ref struct{ l, i int }
 	const cellM = 10.0
 	grid := map[[2]int][]ref{}
@@ -87,7 +102,7 @@ func markDecks(lines []*roadLine, loopM float64, beside bool) {
 						o := lines[r.l].samples[r.i]
 						// Over a tunnel the road lies on the ground (an
 						// embankment), not on a deck.
-						if o.tunnel || o.ele > s.ele-bridgeM || math.Hypot(o.e-s.e, o.n-s.n) > o.edge+deckReach(o, s.ele-o.ele) {
+						if o.tunnel || o.ele > s.ele-bridgeM || math.Hypot(o.e-s.e, o.n-s.n) > o.edge+deckReach(o, s.ele-o.ele, dike) {
 							continue
 						}
 						if beside && r.l != li && alongsideAt(l.samples, i, lines[r.l].samples, r.i) {
@@ -244,8 +259,9 @@ func (w *World) addBridges(t *terrain, lines []*roadLine, ways []scenery.Way) er
 // deckBelow is the road under a deck: its way there (unit, east and north)
 // and its sample nearest the deck's middle; zero: none.
 type deckBelow struct {
-	way [2]float64
-	o   sample
+	way  [2]float64
+	o    sample
+	line *roadLine // o's
 }
 
 func roadsBelow(lines []*roadLine) func(l *roadLine, i, j int) deckBelow {
@@ -280,7 +296,7 @@ func roadsBelow(lines []*roadLine) func(l *roadLine, i, j int) deckBelow {
 					if d := math.Hypot(o.e-m.e, o.n-m.n); under && d < best {
 						de, dn, _ := lines[r.l].smooth.heading(o.d)
 						if h := math.Hypot(de, dn); h > 0 {
-							best, below = d, deckBelow{[2]float64{de / h, dn / h}, o}
+							best, below = d, deckBelow{[2]float64{de / h, dn / h}, o, lines[r.l]}
 						}
 					}
 				}
@@ -456,7 +472,14 @@ func deck(prim func(e, n float64) *gltf.Primitive, s *surface, l *roadLine, i, j
 			}
 			low -= footM
 		}
-		block(p, plan, low, f.c[1]-0.02, concrete)
+		// Its top under the road at each corner, as the road falls along
+		// a skewed end (owner, 2026-10-24: level at the road's middle, the
+		// seat showed through the road where it fell away, figure 8).
+		var tops [4]float64
+		for k, q := range plan {
+			tops[k] = q[1] - seatCoverM
+		}
+		block(p, plan, low, tops, concrete)
 		// The expansion joint across the road at the deck's end, along the
 		// road below as the end is: a dark steel strip on the surface.
 		a, b := point(t, -f.left, 0.012, 0), point(t, f.right, 0.012, 0)
@@ -492,22 +515,37 @@ func outward(a, b, hint [3]float64) [3]float64 {
 	return n
 }
 
+// seatCoverM: a bank seat's top lies this far under the road over it.
+const seatCoverM = 0.2
+
 // block is a prism over the quadrilateral plan (its corners in order, at
-// any height), from low up to top, closed on every side.
-func block(p *gltf.Primitive, plan [4][3]float64, low, top float64, c [3]float32) {
+// any height), from low up to each corner's top, closed on every side.
+func block(p *gltf.Primitive, plan [4][3]float64, low float64, top [4]float64, c [3]float32) {
 	var mid [3]float64
 	for _, q := range plan {
 		mid[0], mid[2] = mid[0]+q[0]/4, mid[2]+q[2]/4
 	}
 	lo := func(k int) [3]float64 { return [3]float64{plan[k%4][0], low, plan[k%4][2]} }
-	hi := func(k int) [3]float64 { return [3]float64{plan[k%4][0], top, plan[k%4][2]} }
+	hi := func(k int) [3]float64 { return [3]float64{plan[k%4][0], top[k%4], plan[k%4][2]} }
 	for k := range 4 {
 		a, b := lo(k), lo(k+1)
 		out := [3]float64{(a[0]+b[0])/2 - mid[0], 0, (a[2]+b[2])/2 - mid[2]}
 		quad(p, a, b, hi(k+1), hi(k), outward(a, b, out), c)
 	}
-	quad(p, hi(0), hi(1), hi(2), hi(3), [3]float64{0, 1, 0}, c)
+	quad(p, hi(0), hi(1), hi(2), hi(3), upNormal(hi(0), hi(1), hi(3)), c)
 	quad(p, lo(0), lo(1), lo(2), lo(3), [3]float64{0, -1, 0}, c)
+}
+
+// upNormal is the upward unit normal of the plane through a, b and c.
+func upNormal(a, b, c [3]float64) [3]float64 {
+	n := cross([3]float64{b[0] - a[0], b[1] - a[1], b[2] - a[2]}, [3]float64{c[0] - a[0], c[1] - a[1], c[2] - a[2]})
+	if n[1] < 0 {
+		n = scale3(n, -1)
+	}
+	if l := math.Sqrt(dot3(n, n)); l > 0 {
+		n = scale3(n, 1/l)
+	}
+	return n
 }
 
 // box is a block in frame f: across from x0 to x1, along from a0 to a1
@@ -531,4 +569,39 @@ func box(p *gltf.Primitive, f deckFrame, x0, x1, a0, a1, low, top float64, c [3]
 	// Closed below too (owner, 2026-10-22: a pier's crosshead over the
 	// figure 8's motorway had no bottom face; every block a manifold).
 	quad(p, lo(x0, a0), lo(x1, a0), lo(x1, a1), lo(x0, a1), [3]float64{0, -1, 0}, c)
+}
+
+// markDikes marks the roads by each deck over another road: the lower road
+// within dikeReachM of the deck's middle along it (dike: the land rises from
+// it at dikeSlope at most), the deck's own road within dikeReachM of its
+// ends (dikeTop: the land falls from it at dikeSlope at most).
+func markDikes(lines []*roadLine) {
+	below := roadsBelow(lines)
+	for _, l := range lines {
+		ss := l.samples
+		for i := 0; i+1 < len(ss); {
+			if !onDeck(ss, i) {
+				i++
+				continue
+			}
+			j := i + 1
+			for j+1 < len(ss) && onDeck(ss, j) {
+				j++
+			}
+			u := below(l, i, j)
+			if u.line != nil {
+				for k := range u.line.samples {
+					if math.Abs(u.line.samples[k].d-u.o.d) < dikeReachM {
+						u.line.samples[k].dike = true
+					}
+				}
+				for k := range ss {
+					if !ss[k].aloft && (math.Abs(ss[k].d-ss[i].d) < dikeReachM || math.Abs(ss[k].d-ss[j].d) < dikeReachM) {
+						ss[k].dikeTop = true
+					}
+				}
+			}
+			i = j
+		}
+	}
 }

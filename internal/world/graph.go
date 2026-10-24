@@ -393,7 +393,10 @@ func Build(c *course.Course, o Options) (*World, error) {
 			}
 		}
 	}
-	markDecks(lines, c.Distance, styleFor(o.Region).junctionLevelM > 0)
+	markDecks(lines, c.Distance, styleFor(o.Region).junctionLevelM > 0, o.Elevation == nil)
+	if o.Elevation == nil {
+		markDikes(lines)
+	}
 	// After markDecks: a deck stays open beneath.
 	deepSkirts(lines)
 	hideOwnWaysInLots(lines, patches, o.Scenery) // before t.fine: the roadside reads those samples

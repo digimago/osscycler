@@ -235,6 +235,9 @@ type sample struct {
 	// cut through the embankment: the land beside it rises no steeper
 	// than the fill under a deck (fillSlope).
 	underpass bool
+	// dike, dikeTop: a road under a deck, and the deck's own road, near
+	// the deck where the builder shapes the land (markDikes).
+	dike, dikeTop bool
 	// butt: another road's surface continues at that edge (joinAlongside):
 	// no skirt there, whose face showed as a dark line along the seam
 	// (owner, 2026-10-11: two carriageways side by side, 1 cm apart).

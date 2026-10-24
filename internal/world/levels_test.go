@@ -73,7 +73,7 @@ func TestRoadsALevelApartStayTwo(t *testing.T) {
 func TestRoadBesideIsNoDeck(t *testing.T) {
 	for _, beside := range []bool{false, true} {
 		low, high := levelLine(0, 0), levelLine(4, 3)
-		markDecks([]*roadLine{low, high}, 0, beside)
+		markDecks([]*roadLine{low, high}, 0, beside, false)
 		aloft := high.samples[15].aloft
 		if aloft == beside {
 			t.Errorf("beside %v: upper road on a deck %v, want %v", beside, aloft, !beside)

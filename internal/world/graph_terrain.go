@@ -662,14 +662,14 @@ func (g *gland) blend(e, n, base float64) (h, gap, edge float64) {
 				for i := range pieces {
 					if pieces[i].k == pk {
 						if gap < pieces[i].gap {
-							pieces[i] = piece{pk, gap, ele, qe, qn, ue, un, a.underpass}
+							pieces[i] = piece{pk, gap, ele, qe, qn, ue, un, a.underpass, dikeOf(a)}
 						}
 						found = true
 						break
 					}
 				}
 				if !found && len(pieces) < cap(pieces) {
-					pieces = append(pieces, piece{pk, gap, ele, qe, qn, ue, un, a.underpass})
+					pieces = append(pieces, piece{pk, gap, ele, qe, qn, ue, un, a.underpass, dikeOf(a)})
 				}
 			}
 		}
@@ -771,6 +771,20 @@ func (g *gland) blend(e, n, base float64) (h, gap, edge float64) {
 		}
 	}
 	h = (road-gSinkM)*(1-f) + base*f
+	// By a deck over a road where the land is the builder's: a dike at
+	// dikeSlope at most, rising from the lower road's shoulder and falling
+	// from the deck's road (owner, 2026-10-24: the figure 8's crossing).
+	lo, hi := math.Inf(-1), math.Inf(1)
+	for _, p := range pieces {
+		run := math.Max(0, p.gap-fillShoulderM)
+		switch p.dike {
+		case 1:
+			lo = math.Max(lo, p.ele-gSinkM-dikeSlope*run)
+		case -1:
+			hi = math.Min(hi, p.ele-gSinkM+dikeSlope*run)
+		}
+	}
+	h = math.Min(math.Max(h, lo), hi)
 	// Beside an underpass's way the cutting's banks stand no steeper than
 	// the fill under a deck (they had risen at 50-60°, 1.8 m within a
 	// metre, beside the Posbank Loop's cycle underpass under the N348).
@@ -844,6 +858,7 @@ type gPiece struct {
 	qe, qn float64
 	de, dn float64 // the road's way there (unit; 0 for none)
 	cut    bool    // an underpass's way, cut through an embankment
+	dike   int8    // +1 a deck's road near it (dikeTop), -1 a road under a deck (dike)
 }
 
 // island is the lower road's height when e, n lies between two different
@@ -1586,4 +1601,15 @@ func barycentric(e, n [3]float64, pe, pn float64) (w0, w1, w2 float64, ok bool) 
 	w2 = 1 - w0 - w1
 	const eps = -1e-9
 	return w0, w1, w2, w0 >= eps && w1 >= eps && w2 >= eps
+}
+
+// dikeOf is sample a's dike side for gPiece.
+func dikeOf(a sample) int8 {
+	switch {
+	case a.dikeTop:
+		return 1
+	case a.dike:
+		return -1
+	}
+	return 0
 }

@@ -401,3 +401,13 @@ The owner's look at the deeper underpass under the N348 (26.78 km), with views f
 - **Wing walls** were tried along the decks' sides and taken out: the owner reserves them for poured concrete tunnels.
 
 Bank seat corners in the air: 8 of 16 → 0. The Posbank Loop's check unchanged; 2,737,215 triangles (+78), 62.2 MB; only the underpass's chunks change. The figure 8: its two decks over roads skew (up to 1.6 m), the land under its decks in the paving material, the check unchanged. The oval: every array the same. Khronos validator: 0 errors, 0 warnings on all three. `TestCycleUnderpassTakesServiceVehicles` also checks the paving between the decks with no land over it; `TestGraphOwnWayUnderTwoShortBridges` checks the paving under a deck by its surface.
+
+### 2026-10-24: the figure 8's crossing as a dike
+
+Owner: the under/over crossing at the heart of the figure 8 looked unnatural, the dike too steep; does it need that much height, and can the dike slope at 1:2? It didn't: the passes crossed 10 m apart (12 and 22 m) where a cycle underpass's 2.7 m under a 0.9 m slab needs 3.6. The upper pass now crosses at 16 m (4.0 m over, 3.1 m clear), the descent from the top starting at 3.1 km rather than 3.2 so it keeps under 7 % (6.8 % at most; `TestTracks` wants 3.6-5 m at the crossing). Measured square to the upper pass 15 m before the crossing, the dike had fallen 4.7 m in a metre to the lower pass.
+
+Where the builder shapes the land (no ground model), a deck over a road now spans as far as a 1:2 dike needs (`deckReach` with `dikeSlope`), and by such a deck (`markDikes`: the lower road within 40 m of the deck's middle, the deck's road within 40 m of its ends) the land rises from the lower road's shoulder and falls from the deck's road at 1:2 at most, grassed. Worlds with a ground model keep their real embankments. Now 0.46-0.51 m a metre at the same spot.
+
+Also, the owner saw the concrete supporting the motorway bridge's ends poking through the road above: a bank seat's top lay level 2 cm under the road's middle, and where the road falls away along a (skewed) end it came up through the asphalt, up to 3 cm (there before the skew too, 1.5 cm). Each corner's top now follows the road 20 cm under it (`seatCoverM`); only the expansion joints lie on the road, 1 cm proud.
+
+The figure 8: 483,050 triangles (+326), 11.4 MB, the check clean (path steps 0.38 → 0.41 m); the Heideweg's bridge over the motorway now on two piers (its span past 24 m with the lower heights). The Posbank Loop: only its underpass's chunks (the seats). The oval byte-identical but its stamp. Khronos validator: 0 errors, 0 warnings.

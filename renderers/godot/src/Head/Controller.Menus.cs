@@ -469,8 +469,14 @@ public sealed partial class Controller
                     foreach (var c in _courses ?? new List<Course>())
                     {
                         var pb = Hud.Laps.Lapped(c) ? null : _results?.FirstOrDefault(r => r.CourseId == c.Id && r.StartM < 1 && r.PersonalBest);
+                        string world = WorldReady?.Invoke(c.Id) switch
+                        {
+                            true => " · world ready",
+                            false => " · world built when ridden",
+                            null => "",
+                        };
                         rows.Add(new("", (Hud.Laps.Lapped(c) ? "↻ " : "") + c.Name,
-                            $"{Hud.Format.Fixed(c.DistanceM / 1000, 1)} km · {Hud.Format.Fixed(c.GainM, 0)} m up" + (pb != null ? " · PB " + Hud.Format.Clock(pb.ElapsedS) : ""), pb != null));
+                            $"{Hud.Format.Fixed(c.DistanceM / 1000, 1)} km · {Hud.Format.Fixed(c.GainM, 0)} m up" + (pb != null ? " · PB " + Hud.Format.Clock(pb.ElapsedS) : "") + world, pb != null));
                     }
                     hint = "enter ride · tab history, activities · esc back";
                     break;

@@ -231,6 +231,12 @@ public partial class Main : Node3D
                 _source = new WorldSource(_core, _worldsDir);
                 _ahead = new WorldAhead(_core, _worldsDir);
                 _head = new Head.Controller(_core, layout) { Watcher = watcher };
+                _head.WorldReady = id => _ahead?.Of(id) switch
+                {
+                    Head.AheadQueue.Outcome.Ready => true,
+                    Head.AheadQueue.Outcome.Skipped or Head.AheadQueue.Outcome.Failed => false,
+                    _ => null,
+                };
                 if (_debug)
                     _head.Note($"debug: space marks a flawed spot ({_marksDir})");
             }
@@ -653,6 +659,8 @@ public partial class Main : Node3D
         // then the world itself in its place.
         var (dir, stamp, status) = _source!.For(r.CourseId);
         _worldStatus = status;
+        if (dir != null && status == "") // the world itself, not its preview
+            _ahead?.Ready(r.CourseId);
         if (Head.WorldPick.NeedsLoad(dir, stamp, _shownDir, _world?.Manifest.Stamp ?? "", _loadingDir, _missing, _swapIn != null))
             LoadInBackground(dir!); // a failure sets _missing: not tried every frame
         if (_ride == null || r.DistanceM != _ride.DistanceM || r.Phase != _ride.Phase)

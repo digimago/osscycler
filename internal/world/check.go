@@ -86,7 +86,7 @@ func (w *World) Check() CheckResult {
 	)
 	class := func(mat int) int {
 		switch w.doc.MaterialName(mat) {
-		case "terrain":
+		case "terrain", "slope paving":
 			return land
 		case "tunnel":
 			return roof

@@ -393,6 +393,25 @@ public class MenuTests
         Assert.Null(h.List());
     }
 
+    // The course picker says which courses' 3D worlds are ready (owner's
+    // list), from what the 3D view knows; without that, nothing.
+    [Fact]
+    public void ThePickerSaysWhichWorldsAreReady()
+    {
+        var h = new Controller(new Calls()) { WorldReady = id => id switch { "posbank" => true, "oval-400" => false, _ => null } };
+        h.Key("r", new State(), 0);
+        Loaded(h);
+        var rows = h.List()!.Rows;
+        Assert.EndsWith(" · world ready", rows.Single(r => r.Label == "Posbank Loop").Detail);
+        Assert.EndsWith(" · world built when ridden", rows.Single(r => r.Label.EndsWith("Oval 400 m")).Detail);
+        Assert.DoesNotContain(rows, r => r.Label != "Posbank Loop" && !r.Label.EndsWith("Oval 400 m") && r.Detail.Contains("world"));
+
+        var plain = new Controller(new Calls());
+        plain.Key("r", new State(), 0);
+        Loaded(plain);
+        Assert.DoesNotContain(plain.List()!.Rows, r => r.Detail.Contains("world"));
+    }
+
     [Fact]
     public void CoursesHistoryActivities()
     {

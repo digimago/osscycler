@@ -46,6 +46,22 @@ public sealed class WorldAhead
         }
     }
 
+    // Of is how course id's world turned out this session (null: not tried
+    // yet), for the course picker.
+    public Head.AheadQueue.Outcome? Of(string id)
+    {
+        lock (_mu)
+            return _queue.Of(id);
+    }
+
+    // Ready records that course id's world is current (the ride's own,
+    // built or found by WorldSource), so it isn't tried again.
+    public void Ready(string id)
+    {
+        lock (_mu)
+            _queue.Done(id, Head.AheadQueue.Outcome.Ready);
+    }
+
     // Fetch says whether builds may download what a course lacks (the
     // profile's world_fetch); allowing it tries the skipped courses again.
     public void Fetch(bool allowed)

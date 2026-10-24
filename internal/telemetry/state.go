@@ -212,6 +212,8 @@ type Profile struct {
 	FTPW             float64
 	HeightCm         float64 // zero: unknown
 	MaxHRBpm         float64 // zero: unknown
+	ThresholdHRBpm   float64 // zero: unknown
+	HRZones          string  // what heart rate zones come from when both are set: "max" or "threshold"
 	CdA              float64 // drag area rides start with, m²
 	DifficultyPct    float64
 	SuggestedFTPW    float64 // a starting point for onboarding

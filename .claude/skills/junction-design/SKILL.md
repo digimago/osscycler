@@ -172,7 +172,7 @@ Every piece shares its edges or is tucked under its neighbour:
 - Two builds byte-identical (`cmp` the files; sort every map before
   iterating, `TestBuildIsTheSameEveryTime`), the Dutch worlds unchanged
   unless the change is meant for them (`glb_diff.py` against a build of
-  the last commit: Posbank Loop graph and classic, figure-8, oval-400).
+  the last commit: Posbank Loop, figure-8, oval-400).
 
 ## Working order
 

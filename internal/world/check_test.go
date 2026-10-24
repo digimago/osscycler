@@ -79,6 +79,15 @@ func TestCheck(t *testing.T) {
 	if math.Abs(r.LandOverRoadM2-20) > 1 || len(r.LandOverRoad) != 1 || r.LandOverRoad[0].D != 400 {
 		t.Errorf("land over road %.2f m² %v, want 20 m² at 400 m", r.LandOverRoadM2, r.LandOverRoad)
 	}
+	// With a tunnel's roof between the road and that land, the land is the
+	// tunnel's cover, not grass through the asphalt.
+	roof := w.doc.AddMaterial(gltf.Material{Name: "tunnel"})
+	w.prims = append(w.prims, gltf.Primitive{Material: roof,
+		Positions: []float32{-1.5, y - 0.5, -405, 1.5, y - 0.5, -405, 1.5, y - 0.5, -417, -1.5, y - 0.5, -417},
+		Indices:   []uint32{0, 1, 2, 0, 2, 3}})
+	if r := w.Check(); r.LandOverRoadM2 > 0 {
+		t.Errorf("land over a tunnel's roof: land over road %.2f m² %v, want none", r.LandOverRoadM2, r.LandOverRoad)
+	}
 	// Without the terrain: holes everywhere beside the road.
 	var kept []gltf.Primitive
 	for _, p := range w.prims {

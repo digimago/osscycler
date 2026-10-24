@@ -4,10 +4,13 @@
 #
 #   lint     gofmt, actionlint, go vet, staticcheck: cheap, so they come
 #            first, and the tests only run on code that passes them.
-#   go       the race tests. Go reuses the result of every package whose
-#            code and files are unchanged since the last cached run
-#            (scripts/ci-mtimes.sh), so a change outside the world
-#            builder skips its long tests.
+#   go       the race tests, in shards on runners of their own
+#            (scripts/ci-shard.sh): the world builder's two packages, whose
+#            builds already use every core of a runner, split by test (four
+#            and two), and every other package in one. Go reuses the result
+#            of every package whose code and files are unchanged since the
+#            last cached run (scripts/ci-mtimes.sh), so a change outside the
+#            world builder skips its long tests.
 #   dotnet   the 3D view's tests.
 #   check    passes when all three passed: the job the rulesets require.
 #
@@ -15,9 +18,9 @@
 # skips here (the release workflow runs it with the key), so pull
 # requests from forks are safe to check.
 #
-# Go's caches are saved per commit and restored from the newest earlier
-# one (a pull request reads its base branch's), also after a failed run:
-# only passing tests are cached.
+# Go's caches are saved per commit (per shard for the race tests) and
+# restored from the newest earlier one (a pull request reads its base
+# branch's), also after a failed run: only passing tests are cached.
 #
 # The actions are pinned to commits, as in release.yml.
 name: check
@@ -79,8 +82,20 @@ jobs:
           key: go-lint-${{ runner.os }}-${{ github.sha }}
 
   go:
+    name: go (${{ matrix.shard.name }})
     needs: lint
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard:
+          - { name: rest, key: rest, args: rest }
+          - { name: world 1/4, key: world-0, args: ./internal/world 0 4 }
+          - { name: world 2/4, key: world-1, args: ./internal/world 1 4 }
+          - { name: world 3/4, key: world-2, args: ./internal/world 2 4 }
+          - { name: world 4/4, key: world-3, args: ./internal/world 3 4 }
+          - { name: worlds 1/2, key: worlds-0, args: ./internal/worlds 0 2 }
+          - { name: worlds 2/2, key: worlds-1, args: ./internal/worlds 1 2 }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -96,14 +111,21 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: go-race-${{ runner.os }}-${{ github.sha }}
-          restore-keys: go-race-${{ runner.os }}-
+          key: go-race-${{ matrix.shard.key }}-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            go-race-${{ matrix.shard.key }}-${{ runner.os }}-
+            go-race-
 
       - name: File times from their content
         run: scripts/ci-mtimes.sh
 
       - name: Race tests
-        run: make race RACE_FLAGS=
+        env:
+          RACE_FLAGS: ""
+          SHARD: ${{ matrix.shard.args }}
+        run: |
+          # shellcheck disable=SC2086 # the shard's arguments, split
+          scripts/ci-shard.sh $SHARD
 
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: always()
@@ -111,7 +133,7 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: go-race-${{ runner.os }}-${{ github.sha }}
+          key: go-race-${{ matrix.shard.key }}-${{ runner.os }}-${{ github.sha }}
 
   dotnet:
     needs: lint

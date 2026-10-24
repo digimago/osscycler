@@ -6,12 +6,14 @@ import (
 	"sync"
 
 	"github.com/digimago/osscycler/internal/course"
-	"github.com/digimago/osscycler/internal/gltf"
 	"github.com/digimago/osscycler/internal/scenery"
 )
 
 // terrain shapes the ground in square chunks along the route.
 type terrain struct {
+	// pavings are the underpasses' paved areas (paving.go): the land lies
+	// under them and falls to their sides.
+	pavings []*pavedArea
 	// walls are the retaining walls' footprints (e, n), from the face's
 	// foot to the coping's back: no grass grows there (the ground map's
 	// clearance).
@@ -31,6 +33,8 @@ type terrain struct {
 	// course (0 without one): heights are the model's own.
 	lift  func(d float64) float64
 	loops []bool // by line: the course's own loop
+	// motorways: by line, a motorway's carriageway (motorways.go).
+	motorways []bool
 	// cut: the roads are cut out of the terrain (worlds with a ground
 	// model; see verges.go): the terrain is the ground model, unflattened,
 	// and drops the cells its roads and their verges cover.
@@ -39,9 +43,6 @@ type terrain struct {
 	// roads are final).
 	grid     *routeGrid
 	gridOnce sync.Once
-	// footprint: where the roads, junctions and verges lie, seen from
-	// above (cut terrain; see rasterize).
-	footprint map[[2]int][]uint64
 	// surfaces: the road surface triangles (cut terrain): what plants and
 	// grass keep off, junctions and roundabouts included.
 	surfaces *cutter
@@ -100,133 +101,6 @@ func rectDist(e, n, e0, n0, size float64) float64 {
 	de := math.Max(0, math.Max(e0-e, e-(e0+size)))
 	dn := math.Max(0, math.Max(n0-n, n-(n0+size)))
 	return math.Hypot(de, dn)
-}
-
-// chunk builds one chunk's mesh: a regular grid coloured by land cover,
-// its normals from the heights one cell beyond the edges, so neighbouring
-// chunks shade alike; and the water in it, if any (nil Positions: none).
-func (t *terrain) chunk(key [2]int, material, waterMaterial int) (ground, water gltf.Primitive) {
-	size := t.o.ChunkM
-	n := max(1, int(math.Round(size/t.o.CellM)))
-	cell := size / float64(n)
-	e0, n0 := float64(key[0])*size, float64(key[1])*size
-
-	segs, near := t.lists(key)
-
-	// Heights and land cover on the grid, one cell of margin all round.
-	side := n + 3
-	h := make([]float64, side*side)
-	land := make([]scenery.Land, side*side)
-	waterID := make([]int, side*side)
-	for j := range side {
-		for i := range side {
-			k := j*side + i
-			h[k], land[k], waterID[k] = t.vertex(e0+float64(i-1)*cell, n0+float64(j-1)*cell, segs, near)
-		}
-	}
-
-	l := t.lod()
-	l.mu.Lock()
-	l.raw[key] = h
-	l.mu.Unlock()
-	I0, J0 := key[0]*n, key[1]*n
-	raw := func(I, J int) float64 { return h[(J-J0+1)*side+I-I0+1] }
-
-	p := gltf.Primitive{Material: material}
-	index := map[int]uint32{}
-	vertex := func(i, j int) uint32 {
-		k := j*(n+1) + i
-		if v, ok := index[k]; ok {
-			return v
-		}
-		v := uint32(len(p.Positions) / 3)
-		index[k] = v
-		hi, hj := i+1, j+1
-		e, no := e0+float64(i)*cell, n0+float64(j)*cell
-		p.Positions = append(p.Positions, float32(e), float32(l.height(I0+i, J0+j, raw)), float32(-no))
-		// Normals from the full grid, whatever the step: the shading
-		// keeps the ground's detail, and neighbouring chunks agree.
-		dhde := (h[hj*side+hi+1] - h[hj*side+hi-1]) / (2 * cell)
-		dhdn := (h[(hj+1)*side+hi] - h[(hj-1)*side+hi]) / (2 * cell)
-		// z is south, so dh/dz = -dh/dn.
-		nx, ny, nz := -dhde, 1.0, dhdn
-		ln := math.Sqrt(nx*nx + ny*ny + nz*nz)
-		p.Normals = append(p.Normals, float32(nx/ln), float32(ny/ln), float32(nz/ln))
-		c := styleFor(t.o.Region).landColour(land[hj*side+hi])
-		p.Colors = append(p.Colors, c[0], c[1], c[2])
-		return v
-	}
-	// Cells the roads, junctions and verges cover are left out (cut):
-	// those whose every footprint point is covered.
-	cut := func(i, j, s int) bool {
-		fp := t.footprint[key]
-		if !t.cut || fp == nil {
-			return false
-		}
-		per := int(math.Round(cell / footprintM))
-		side := int(math.Round(size/footprintM)) + 1
-		for pj := j * per; pj <= (j+s)*per; pj++ {
-			for pi := i * per; pi <= (i+s)*per; pi++ {
-				k := pj*side + pi
-				if fp[k/64]&(1<<(k%64)) == 0 {
-					return false
-				}
-			}
-		}
-		return true
-	}
-	// Block by block, each at its step. Vertex (i, j) is i east and j
-	// north; seen from above, (i, j), (i+s, j), (i, j+s) runs counter-
-	// clockwise.
-	B := lodBlockCells
-	if !l.on {
-		B = n
-	}
-	for bj := 0; bj < n; bj += B {
-		for bi := 0; bi < n; bi += B {
-			s := 1
-			if l.on {
-				s = l.step(floorDiv(I0+bi, B), floorDiv(J0+bj, B))
-			}
-			for j := bj; j < bj+B; j += s {
-				for i := bi; i < bi+B; i += s {
-					if cut(i, j, s) {
-						continue
-					}
-					a, b, c, d := vertex(i, j), vertex(i+s, j), vertex(i, j+s), vertex(i+s, j+s)
-					p.Indices = append(p.Indices, a, b, c, b, d, c)
-				}
-			}
-		}
-	}
-
-	// Water: a quad at its level over every cell with a corner in it,
-	// reaching under the banks, which rise above the level: the shore is
-	// where they meet. Each corner takes the level there (a river falls).
-	w := gltf.Primitive{Material: waterMaterial}
-	for j := range n {
-		for i := range n {
-			id := -1
-			for _, k := range [4]int{(j+1)*side + i + 1, (j+1)*side + i + 2, (j+2)*side + i + 1, (j+2)*side + i + 2} {
-				if land[k] == scenery.LandWater && waterID[k] >= 0 && !t.exact[waterID[k]] {
-					id = waterID[k]
-					break
-				}
-			}
-			if id < 0 {
-				continue
-			}
-			a := uint32(len(w.Positions) / 3)
-			e, no := e0+float64(i)*cell, n0+float64(j)*cell
-			for _, c := range [4][2]float64{{0, 0}, {cell, 0}, {0, cell}, {cell, cell}} {
-				y := t.cover.level(t, id, e+c[0], no+c[1])
-				w.Positions = append(w.Positions, float32(e+c[0]), float32(y), float32(-(no + c[1])))
-				w.Normals = append(w.Normals, 0, 1, 0)
-			}
-			w.Indices = append(w.Indices, a, a+1, a+2, a+1, a+3, a+2)
-		}
-	}
-	return p, w
 }
 
 // lists are the road segments and route samples that can matter in a

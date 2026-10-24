@@ -29,6 +29,11 @@ public sealed class ControlSocket : IDisposable
     readonly TcpListener _listener;
     readonly ConcurrentQueue<Request> _queue = new();
     readonly CancellationTokenSource _stop = new();
+    // Closed when the view does: a request still waiting then is answered
+    // that the view closed, also one read off its socket a moment after
+    // Dispose emptied the queue (on a slow machine its client had waited
+    // for an answer that never came).
+    readonly TaskCompletionSource _closed = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public int Port { get; }
 
@@ -43,8 +48,12 @@ public sealed class ControlSocket : IDisposable
     // TryNext is the next request waiting, if any.
     public bool TryNext(out Request r) => _queue.TryDequeue(out r!);
 
+    // Waiting is how many requests wait to be taken.
+    public int Waiting => _queue.Count;
+
     public void Dispose()
     {
+        _closed.TrySetResult();
         _stop.Cancel();
         _listener.Stop();
         while (_queue.TryDequeue(out var r))
@@ -86,6 +95,8 @@ public sealed class ControlSocket : IDisposable
                 var r = Request.Parse(line);
                 if (r.Cmd != "")
                     _queue.Enqueue(r);
+                if (await Task.WhenAny(r.Reply, _closed.Task) != r.Reply)
+                    r.Fail("the view closed");
                 await writer.WriteLineAsync(await r.Reply);
             }
         }
@@ -133,6 +144,9 @@ public sealed class ControlSocket : IDisposable
 
         public double? Num(string name) =>
             Args[name] is JsonValue v && v.TryGetValue<double>(out var d) && double.IsFinite(d) ? d : null;
+
+        public bool? Bool(string name) =>
+            Args[name] is JsonValue v && v.TryGetValue<bool>(out var b) ? b : null;
 
         public string[] Strs(string name) =>
             Args[name] is JsonArray a ? [.. a.Select(x => x is JsonValue v && v.TryGetValue<string>(out var s) ? s : "")] : [];

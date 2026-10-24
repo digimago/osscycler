@@ -109,7 +109,7 @@ func plants(t *terrain, s *surface, land *scenery.LandMap, keys [][2]int, fps []
 	sp := newSpots(t, land, fps, parks)
 	roadNear, inArea := sp.roadNear, sp.inArea
 	clearOf := func(e, n, m float64) bool {
-		return roadNear(e, n, m, -1) < 0 && (t.surfaces == nil || t.surfaces.dist(e, -n, m) >= m)
+		return roadNear(e, n, m, -1) < 0 && (t.surfaces == nil || t.surfaces.dist(e, -n, m) >= m) && !sp.cleared(e, n)
 	}
 	onRoad := func(e, n float64) bool { return !clearOf(e, n, clearRoadM) }
 	// inGarden: beside a house (a wall within gardenHouseM) and at least
@@ -880,11 +880,42 @@ type spots struct {
 	// sidewalks), building wall or car park edge: 0 on or in one, at most
 	// max.
 	clearance func(e, n, max float64) float64
-	land      *scenery.LandMap
+	// cleared tells whether e, n lies where nothing is planted: within
+	// motorwayClearM of a motorway's edge, or underpassClearM of the edge
+	// of the course's own way in an underpass (its cut banks are made
+	// ground: owner, 2026-10-23, hedges between the N348's decks over the
+	// Posbank Loop's cycle underpass looked out of place).
+	cleared func(e, n float64) bool
+	land    *scenery.LandMap
 }
 
 func newSpots(t *terrain, land *scenery.LandMap, fps []scenery.Footprint, parks []scenery.Parking) *spots {
 	sp := &spots{roads: newRouteGrid(t.fine, 10), land: land}
+	var mw, up []sample
+	for _, s := range t.fine {
+		if s.line >= 0 && s.line < len(t.motorways) && t.motorways[s.line] {
+			mw = append(mw, s)
+		}
+		if s.underpass {
+			up = append(up, s)
+		}
+	}
+	mwGrid := newRouteGrid(mw, motorwayClearM+motorwayReachM)
+	upGrid := newRouteGrid(up, underpassClearM+motorwayReachM)
+	sp.cleared = func(e, n float64) bool {
+		by := false
+		if len(mw) > 0 {
+			mwGrid.within(e, n, motorwayClearM+motorwayReachM, func(i int) {
+				by = by || math.Hypot(mw[i].e-e, mw[i].n-n) < mw[i].edge+motorwayClearM
+			})
+		}
+		if len(up) > 0 && !by {
+			upGrid.within(e, n, underpassClearM+motorwayReachM, func(i int) {
+				by = by || math.Hypot(up[i].e-e, up[i].n-n) < up[i].edge+underpassClearM
+			})
+		}
+		return by
+	}
 	sp.roadNear = func(e, n, margin float64, skip int) int {
 		hit := -1
 		sp.roads.within(e, n, 10, func(i int) {
@@ -961,9 +992,10 @@ func newSpots(t *terrain, land *scenery.LandMap, fps []scenery.Footprint, parks 
 		}
 		return false
 	}
-	// Retaining walls by 20 m cell: only the grass keeps off them.
+	// Retaining walls by 20 m cell, and an underpass's paving: only the
+	// grass keeps off them (the renderer's grass grew through the paving).
 	walls := map[[2]int][][][2]float64{}
-	for _, w := range t.walls {
+	for _, w := range append(append([][][2]float64(nil), t.walls...), pavedOutlines(t.pavings)...) {
 		lo, hi := [2]float64{math.Inf(1), math.Inf(1)}, [2]float64{math.Inf(-1), math.Inf(-1)}
 		for _, q := range w {
 			lo[0], lo[1], hi[0], hi[1] = math.Min(lo[0], q[0]), math.Min(lo[1], q[1]), math.Max(hi[0], q[0]), math.Max(hi[1], q[1])

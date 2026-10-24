@@ -231,6 +231,12 @@ public partial class Main : Node3D
                 _source = new WorldSource(_core, _worldsDir);
                 _ahead = new WorldAhead(_core, _worldsDir);
                 _head = new Head.Controller(_core, layout) { Watcher = watcher };
+                _head.WorldReady = id => _ahead?.Of(id) switch
+                {
+                    Head.AheadQueue.Outcome.Ready => true,
+                    Head.AheadQueue.Outcome.Skipped or Head.AheadQueue.Outcome.Failed => false,
+                    _ => null,
+                };
                 if (_debug)
                     _head.Note($"debug: space marks a flawed spot ({_marksDir})");
             }
@@ -653,6 +659,8 @@ public partial class Main : Node3D
         // then the world itself in its place.
         var (dir, stamp, status) = _source!.For(r.CourseId);
         _worldStatus = status;
+        if (dir != null && status == "") // the world itself, not its preview
+            _ahead?.Ready(r.CourseId);
         if (Head.WorldPick.NeedsLoad(dir, stamp, _shownDir, _world?.Manifest.Stamp ?? "", _loadingDir, _missing, _swapIn != null))
             LoadInBackground(dir!); // a failure sets _missing: not tried every frame
         if (_ride == null || r.DistanceM != _ride.DistanceM || r.Phase != _ride.Phase)
@@ -673,28 +681,16 @@ public partial class Main : Node3D
 
     // Idle shows a world at rest while no ride is on (free riding, the
     // dashboard's tiles over it): the figure 8 if it has been built, else
-    // the first world there is; with another builder than the default
-    // (the graph builder) chosen ($OSSCYCLER_WORLD_BUILDER, e.g. classic),
-    // that builder's worlds (<worlds>/.<builder>/) first, as
-    // osscycler-world puts them.
+    // the first world there is.
     void Idle()
     {
         _idleTried = true;
-        var roots = new List<string>();
-        var builder = System.Environment.GetEnvironmentVariable("OSSCYCLER_WORLD_BUILDER") ?? "";
-        if (builder != "" && builder != "graph" && builder.IndexOfAny(new[] { '/', '\\', '.' }) < 0)
-            roots.Add(Path.Combine(_worldsDir, "." + builder));
-        roots.Add(_worldsDir);
-        var dirs = new List<string>();
-        foreach (var r in roots)
+        var dirs = new List<string> { Path.Combine(_worldsDir, "figure-8") };
+        if (Directory.Exists(_worldsDir))
         {
-            dirs.Add(Path.Combine(r, "figure-8"));
-            if (Directory.Exists(r))
-            {
-                var found = Directory.GetDirectories(r);
-                Array.Sort(found, StringComparer.Ordinal);
-                dirs.AddRange(found);
-            }
+            var found = Directory.GetDirectories(_worldsDir);
+            Array.Sort(found, StringComparer.Ordinal);
+            dirs.AddRange(found);
         }
         foreach (var d in dirs)
             if (File.Exists(Path.Combine(d, "world.json")) && Show(d))

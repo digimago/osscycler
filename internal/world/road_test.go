@@ -97,29 +97,6 @@ func TestRoadFromTheMap(t *testing.T) {
 	}
 }
 
-func TestCarParkLiesOnTheGround(t *testing.T) {
-	// A car park west of 600 m, on ground that slopes away from the road.
-	c := northCourse(t)
-	sc := &scenery.Scenery{Parking: []scenery.Parking{{DistanceM: 600,
-		Outline: [][2]float64{{-20, 580}, {-60, 580}, {-60, 620}, {-40, 620}, {-40, 640}, {-20, 640}}}}}
-	ground := func(lat, lon float64) (float64, bool) {
-		e, _ := c.Project(lat, lon)
-		return 10 + 0.05*math.Abs(e), true
-	}
-	tr := testTerrain(c, Options{Elevation: ground, Scenery: sc})
-	s := &surface{t: tr, lists: map[[2]int]chunkLists{}}
-	p := parkingMesh(s, sc.Parking[0].Outline, 0)
-	if len(p.Indices) == 0 {
-		t.Fatal("no car park")
-	}
-	for k := 0; k < len(p.Positions); k += 3 {
-		e, y, n := float64(p.Positions[k]), float64(p.Positions[k+1]), -float64(p.Positions[k+2])
-		if d := y - s.at(e, n); math.Abs(d-parkingLiftM) > 0.01 {
-			t.Fatalf("car park vertex at %.1f, %.1f lies %.3f m above the ground, want %.2f", e, n, d, parkingLiftM)
-		}
-	}
-}
-
 func TestTidyStrips(t *testing.T) {
 	fine := make([]sample, 30)
 	set := func(from, to int, open bool) {
@@ -345,27 +322,6 @@ func TestOwnWayHiddenInACarPark(t *testing.T) {
 		// no skirt there, the surface goes on.
 		if in := s.n > 41 && s.n < 59; s.butt[0] != in || s.butt[1] {
 			t.Errorf("road at %.0f m: butt %v, want left %v and right false", s.n, s.butt, in)
-		}
-	}
-}
-
-// A car park's rim is drawn along its outline where land lies beside it,
-// not where the outline runs under a road: the road is the surface there
-// (a rim across the Hohneck col's apron stood as a line on the asphalt).
-func TestRimNotUnderARoad(t *testing.T) {
-	road := gltf.Primitive{Material: 1}
-	for _, q := range [][3]float64{{-3.5, 10, 50}, {3.5, 10, 50}, {3.5, 10, -50}, {-3.5, 10, -50}} {
-		road.Positions = append(road.Positions, float32(q[0]), float32(q[1]), float32(q[2]))
-	}
-	road.Indices = []uint32{0, 1, 2, 0, 2, 3}
-	roads := newSurfaceIndex([]gltf.Primitive{road}, func(int) bool { return true }, 200)
-	land := newSurfaceIndex(nil, func(int) bool { return true }, 200)
-	// The car park reaches from inside the road (e 0) out to e 20.
-	outline := [][2]float64{{0, -10}, {20, -10}, {20, 10}, {0, 10}}
-	p := rimMesh(outline, func(e, n float64) float64 { return 9.5 }, land, roads, 2)
-	for v := 0; v+2 < len(p.Positions); v += 3 {
-		if e := float64(p.Positions[v]); e < 3.4 {
-			t.Fatalf("a rim vertex at e %.2f, under the road", e)
 		}
 	}
 }

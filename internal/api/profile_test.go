@@ -18,7 +18,7 @@ type stubProfile struct {
 	choices                []map[string]string
 }
 
-func (s *stubProfile) SetProfile(_ context.Context, w, f, h, _ *float64, choices map[string]string) (telemetry.Profile, error) {
+func (s *stubProfile) SetProfile(_ context.Context, w, f, h, _, _ *float64, choices map[string]string) (telemetry.Profile, error) {
 	s.weights, s.ftps, s.heights, s.choices = append(s.weights, w), append(s.ftps, f), append(s.heights, h), append(s.choices, choices)
 	if len(choices) > 0 {
 		p := telemetry.Profile{Known: true}

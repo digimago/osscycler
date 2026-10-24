@@ -247,6 +247,9 @@ func ownRoads(r []routePt, roads []*road) []int {
 		own[i] = -1
 		best := math.Inf(1)
 		for k, rd := range roads {
+			if rd.motorway {
+				continue // never ridden: a road beside one is the route's
+			}
 			for j := 0; j+1 < len(rd.x); j++ {
 				dist, _ := segDist(r[i].x, r[i].y, rd.x[j], rd.y[j], rd.x[j+1], rd.y[j+1])
 				if dist > ownRoadM {

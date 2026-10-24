@@ -12,10 +12,16 @@ import (
 // up here, as map data, and go through the same land use, buildings and
 // road code as a real course's. The figure 8 has polder at its low end
 // (fields in long parcels between ditches, farmsteads, rows of trees) and
-// heath and forest at its high end, a hamlet where its roads cross; the
+// heath and forest at its high end, crossed by a motorway (motorway.go), a
+// hamlet where its roads cross; the
 // oval is a stadium (a running track round a pitch, grandstands along
 // the straights, car parks behind the bends). Seeded, so a track looks the
 // same every time.
+
+// TracksVersion goes up when the tracks' made-up surroundings change, so
+// that their worlds are built again (it is in their stamps; other
+// courses' worlds stay current).
+const TracksVersion = 3
 
 // Track is a test track's made-up surroundings.
 type Track struct {
@@ -76,11 +82,18 @@ type trackGen struct {
 	grid   map[[2]int][]int
 	lo, hi [2]float64 // the route's bounds
 	fences []Fence
-	clearM float64 // buildings keep this far from the route's line
+	clearM float64 // buildings keep this far from the route's line and the roads
+	// The figure 8's mapped roads (village.go): their nodes by position,
+	// their points for near, the village's streets, Schoolstraat.
+	nodes    map[[2]int64]int64
+	roadGrid map[[2]int][][2]float64
+	streets  [][][2]float64
+	school   [][2]float64
 }
 
 func newTrackGen(c *course.Course) *trackGen {
-	g := &trackGen{c: c, rng: rand.New(rand.NewPCG(uint64(len(c.ID)), 2026)), data: &Data{}, grid: map[[2]int][]int{}, clearM: 12}
+	g := &trackGen{c: c, rng: rand.New(rand.NewPCG(uint64(len(c.ID)), 2026)), data: &Data{}, grid: map[[2]int][]int{}, clearM: 12,
+		nodes: map[[2]int64]int64{}, roadGrid: map[[2]int][][2]float64{}}
 	g.lo, g.hi = [2]float64{math.Inf(1), math.Inf(1)}, [2]float64{math.Inf(-1), math.Inf(-1)}
 	for d := 0.0; d <= c.Distance; d += 5 {
 		lat, lon := c.Position(d)
@@ -160,11 +173,11 @@ func tags(kv ...string) map[string]string {
 }
 
 // building adds a building, unless it would stand within clearM of the
-// route.
+// route or a road.
 func (g *trackGen) building(c [2]float64, h, length, width float64, kv ...string) bool {
 	r := trackRect(c, h, length, width)
 	for _, q := range append(r, c) {
-		if g.dist(q) < g.clearM {
+		if g.near(q) < g.clearM {
 			return false
 		}
 	}
@@ -177,11 +190,19 @@ func (g *trackGen) building(c [2]float64, h, length, width float64, kv ...string
 const culvertM = 7.0
 
 // figureEight: polder at the low east end, heath and forest at the high
-// west end, a hamlet by the crossing.
+// west end, a hamlet by the crossing, a village and a river on the polder
+// (village.go).
 func (g *trackGen) figureEight() *Track {
 	const reach = 340.0 // past the route: the world's corridor and a bit
 	mid := (g.lo[0] + g.hi[0]) / 2
 	s, n := g.lo[1]-reach, g.hi[1]+reach
+	// The river in the tenth column of the polder's parcels; the roads
+	// first, as the land keeps clear of them.
+	const riverColumn = 9
+	riverX0 := mid + 80 + riverColumn*50
+	river := riverX0 + 25
+	g.villageRoads(river)
+	g.motorway(mid, s, n)
 
 	// Polder: parcels 50 m wide and 250 m long, north to south, fields and
 	// meadows, a ditch along each one's east side (broken where the road
@@ -190,6 +211,10 @@ func (g *trackGen) figureEight() *Track {
 	var ends [][2]float64    // ditch ends by the road
 	var ditches [][4]float64 // x, from, to (north), width
 	for x := mid + 80; x < g.hi[0]+reach; x += pw {
+		if x == riverX0 {
+			g.river(river, x, x+pw, s, n)
+			continue
+		}
 		for y := s; y < n; y += pl {
 			c := [2]float64{x + pw/2, y + pl/2}
 			use := tags("landuse", "farmland")
@@ -198,18 +223,22 @@ func (g *trackGen) figureEight() *Track {
 			}
 			g.area(trackRect(c, math.Pi/2, pl-ditch, pw-ditch), use)
 			// One water per run between the road's crossings: pieces each
-			// got a bank at their seams, which showed as bars across.
+			// got a bank at their seams, which showed as bars across. A
+			// ditch passes under a road (a culvert) and stops at the
+			// village; a field entrance only where it meets the route.
 			from := math.NaN()
+			byRoute := false // the last stop was at the route
 			for yy := y; yy <= y+pl; yy += 5 {
-				clear := yy < y+pl && g.dist([2]float64{x + pw - ditch/2, yy + 2.5}) > culvertM
+				q := [2]float64{x + pw - ditch/2, yy + 2.5}
+				clear := yy < y+pl && g.near(q) > culvertM && !g.inVillage(q)
 				switch {
 				case clear && math.IsNaN(from):
 					from = yy
-					if yy > y {
+					if yy > y && byRoute {
 						ends = append(ends, [2]float64{x + pw - ditch/2, yy})
 					}
 				case !clear && !math.IsNaN(from):
-					if yy < y+pl {
+					if yy < y+pl && g.dist(q) <= culvertM {
 						ends = append(ends, [2]float64{x + pw - ditch/2, yy})
 					}
 					if yy-from >= 10 {
@@ -219,8 +248,11 @@ func (g *trackGen) figureEight() *Track {
 					}
 					from = math.NaN()
 				}
+				if !clear {
+					byRoute = g.dist(q) <= culvertM
+				}
 			}
-			if g.rng.Float64() < 0.12 {
+			if g.rng.Float64() < 0.12 && !g.inVillage([2]float64{x + 4, y + pl/2}) {
 				g.area(trackRect([2]float64{x + 4, y + pl/2}, math.Pi/2, pl-20, 6), tags("landuse", "forest", "leaf_type", "broadleaved"))
 			}
 		}
@@ -243,17 +275,9 @@ func (g *trackGen) figureEight() *Track {
 		if d == 750 {
 			side = -1
 		}
-		nx, ny := -math.Sin(h)*side, math.Cos(h)*side
-		off := func(across, along float64) [2]float64 {
-			return [2]float64{p[0] + nx*across + math.Cos(h)*along, p[1] + ny*across + math.Sin(h)*along}
-		}
-		g.area(trackRect(off(45, 0), h, 70, 50), tags("landuse", "farmyard"))
-		g.building(off(25, -12), h, 13, 9, "building", "farmhouse", "building:levels", "1")
-		g.building(off(45, 8), h, 32, 16, "building", "barn")
-		g.building(off(30, 22), h, 10, 6, "building", "shed")
-		g.area(trackRect(off(45, -45), h, 40, 40), tags("landuse", "orchard"))
-		g.area(trackRect(off(80, 0), h, 70, 12), tags("landuse", "forest", "leaf_type", "broadleaved"))
+		g.farmstead(p, h, side)
 	}
+	g.village(river)
 
 	// Heath and forest: forest everywhere west of the middle, in blocks of
 	// pine, of oak and beech, and mixed; heath round the top of the climb

@@ -219,6 +219,11 @@ message Activity {
   // The highest heart rate held for 10 s (0: none read): what the rider
   // has shown, a lower bound on their maximum, never an estimate of it.
   uint32 held_max_heart_rate_bpm = 11;
+  // 95 % of the highest heart rate averaged over 20 minutes (0: no 20
+  // minutes read): Friel's threshold from a 20-minute all-out effort, so
+  // a lower bound on the rider's threshold heart rate unless the
+  // activity held such an effort, never an estimate of it.
+  uint32 held_threshold_heart_rate_bpm = 12;
 }
 
 message ExportActivityRequest {
@@ -293,9 +298,11 @@ message ActivitySummary {
   repeated double heart_rate_zone_s = 14;
   repeated double heart_rate_zone_upper = 15;
   // What the zones were taken from: the FTP the activity was ridden with
-  // (else the profile's), the profile's maximum heart rate.
+  // (else the profile's), and the profile's maximum heart rate or its
+  // threshold heart rate (one of the two set; RiderProfile.hr_zones).
   double ftp_w = 16;
   double max_hr_bpm = 17;
+  double threshold_hr_bpm = 18;
 }
 
 message PowerBest {
@@ -313,6 +320,12 @@ message SetProfileRequest {
   optional string view = 4;
   // Sets the heart rate zones of ride summaries: 100-230 bpm.
   optional double max_hr_bpm = 5;
+  // The threshold heart rate (what can be held for about an hour;
+  // Friel's): 80-220 bpm.
+  optional double threshold_hr_bpm = 8;
+  // What heart rate zones are taken from when both are set: "max" (the
+  // default) or "threshold".
+  optional string hr_zones = 9;
   // When a 3D renderer builds courses' worlds ahead of a ride: "idle"
   // (only while nothing is ridden; the default) or "always" (during rides
   // too, at the lowest priority).
@@ -557,6 +570,12 @@ message JunctionBranch {
   double width_m = 2;
   // How far it runs straight on from the junction (at most 80 m).
   double length_m = 3;
+  // Its centre line from where it meets the route, length_m long, as east
+  // and north pairs in the frame of profile_east_m / profile_north_m: a
+  // branch bends, and a junction merged from nodes a few metres apart has
+  // branches starting at each (empty from an older core: the bearing).
+  repeated float line_east_m = 4;
+  repeated float line_north_m = 5;
 }
 
 // A car park as a box aligned with the road, like Building.
@@ -758,6 +777,12 @@ message RiderProfile {
   // "cached" or "allowed"; the values in effect, defaults filled in.
   string world_build = 17;
   string world_fetch = 18;
+  // Optional; 0 when unknown.
+  double threshold_hr_bpm = 19;
+  // What heart rate zones are taken from when both are set: "max" or
+  // "threshold" (SetProfileRequest), the value in effect; with only one
+  // set, that one is used whatever this says.
+  string hr_zones = 20;
 }
 
 // The core records every ride to a FIT file on its own disk, whether or

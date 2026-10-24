@@ -44,6 +44,9 @@ type Material struct {
 	Metallic    float32
 	Roughness   float32
 	DoubleSided bool
+	// Emissive: the light it gives off (linear RGB; zero: none), as a
+	// tunnel's lamps.
+	Emissive [3]float32
 }
 
 // New starts a document; generator names the program that writes it.
@@ -57,7 +60,7 @@ func New(generator string) *Doc {
 
 // AddMaterial adds a material and returns its index.
 func (d *Doc) AddMaterial(m Material) int {
-	d.g.Materials = append(d.g.Materials, material{
+	mat := material{
 		Name: m.Name,
 		PBR: pbr{
 			BaseColorFactor: m.Color,
@@ -65,7 +68,12 @@ func (d *Doc) AddMaterial(m Material) int {
 			RoughnessFactor: m.Roughness,
 		},
 		DoubleSided: m.DoubleSided,
-	})
+	}
+	if m.Emissive != [3]float32{} {
+		e := m.Emissive
+		mat.Emissive = &e
+	}
+	d.g.Materials = append(d.g.Materials, mat)
 	return len(d.g.Materials) - 1
 }
 
@@ -400,9 +408,10 @@ type primitive struct {
 }
 
 type material struct {
-	Name        string `json:"name,omitempty"`
-	PBR         pbr    `json:"pbrMetallicRoughness"`
-	DoubleSided bool   `json:"doubleSided,omitempty"`
+	Name        string      `json:"name,omitempty"`
+	PBR         pbr         `json:"pbrMetallicRoughness"`
+	DoubleSided bool        `json:"doubleSided,omitempty"`
+	Emissive    *[3]float32 `json:"emissiveFactor,omitempty"`
 }
 
 type pbr struct {

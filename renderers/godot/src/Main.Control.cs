@@ -20,6 +20,11 @@ namespace Osscycler;
 //	load  world?                   the world in that directory, or the one shown
 //	                               again (after a rebuild), the view kept where it is
 //	hide  parts: [..]              --hide's parts left out ([]: all shown)
+//	camera mode? m? ...            the camera off the rider (Head.Survey):
+//	                               orbit (from_deg?, elev_deg?, radius_m?
+//	                               or dist_m?, marker?) round the spot at m,
+//	                               fixed (x, y, z, yaw, pitch) as --camera,
+//	                               or rider (back on the rider, as before)
 //	mark                           a mark, as space in debug mode
 //	quit
 public partial class Main
@@ -138,6 +143,10 @@ public partial class Main
                     HideParts(_world);
                 r.Ok(State());
                 return;
+            case "camera":
+                if (Move(r) && Aim(r))
+                    After(r, (int)(r.Num("settle") ?? 2), x => x.Ok(State()));
+                return;
             case "mark":
                 Mark();
                 r.Ok(new JsonObject { ["marks"] = _marksDir });
@@ -147,7 +156,7 @@ public partial class Main
                 _quitIn = 10;
                 return;
             default:
-                r.Fail($"unknown command \"{r.Cmd}\" (state, goto, shot, stats, keys, load, hide, mark, quit)");
+                r.Fail($"unknown command \"{r.Cmd}\" (state, goto, shot, stats, keys, load, hide, camera, mark, quit)");
                 return;
         }
     }
@@ -182,6 +191,83 @@ public partial class Main
             _gaze = Vector3.Zero; // snap there rather than swing round
         }
         return true;
+    }
+
+    MeshInstance3D? _marker; // the spot an orbiting camera looks at
+
+    // Aim takes camera's mode and its arguments; false (with r answered) if
+    // it can't. The HUD is hidden while the camera is off the rider.
+    bool Aim(ControlSocket.Request r)
+    {
+        string mode = r.Str("mode", "orbit");
+        switch (mode)
+        {
+            case "rider":
+                _fixedCamera = null;
+                Marker(null, 0);
+                if (_hud.Node is CanvasLayer hudLayer)
+                    hudLayer.Visible = true;
+                _gaze = Vector3.Zero;
+                return true;
+            case "fixed":
+                if (r.Num("x") is not double x || r.Num("y") is not double y || r.Num("z") is not double z)
+                {
+                    r.Fail("camera: fixed takes x, y and z (and yaw, pitch)");
+                    return false;
+                }
+                _fixedCamera = (new Vector3((float)x, (float)y * _relief, (float)z),
+                    Mathf.DegToRad((float)(r.Num("yaw") ?? 0)), Mathf.DegToRad((float)(r.Num("pitch") ?? -90)));
+                Marker(null, 0);
+                return true;
+            case "orbit":
+                if (_world is not { } w)
+                {
+                    r.Fail("camera: no world shown");
+                    return false;
+                }
+                double at = Viewed;
+                var spot = w.InLane(at);
+                var ahead = w.InLane(at + 5) - w.InLane(at - 5);
+                double heading = Head.Survey.Heading(ahead.X, ahead.Z);
+                double dist = r.Num("dist_m") ?? Head.Survey.DistanceFor(r.Num("radius_m") ?? 40);
+                var o = Head.Survey.Orbit(spot.X, spot.Y, spot.Z, heading, r.Num("from_deg") ?? 180, r.Num("elev_deg") ?? 90, Math.Max(1, dist));
+                _fixedCamera = (new Vector3((float)o.X, (float)o.Y, (float)o.Z), Mathf.DegToRad((float)o.Yaw), Mathf.DegToRad((float)o.Pitch));
+                Marker(r.Bool("marker") ?? true ? spot : null, dist);
+                return true;
+            default:
+                r.Fail($"camera: unknown mode \"{mode}\" (orbit, fixed, rider)");
+                return false;
+        }
+    }
+
+    // Marker stands a magenta post at the spot (none for null), thick
+    // enough to see from dist metres away.
+    void Marker(Vector3? at, double dist)
+    {
+        if (at is not { } p)
+        {
+            if (_marker != null)
+                _marker.Visible = false;
+            return;
+        }
+        if (_marker == null)
+        {
+            _marker = new MeshInstance3D
+            {
+                Mesh = new CylinderMesh { TopRadius = 1, BottomRadius = 1, Height = 1, RadialSegments = 12 },
+                MaterialOverride = new StandardMaterial3D
+                {
+                    AlbedoColor = Colors.Magenta,
+                    ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+                },
+                CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
+            };
+            AddChild(_marker);
+        }
+        float rad = (float)Math.Max(0.1, dist / 250), h = 3;
+        _marker.Scale = new Vector3(rad, h, rad);
+        _marker.Position = p + Vector3.Up * (h / 2);
+        _marker.Visible = true;
     }
 
     void Shoot(ControlSocket.Request r, string path, double? width)
@@ -243,6 +329,7 @@ public partial class Main
         o["lon"] = R(s.Lon, 7);
         o["camera"] = V(s.Cam, 3);
         o["camera_forward"] = V(s.Fwd, 4);
+        o["camera_mode"] = _fixedCamera == null ? "rider" : "fixed";
         return o;
     }
 

@@ -64,6 +64,10 @@ public sealed class AheadQueue
             _done.Remove(id);
     }
 
+    // Of is how course id's world turned out this session (null: not tried
+    // yet).
+    public Outcome? Of(string id) => _done.TryGetValue(id, out var o) ? o : null;
+
     // Done records how a course's build ended.
     public void Done(string id, Outcome how) => _done[id] = how;
 

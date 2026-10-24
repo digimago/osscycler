@@ -5,7 +5,6 @@ import (
 	"sort"
 
 	"github.com/digimago/osscycler/internal/gltf"
-	"github.com/digimago/osscycler/internal/scenery"
 )
 
 // Water drawn from its own outline (owner, 2026-10-11: the water was
@@ -19,10 +18,6 @@ import (
 // islands, and very long outlines, keep the cells.
 const (
 	exactMaxPoints = 2000 // a longer outline (a river) keeps the cells
-	// The bank face's points along the outline, besides its corners: the
-	// land's edge it follows is the 5 m terrain's (1 m made 3 M triangles
-	// of bank face on the Grebbeberg course, every ditch side metre by metre).
-	bankFaceStepM = 5.0
 	// Only water within this of the route is drawn from its outline: the
 	// stair steps show near the road, while beyond it the cut through the
 	// land and the bank faces doubled a world with much water (Grebbeberg
@@ -78,15 +73,6 @@ func ringArea(r [][2]float64) float64 {
 		a += r[i][0]*r[j][1] - r[j][0]*r[i][1]
 	}
 	return a / 2
-}
-
-// exactWaters picks the water areas over the terrain that are drawn from
-// their outline, and marks them so the terrain's cells leave them out.
-func (t *terrain) exactWaters(keys [][2]int) []exactWater {
-	if !t.cut {
-		return nil
-	}
-	return t.waterOutlines(keys, false)
 }
 
 // waterOutlines are the water areas over the chunks keys within
@@ -178,117 +164,6 @@ func (t *terrain) waterOutlines(keys [][2]int, islands bool) []exactWater {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].id < out[j].id })
 	return out
-}
-
-// waterMeshes draws an exact water: its surface (material water), and
-// its bed and bank (material ground, in vertex colours). land is the land
-// as drawn before the cut: where the bank face starts.
-func (t *terrain) waterMeshes(x exactWater, water, ground int, land *landSurface) (surface, bed gltf.Primitive) {
-	// The level from the banks, never over the land drawn along the
-	// outline nearby (a verge or road beside a ditch can lie under the banks
-	// the level comes from; the water then stood over the land at its edge,
-	// and the eye went under it).
-	type shore struct{ e, n, h float64 }
-	var shores []shore
-	for i := range x.ring {
-		a, b := x.ring[i], x.ring[(i+1)%len(x.ring)]
-		l := math.Hypot(b[0]-a[0], b[1]-a[1])
-		k := max(1, int(math.Ceil(l/shoreStepM)))
-		for j := range k {
-			f := float64(j) / float64(k)
-			e, n := a[0]+f*(b[0]-a[0]), a[1]+f*(b[1]-a[1])
-			if h, ok := land.at(e, n); ok {
-				shores = append(shores, shore{e, n, h})
-			}
-		}
-	}
-	grid := map[[2]int][]shore{}
-	cell := func(e, n float64) [2]int {
-		return [2]int{int(math.Floor(e / shoreReachM)), int(math.Floor(n / shoreReachM))}
-	}
-	for _, s := range shores {
-		k := cell(s.e, s.n)
-		grid[k] = append(grid[k], s)
-	}
-	level := func(e, n float64) float64 {
-		lv := t.cover.level(t, x.id, e, n)
-		k := cell(e, n)
-		for dx := -1; dx <= 1; dx++ {
-			for dy := -1; dy <= 1; dy++ {
-				for _, s := range grid[[2]int{k[0] + dx, k[1] + dy}] {
-					if math.Hypot(s.e-e, s.n-n) < shoreReachM {
-						lv = math.Min(lv, s.h-shoreUnderM)
-					}
-				}
-			}
-		}
-		return lv
-	}
-	// 3 cm past the outline, under the land's edge: cut exactly along
-	// it, float rounding left hairline gaps between land and water.
-	surface = waterSheet(level, grownRing(x.ring, sheetGrowM), water)
-	bed = waterSheet(func(e, n float64) float64 { return level(e, n) - bedM }, x.ring, ground)
-	bedColour := landColors[scenery.LandWater]
-	bed.UVs = nil
-	for range len(bed.Positions) / 3 {
-		bed.Colors = append(bed.Colors, bedColour[0], bedColour[1], bedColour[2])
-	}
-	// The bank: round the outline, from the land's edge (or the level,
-	// where no land is drawn) down to the bed, facing the water.
-	grass := landColors[scenery.LandNone]
-	r := x.ring
-	inward := 1.0 // the interior is left of the ring's direction when it runs counter-clockwise
-	if ringArea(r) < 0 {
-		inward = -1
-	}
-	var pts [][2]float64
-	for i := range r {
-		a, b := r[i], r[(i+1)%len(r)]
-		l := math.Hypot(b[0]-a[0], b[1]-a[1])
-		n := max(1, int(math.Ceil(l/bankFaceStepM)))
-		for k := range n {
-			f := float64(k) / float64(n)
-			pts = append(pts, [2]float64{a[0] + f*(b[0]-a[0]), a[1] + f*(b[1]-a[1])})
-		}
-	}
-	base := uint32(len(bed.Positions) / 3)
-	for _, p := range pts {
-		lv := level(p[0], p[1])
-		top := lv
-		if h, ok := land.at(p[0], p[1]); ok {
-			top = math.Max(h, lv)
-		}
-		bed.Positions = append(bed.Positions, float32(p[0]), float32(top+0.02), float32(-p[1]), float32(p[0]), float32(lv-bedM), float32(-p[1]))
-		bed.Colors = append(bed.Colors, grass[0], grass[1], grass[2], bedColour[0], bedColour[1], bedColour[2])
-		bed.Normals = append(bed.Normals, 0, 0, 0, 0, 0, 0) // set below
-	}
-	m := len(pts)
-	for i := range m {
-		j := (i + 1) % m
-		a, b := pts[i], pts[j]
-		// Horizontal normal into the water: left of a→b for an inward 1.
-		de, dn := b[0]-a[0], b[1]-a[1]
-		l := math.Hypot(de, dn)
-		if l == 0 {
-			continue
-		}
-		ne, nn := -dn/l*inward, de/l*inward
-		for _, v := range []int{i, j} {
-			for k := range 2 {
-				o := 3 * (int(base) + 2*v + k)
-				bed.Normals[o], bed.Normals[o+2] = float32(ne), float32(-nn) // z is south
-			}
-		}
-		ta, ba := base+uint32(2*i), base+uint32(2*i)+1
-		tb, bb := base+uint32(2*j), base+uint32(2*j)+1
-		// Seen from the water (the normal's side) counter-clockwise.
-		if inward > 0 {
-			bed.Indices = append(bed.Indices, ta, tb, ba, tb, bb, ba)
-		} else {
-			bed.Indices = append(bed.Indices, ta, ba, tb, tb, ba, bb)
-		}
-	}
-	return surface, bed
 }
 
 // waterSheet lays outline r flat at height(e, n), ear-clipped; normals

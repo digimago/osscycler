@@ -1412,8 +1412,13 @@ type Activity struct {
 	// The highest heart rate held for 10 s (0: none read): what the rider
 	// has shown, a lower bound on their maximum, never an estimate of it.
 	HeldMaxHeartRateBpm uint32 `protobuf:"varint,11,opt,name=held_max_heart_rate_bpm,json=heldMaxHeartRateBpm,proto3" json:"held_max_heart_rate_bpm,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// 95 % of the highest heart rate averaged over 20 minutes (0: no 20
+	// minutes read): Friel's threshold from a 20-minute all-out effort, so
+	// a lower bound on the rider's threshold heart rate unless the
+	// activity held such an effort, never an estimate of it.
+	HeldThresholdHeartRateBpm uint32 `protobuf:"varint,12,opt,name=held_threshold_heart_rate_bpm,json=heldThresholdHeartRateBpm,proto3" json:"held_threshold_heart_rate_bpm,omitempty"`
+	unknownFields             protoimpl.UnknownFields
+	sizeCache                 protoimpl.SizeCache
 }
 
 func (x *Activity) Reset() {
@@ -1519,6 +1524,13 @@ func (x *Activity) GetError() string {
 func (x *Activity) GetHeldMaxHeartRateBpm() uint32 {
 	if x != nil {
 		return x.HeldMaxHeartRateBpm
+	}
+	return 0
+}
+
+func (x *Activity) GetHeldThresholdHeartRateBpm() uint32 {
+	if x != nil {
+		return x.HeldThresholdHeartRateBpm
 	}
 	return 0
 }
@@ -1892,11 +1904,13 @@ type ActivitySummary struct {
 	HeartRateZoneS     []float64 `protobuf:"fixed64,14,rep,packed,name=heart_rate_zone_s,json=heartRateZoneS,proto3" json:"heart_rate_zone_s,omitempty"`
 	HeartRateZoneUpper []float64 `protobuf:"fixed64,15,rep,packed,name=heart_rate_zone_upper,json=heartRateZoneUpper,proto3" json:"heart_rate_zone_upper,omitempty"`
 	// What the zones were taken from: the FTP the activity was ridden with
-	// (else the profile's), the profile's maximum heart rate.
-	FtpW          float64 `protobuf:"fixed64,16,opt,name=ftp_w,json=ftpW,proto3" json:"ftp_w,omitempty"`
-	MaxHrBpm      float64 `protobuf:"fixed64,17,opt,name=max_hr_bpm,json=maxHrBpm,proto3" json:"max_hr_bpm,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// (else the profile's), and the profile's maximum heart rate or its
+	// threshold heart rate (one of the two set; RiderProfile.hr_zones).
+	FtpW           float64 `protobuf:"fixed64,16,opt,name=ftp_w,json=ftpW,proto3" json:"ftp_w,omitempty"`
+	MaxHrBpm       float64 `protobuf:"fixed64,17,opt,name=max_hr_bpm,json=maxHrBpm,proto3" json:"max_hr_bpm,omitempty"`
+	ThresholdHrBpm float64 `protobuf:"fixed64,18,opt,name=threshold_hr_bpm,json=thresholdHrBpm,proto3" json:"threshold_hr_bpm,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ActivitySummary) Reset() {
@@ -2048,6 +2062,13 @@ func (x *ActivitySummary) GetMaxHrBpm() float64 {
 	return 0
 }
 
+func (x *ActivitySummary) GetThresholdHrBpm() float64 {
+	if x != nil {
+		return x.ThresholdHrBpm
+	}
+	return 0
+}
+
 type PowerBest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	DurationS     uint32                 `protobuf:"varint,1,opt,name=duration_s,json=durationS,proto3" json:"duration_s,omitempty"`
@@ -2111,6 +2132,12 @@ type SetProfileRequest struct {
 	View *string `protobuf:"bytes,4,opt,name=view,proto3,oneof" json:"view,omitempty"`
 	// Sets the heart rate zones of ride summaries: 100-230 bpm.
 	MaxHrBpm *float64 `protobuf:"fixed64,5,opt,name=max_hr_bpm,json=maxHrBpm,proto3,oneof" json:"max_hr_bpm,omitempty"`
+	// The threshold heart rate (what can be held for about an hour;
+	// Friel's): 80-220 bpm.
+	ThresholdHrBpm *float64 `protobuf:"fixed64,8,opt,name=threshold_hr_bpm,json=thresholdHrBpm,proto3,oneof" json:"threshold_hr_bpm,omitempty"`
+	// What heart rate zones are taken from when both are set: "max" (the
+	// default) or "threshold".
+	HrZones *string `protobuf:"bytes,9,opt,name=hr_zones,json=hrZones,proto3,oneof" json:"hr_zones,omitempty"`
 	// When a 3D renderer builds courses' worlds ahead of a ride: "idle"
 	// (only while nothing is ridden; the default) or "always" (during rides
 	// too, at the lowest priority).
@@ -2186,6 +2213,20 @@ func (x *SetProfileRequest) GetMaxHrBpm() float64 {
 		return *x.MaxHrBpm
 	}
 	return 0
+}
+
+func (x *SetProfileRequest) GetThresholdHrBpm() float64 {
+	if x != nil && x.ThresholdHrBpm != nil {
+		return *x.ThresholdHrBpm
+	}
+	return 0
+}
+
+func (x *SetProfileRequest) GetHrZones() string {
+	if x != nil && x.HrZones != nil {
+		return *x.HrZones
+	}
+	return ""
 }
 
 func (x *SetProfileRequest) GetWorldBuild() string {
@@ -4082,7 +4123,13 @@ type JunctionBranch struct {
 	BearingDeg float64 `protobuf:"fixed64,1,opt,name=bearing_deg,json=bearingDeg,proto3" json:"bearing_deg,omitempty"`
 	WidthM     float64 `protobuf:"fixed64,2,opt,name=width_m,json=widthM,proto3" json:"width_m,omitempty"`
 	// How far it runs straight on from the junction (at most 80 m).
-	LengthM       float64 `protobuf:"fixed64,3,opt,name=length_m,json=lengthM,proto3" json:"length_m,omitempty"`
+	LengthM float64 `protobuf:"fixed64,3,opt,name=length_m,json=lengthM,proto3" json:"length_m,omitempty"`
+	// Its centre line from where it meets the route, length_m long, as east
+	// and north pairs in the frame of profile_east_m / profile_north_m: a
+	// branch bends, and a junction merged from nodes a few metres apart has
+	// branches starting at each (empty from an older core: the bearing).
+	LineEastM     []float32 `protobuf:"fixed32,4,rep,packed,name=line_east_m,json=lineEastM,proto3" json:"line_east_m,omitempty"`
+	LineNorthM    []float32 `protobuf:"fixed32,5,rep,packed,name=line_north_m,json=lineNorthM,proto3" json:"line_north_m,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4136,6 +4183,20 @@ func (x *JunctionBranch) GetLengthM() float64 {
 		return x.LengthM
 	}
 	return 0
+}
+
+func (x *JunctionBranch) GetLineEastM() []float32 {
+	if x != nil {
+		return x.LineEastM
+	}
+	return nil
+}
+
+func (x *JunctionBranch) GetLineNorthM() []float32 {
+	if x != nil {
+		return x.LineNorthM
+	}
+	return nil
 }
 
 // A car park as a box aligned with the road, like Building.
@@ -5171,8 +5232,14 @@ type RiderProfile struct {
 	MaxHrBpm float64 `protobuf:"fixed64,16,opt,name=max_hr_bpm,json=maxHrBpm,proto3" json:"max_hr_bpm,omitempty"`
 	// Building worlds ahead (SetProfileRequest): "idle" or "always", and
 	// "cached" or "allowed"; the values in effect, defaults filled in.
-	WorldBuild    string `protobuf:"bytes,17,opt,name=world_build,json=worldBuild,proto3" json:"world_build,omitempty"`
-	WorldFetch    string `protobuf:"bytes,18,opt,name=world_fetch,json=worldFetch,proto3" json:"world_fetch,omitempty"`
+	WorldBuild string `protobuf:"bytes,17,opt,name=world_build,json=worldBuild,proto3" json:"world_build,omitempty"`
+	WorldFetch string `protobuf:"bytes,18,opt,name=world_fetch,json=worldFetch,proto3" json:"world_fetch,omitempty"`
+	// Optional; 0 when unknown.
+	ThresholdHrBpm float64 `protobuf:"fixed64,19,opt,name=threshold_hr_bpm,json=thresholdHrBpm,proto3" json:"threshold_hr_bpm,omitempty"`
+	// What heart rate zones are taken from when both are set: "max" or
+	// "threshold" (SetProfileRequest), the value in effect; with only one
+	// set, that one is used whatever this says.
+	HrZones       string `protobuf:"bytes,20,opt,name=hr_zones,json=hrZones,proto3" json:"hr_zones,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5329,6 +5396,20 @@ func (x *RiderProfile) GetWorldBuild() string {
 func (x *RiderProfile) GetWorldFetch() string {
 	if x != nil {
 		return x.WorldFetch
+	}
+	return ""
+}
+
+func (x *RiderProfile) GetThresholdHrBpm() float64 {
+	if x != nil {
+		return x.ThresholdHrBpm
+	}
+	return 0
+}
+
+func (x *RiderProfile) GetHrZones() string {
+	if x != nil {
+		return x.HrZones
 	}
 	return ""
 }
@@ -6560,7 +6641,7 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\x16ListActivitiesResponse\x126\n" +
 	"\n" +
 	"activities\x18\x01 \x03(\v2\x16.osscycler.v1.ActivityR\n" +
-	"activities\"\xd0\x02\n" +
+	"activities\"\x92\x03\n" +
 	"\bActivity\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1d\n" +
 	"\n" +
@@ -6575,7 +6656,8 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\x04laps\x18\t \x01(\rR\x04laps\x12\x14\n" +
 	"\x05error\x18\n" +
 	" \x01(\tR\x05error\x124\n" +
-	"\x17held_max_heart_rate_bpm\x18\v \x01(\rR\x13heldMaxHeartRateBpm\"+\n" +
+	"\x17held_max_heart_rate_bpm\x18\v \x01(\rR\x13heldMaxHeartRateBpm\x12@\n" +
+	"\x1dheld_threshold_heart_rate_bpm\x18\f \x01(\rR\x19heldThresholdHeartRateBpm\"+\n" +
 	"\x15ExportActivityRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\"M\n" +
 	"\x16ExportActivityResponse\x12\x1d\n" +
@@ -6597,7 +6679,7 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1b\n" +
 	"\tlast_ride\x18\x02 \x01(\bR\blastRide\"U\n" +
 	"\x1aGetActivitySummaryResponse\x127\n" +
-	"\asummary\x18\x01 \x01(\v2\x1d.osscycler.v1.ActivitySummaryR\asummary\"\xfd\x04\n" +
+	"\asummary\x18\x01 \x01(\v2\x1d.osscycler.v1.ActivitySummaryR\asummary\"\xa7\x05\n" +
 	"\x0fActivitySummary\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x17\n" +
 	"\atimer_s\x18\x02 \x01(\x01R\x06timerS\x12\x1d\n" +
@@ -6620,21 +6702,24 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\x15heart_rate_zone_upper\x18\x0f \x03(\x01R\x12heartRateZoneUpper\x12\x13\n" +
 	"\x05ftp_w\x18\x10 \x01(\x01R\x04ftpW\x12\x1c\n" +
 	"\n" +
-	"max_hr_bpm\x18\x11 \x01(\x01R\bmaxHrBpm\"C\n" +
+	"max_hr_bpm\x18\x11 \x01(\x01R\bmaxHrBpm\x12(\n" +
+	"\x10threshold_hr_bpm\x18\x12 \x01(\x01R\x0ethresholdHrBpm\"C\n" +
 	"\tPowerBest\x12\x1d\n" +
 	"\n" +
 	"duration_s\x18\x01 \x01(\rR\tdurationS\x12\x17\n" +
-	"\apower_w\x18\x02 \x01(\x01R\x06powerW\"\xd7\x02\n" +
+	"\apower_w\x18\x02 \x01(\x01R\x06powerW\"\xc8\x03\n" +
 	"\x11SetProfileRequest\x12 \n" +
 	"\tweight_kg\x18\x01 \x01(\x01H\x00R\bweightKg\x88\x01\x01\x12\x18\n" +
 	"\x05ftp_w\x18\x02 \x01(\x01H\x01R\x04ftpW\x88\x01\x01\x12 \n" +
 	"\theight_cm\x18\x03 \x01(\x01H\x02R\bheightCm\x88\x01\x01\x12\x17\n" +
 	"\x04view\x18\x04 \x01(\tH\x03R\x04view\x88\x01\x01\x12!\n" +
 	"\n" +
-	"max_hr_bpm\x18\x05 \x01(\x01H\x04R\bmaxHrBpm\x88\x01\x01\x12$\n" +
-	"\vworld_build\x18\x06 \x01(\tH\x05R\n" +
+	"max_hr_bpm\x18\x05 \x01(\x01H\x04R\bmaxHrBpm\x88\x01\x01\x12-\n" +
+	"\x10threshold_hr_bpm\x18\b \x01(\x01H\x05R\x0ethresholdHrBpm\x88\x01\x01\x12\x1e\n" +
+	"\bhr_zones\x18\t \x01(\tH\x06R\ahrZones\x88\x01\x01\x12$\n" +
+	"\vworld_build\x18\x06 \x01(\tH\aR\n" +
 	"worldBuild\x88\x01\x01\x12$\n" +
-	"\vworld_fetch\x18\a \x01(\tH\x06R\n" +
+	"\vworld_fetch\x18\a \x01(\tH\bR\n" +
 	"worldFetch\x88\x01\x01B\f\n" +
 	"\n" +
 	"_weight_kgB\b\n" +
@@ -6642,7 +6727,9 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\n" +
 	"_height_cmB\a\n" +
 	"\x05_viewB\r\n" +
-	"\v_max_hr_bpmB\x0e\n" +
+	"\v_max_hr_bpmB\x13\n" +
+	"\x11_threshold_hr_bpmB\v\n" +
+	"\t_hr_zonesB\x0e\n" +
 	"\f_world_buildB\x0e\n" +
 	"\f_world_fetch\"J\n" +
 	"\x12SetProfileResponse\x124\n" +
@@ -6775,12 +6862,15 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\n" +
 	"distance_m\x18\x01 \x01(\x01R\tdistanceM\x12.\n" +
 	"\x04kind\x18\x02 \x01(\x0e2\x1a.osscycler.v1.JunctionKindR\x04kind\x128\n" +
-	"\bbranches\x18\x03 \x03(\v2\x1c.osscycler.v1.JunctionBranchR\bbranches\"e\n" +
+	"\bbranches\x18\x03 \x03(\v2\x1c.osscycler.v1.JunctionBranchR\bbranches\"\xa7\x01\n" +
 	"\x0eJunctionBranch\x12\x1f\n" +
 	"\vbearing_deg\x18\x01 \x01(\x01R\n" +
 	"bearingDeg\x12\x17\n" +
 	"\awidth_m\x18\x02 \x01(\x01R\x06widthM\x12\x19\n" +
-	"\blength_m\x18\x03 \x01(\x01R\alengthM\"\x8f\x01\n" +
+	"\blength_m\x18\x03 \x01(\x01R\alengthM\x12\x1e\n" +
+	"\vline_east_m\x18\x04 \x03(\x02R\tlineEastM\x12 \n" +
+	"\fline_north_m\x18\x05 \x03(\x02R\n" +
+	"lineNorthM\"\x8f\x01\n" +
 	"\vParkingArea\x12\x1d\n" +
 	"\n" +
 	"distance_m\x18\x01 \x01(\x01R\tdistanceM\x12\x19\n" +
@@ -6846,7 +6936,7 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\x04mode\x18\x01 \x01(\x0e2\x19.osscycler.v1.ControlModeR\x04mode\x12\x16\n" +
 	"\x06target\x18\x02 \x01(\x01R\x06target\x12\x1d\n" +
 	"\n" +
-	"changed_ns\x18\x03 \x01(\x03R\tchangedNs\"\xb1\x04\n" +
+	"changed_ns\x18\x03 \x01(\x03R\tchangedNs\"\xf6\x04\n" +
 	"\fRiderProfile\x12\x1a\n" +
 	"\bcomplete\x18\x01 \x01(\bR\bcomplete\x12\x1b\n" +
 	"\tweight_kg\x18\x02 \x01(\x01R\bweightKg\x12\x13\n" +
@@ -6871,7 +6961,9 @@ const file_osscycler_v1_telemetry_proto_rawDesc = "" +
 	"\vworld_build\x18\x11 \x01(\tR\n" +
 	"worldBuild\x12\x1f\n" +
 	"\vworld_fetch\x18\x12 \x01(\tR\n" +
-	"worldFetch\"\xbc\x01\n" +
+	"worldFetch\x12(\n" +
+	"\x10threshold_hr_bpm\x18\x13 \x01(\x01R\x0ethresholdHrBpm\x12\x19\n" +
+	"\bhr_zones\x18\x14 \x01(\tR\ahrZones\"\xbc\x01\n" +
 	"\tRecording\x12\x16\n" +
 	"\x06active\x18\x01 \x01(\bR\x06active\x12\x16\n" +
 	"\x06paused\x18\x02 \x01(\bR\x06paused\x12\x12\n" +

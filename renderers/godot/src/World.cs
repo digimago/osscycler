@@ -240,6 +240,7 @@ public sealed class World
         "setts" => 3,
         "grate" => 4,
         "building" => 5,
+        "slope paving" => 6,
         _ => null,
     };
 

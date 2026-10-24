@@ -31,6 +31,7 @@
     <Compile Include="../../src/Head/Controller.Quit.cs" />
     <Compile Include="../../src/Head/WorkoutForm.cs" />
     <Compile Include="../../src/Head/Marks.cs" />
+    <Compile Include="../../src/Head/Survey.cs" />
     <Compile Include="../../src/Head/Cover.cs" />
     <Compile Include="../../src/Head/BuildStatus.cs" />
     <Compile Include="../../src/Head/AheadQueue.cs" />

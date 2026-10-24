@@ -116,7 +116,7 @@ type Control interface {
 
 // Profile changes the rider's settings.
 type Profile interface {
-	SetProfile(ctx context.Context, weightKg, ftpW, heightCm, maxHR *float64, choices map[string]string) (telemetry.Profile, error)
+	SetProfile(ctx context.Context, weightKg, ftpW, heightCm, maxHR, thresholdHR *float64, choices map[string]string) (telemetry.Profile, error)
 }
 
 // Simulator puts a simulated rider in place of the trainer, or takes it
@@ -315,6 +315,7 @@ func (s *telemetryServer) ListActivities(context.Context, *pb.ListActivitiesRequ
 			out.StartUnixMs, out.ElapsedS, out.TimerS = a.Start.UnixMilli(), a.Elapsed.Seconds(), a.Timer.Seconds()
 			out.DistanceM, out.AvgPowerW, out.Virtual, out.Laps = a.DistanceM, a.AvgPowerW, a.Virtual, uint32(a.Laps)
 			out.HeldMaxHeartRateBpm = uint32(a.HeldMaxHR)
+			out.HeldThresholdHeartRateBpm = uint32(a.HeldThresholdHR)
 		}
 		resp.Activities = append(resp.Activities, out)
 	}
@@ -358,12 +359,12 @@ func (s *telemetryServer) SetProfile(ctx context.Context, req *pb.SetProfileRequ
 		return nil, status.Error(codes.Unimplemented, "this core has no rider profile")
 	}
 	choices := map[string]string{}
-	for name, v := range map[string]*string{"view": req.View, "world_build": req.WorldBuild, "world_fetch": req.WorldFetch} {
+	for name, v := range map[string]*string{"view": req.View, "world_build": req.WorldBuild, "world_fetch": req.WorldFetch, "hr_zones": req.HrZones} {
 		if v != nil {
 			choices[name] = *v
 		}
 	}
-	p, err := s.profile.SetProfile(ctx, req.WeightKg, req.FtpW, req.HeightCm, req.MaxHrBpm, choices)
+	p, err := s.profile.SetProfile(ctx, req.WeightKg, req.FtpW, req.HeightCm, req.MaxHrBpm, req.ThresholdHrBpm, choices)
 	switch {
 	case errors.Is(err, profile.ErrOutOfRange):
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -468,16 +469,21 @@ func (s *telemetryServer) GetActivitySummary(_ context.Context, req *pb.GetActiv
 	if ftp <= 0 {
 		ftp = st.Profile.FTPW
 	}
-	sum := effort.Summarize(ss, ftp, st.Profile.MaxHRBpm)
+	sum := effort.Summarize(ss, ftp, hrBasis(st.Profile))
 	out := &pb.ActivitySummary{Name: name, TimerS: sum.TimerS, DistanceM: sum.DistanceM,
 		AvgPowerW: sum.AvgPowerW, MaxPowerW: sum.MaxPowerW, NormalizedPowerW: sum.NormPowerW, WorkKj: sum.WorkKJ,
 		AvgHeartRateBpm: sum.AvgHR, MaxHeartRateBpm: sum.MaxHR, AvgCadenceRpm: sum.AvgCadenceRPM,
-		PowerZoneS: sum.PowerZoneS, HeartRateZoneS: sum.HRZoneS, FtpW: sum.FTPW, MaxHrBpm: sum.MaxHRBpm}
+		PowerZoneS: sum.PowerZoneS, HeartRateZoneS: sum.HRZoneS, FtpW: sum.FTPW}
+	if sum.HR.Threshold {
+		out.ThresholdHrBpm = sum.HR.Bpm
+	} else {
+		out.MaxHrBpm = sum.HR.Bpm
+	}
 	if sum.PowerZoneS != nil {
 		out.PowerZoneUpper = effort.PowerZones
 	}
 	if sum.HRZoneS != nil {
-		out.HeartRateZoneUpper = effort.HRZones
+		out.HeartRateZoneUpper = sum.HR.Bounds()
 	}
 	for _, b := range sum.Curve {
 		out.PowerCurve = append(out.PowerCurve, &pb.PowerBest{DurationS: uint32(b.DurationS), PowerW: b.PowerW})
@@ -745,4 +751,10 @@ func Dial(addr, token string, tlsCfg *tls.Config) (*grpc.ClientConn, error) {
 	return grpc.NewClient(addr,
 		grpc.WithTransportCredentials(tc),
 		grpc.WithPerRPCCredentials(bearer{token: token, secure: tlsCfg != nil}))
+}
+
+// hrBasis is what the profile's heart rate zones are taken from.
+func hrBasis(p telemetry.Profile) effort.HRBasis {
+	threshold, bpm := profile.Profile{MaxHRBpm: p.MaxHRBpm, ThresholdHRBpm: p.ThresholdHRBpm, HRZones: p.HRZones}.HRZoneBasis()
+	return effort.HRBasis{Threshold: threshold, Bpm: bpm}
 }

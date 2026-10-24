@@ -78,8 +78,11 @@ func figureEight() *Course {
 	keys := [][2]float64{
 		{0, 5}, {600, 9}, {1250, 12}, // rolling out to the crossing, under the bridge
 		{1700, 10}, {2000, 14}, {2900, 45}, // the climb: 3.4 % on average, 5.4 % at most
-		{3200, 44},             // over the top
-		{3750, 22}, {4300, 12}, // down across the bridge
+		{3100, 44}, // over the top
+		// Down across the bridge, 4 m over the first pass there: a cycle
+		// underpass's 2.7 m under the deck's slab (owner, 2026-10-24: 10 m
+		// over it, the dike stood unnaturally steep).
+		{3750, 16}, {4300, 12},
 		{5000, 5},
 	}
 	ele := func(s float64) float64 {

@@ -161,7 +161,11 @@ func (m Model) summaryPanel(width, height int) string {
 	}
 	switch z := s.GetHeartRateZoneS(); {
 	case len(z) > 0:
-		lines = append(lines, "", labelStyle.Render(fmt.Sprintf("HEART RATE ZONES  max %.0f bpm", s.GetMaxHrBpm())))
+		from := fmt.Sprintf("max %.0f bpm", s.GetMaxHrBpm())
+		if th := s.GetThresholdHrBpm(); th > 0 {
+			from = fmt.Sprintf("threshold %.0f bpm", th)
+		}
+		lines = append(lines, "", labelStyle.Render("HEART RATE ZONES  "+from))
 		lines = append(lines, bars(z, func(int) lipgloss.Style { return hrStyle }, func(i int) string {
 			lo, hi := 0, 0
 			if up := s.GetHeartRateZoneUpper(); i < len(up) {
@@ -179,7 +183,7 @@ func (m Model) summaryPanel(width, height int) string {
 			return fmt.Sprintf("%d-%d%%", lo, hi)
 		})...)
 	case s.GetAvgHeartRateBpm() > 0:
-		lines = append(lines, "", dimStyle.Render("Heart rate zones: add your maximum heart rate to your profile (m, Profile)."))
+		lines = append(lines, "", dimStyle.Render("Heart rate zones: add your maximum or threshold heart rate to your profile (m, Profile)."))
 	}
 	lines = append(lines, "", dimStyle.Render("x close"))
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, lipgloss.JoinVertical(lipgloss.Left, lines...))

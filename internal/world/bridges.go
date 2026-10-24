@@ -3,6 +3,7 @@ package world
 import (
 	"fmt"
 	"math"
+	"sort"
 
 	"github.com/digimago/osscycler/internal/gltf"
 	"github.com/digimago/osscycler/internal/scenery"
@@ -194,7 +195,7 @@ func (w *World) addBridges(t *terrain, lines []*roadLine, ways []scenery.Way) er
 	if len(t.pavings) > 0 {
 		paving = drawPavings(t.pavings, t.o.ChunkM, w.pavingMaterial())
 	}
-	below := roadsBelow(lines)
+	below, roadsUnder := roadsBelow(lines), roadsAt(lines)
 	for _, l := range lines {
 		ss := l.samples
 		for i := 0; i+1 < len(ss); {
@@ -206,7 +207,7 @@ func (w *World) addBridges(t *terrain, lines []*roadLine, ways []scenery.Way) er
 			for j+1 < len(ss) && onDeck(ss, j) {
 				j++
 			}
-			deck(prim, s, l, i, j, below(l, i, j).way, concrete, steel, true)
+			deck(prim, s, l, i, j, below(l, i, j).way, roadsUnder(l, i, j), concrete, steel, true)
 			i = j
 		}
 		// A bridge in the map that isn't a deck (a low bridge over a canal
@@ -226,7 +227,7 @@ func (w *World) addBridges(t *terrain, lines []*roadLine, ways []scenery.Way) er
 				j++
 			}
 			if ss[j].d-ss[i].d >= railMinM {
-				deck(prim, s, l, i, j, [2]float64{}, concrete, steel, false)
+				deck(prim, s, l, i, j, [2]float64{}, nil, concrete, steel, false)
 			}
 			i = j + 1
 		}
@@ -333,7 +334,10 @@ func frameOf(l *roadLine, a sample) deckFrame {
 // full, only its edge beams and railings (a low bridge drawn as road).
 // skew is the way of the road below (unit, east and north; zero: none):
 // the deck's ends run along it, through the ends' middles.
-func deck(prim func(e, n float64) *gltf.Primitive, s *surface, l *roadLine, i, j int, skew [2]float64, concrete, steel [3]float32, full bool) {
+//
+// onRoad says whether a point lies on (or within pierClearM of) a road under
+// the deck, where no pier may stand (nil: none).
+func deck(prim func(e, n float64) *gltf.Primitive, s *surface, l *roadLine, i, j int, skew [2]float64, onRoad func(e, n float64) bool, concrete, steel [3]float32, full bool) {
 	ss := l.samples
 	frames := make([]deckFrame, 0, j-i+1)
 	for k := i; k <= j; k++ {
@@ -486,15 +490,156 @@ func deck(prim func(e, n float64) *gltf.Primitive, s *surface, l *roadLine, i, j
 		c, d := point(t, f.right, 0.012, -end.dir*jointW), point(t, -f.left, 0.012, -end.dir*jointW)
 		quad(p, a, b, c, d, [3]float64{0, 1, 0}, joint)
 	}
-	// Piers under a long span: two columns and a crosshead.
-	if piers := int(span / pierSpanM); piers > 0 {
-		for q := 1; q <= piers; q++ {
-			f := frames[len(frames)*q/(piers+1)]
-			for _, x := range []float64{-f.left * 0.55, f.right * 0.55} {
-				top := [3]float64{f.c[0] + f.r[0]*x, f.c[1] - deckDepthM, f.c[2] + f.r[2]*x}
-				box(p, f, x-0.45, x+0.45, -0.45, 0.45, s.at(top[0], -top[2])-footM, -deckDepthM-0.8, concrete)
+	// Piers under a long span: two columns and a crosshead, along the road
+	// below as the ends are, and never on it (owner, 2026-10-24: spaced
+	// evenly, the Heideweg's piers stood in the figure 8's motorway lanes):
+	// first in the middle of each strip between roads under the deck (a
+	// median), then, where a span is still longer than pierSpanM, beside
+	// the roads' outer edges (next to the shoulders), else anywhere free.
+	if span < pierSpanM {
+		return
+	}
+	pierAt := func(d, x, up float64) [3]float64 {
+		f := frameOf(l, sampleBetween(l, d+shift(d, x)))
+		return [3]float64{f.c[0] + f.r[0]*x, f.c[1] + up, f.c[2] + f.r[2]*x}
+	}
+	free := func(d float64) bool {
+		if onRoad == nil {
+			return true
+		}
+		f := frameOf(l, sampleBetween(l, d))
+		for _, x := range []float64{-f.left * 0.55, f.right * 0.55} {
+			for _, a := range []float64{-0.45, 0.45} {
+				q := pierAt(d+a, x, 0)
+				if onRoad(q[0], -q[2]) {
+					return false
+				}
 			}
-			box(p, f, -f.left, f.right, -0.6, 0.6, f.c[1]-deckDepthM-0.8, -deckDepthM, concrete)
+		}
+		return true
+	}
+	// The free stretches along the deck, a metre in from its ends.
+	type stretch struct{ from, to float64 }
+	var runs []stretch
+	for d := dS + 1; d <= dE-1; d += 0.5 {
+		if !free(d) {
+			continue
+		}
+		if k := len(runs) - 1; k >= 0 && d-runs[k].to <= 0.5+1e-9 {
+			runs[k].to = d
+		} else {
+			runs = append(runs, stretch{d, d})
+		}
+	}
+	supports := []float64{dS, dE}
+	var near []float64 // beside a road, inside a free stretch
+	for _, r := range runs {
+		if r.from > dS+1 && r.to < dE-1 { // roads on both sides: a median
+			supports = append(supports, (r.from+r.to)/2)
+		}
+		if r.from > dS+1 {
+			near = append(near, r.from)
+		}
+		if r.to < dE-1 {
+			near = append(near, r.to)
+		}
+	}
+	sort.Float64s(supports)
+	for range 8 { // spans still too long: next to the roads, else anywhere free
+		longest, at := 0.0, -1
+		for k := 1; k < len(supports); k++ {
+			if g := supports[k] - supports[k-1]; g > longest {
+				longest, at = g, k
+			}
+		}
+		if longest <= pierSpanM {
+			break
+		}
+		a, b := supports[at-1], supports[at]
+		best, pick := math.Inf(1), math.NaN()
+		try := func(c float64) {
+			if c > a+1 && c < b-1 {
+				if g := math.Abs(c - (a+b)/2); g < best {
+					best, pick = g, c
+				}
+			}
+		}
+		for _, c := range near {
+			try(c)
+		}
+		if math.IsNaN(pick) {
+			for _, r := range runs {
+				try(math.Max(r.from, math.Min(r.to, (a+b)/2)))
+			}
+		}
+		if math.IsNaN(pick) {
+			break
+		}
+		supports = append(supports, pick)
+		sort.Float64s(supports)
+	}
+	for _, d := range supports[1 : len(supports)-1] {
+		f := frameOf(l, sampleBetween(l, d))
+		for _, x := range []float64{-f.left * 0.55, f.right * 0.55} {
+			var plan [4][3]float64
+			for k, c := range [4][2]float64{{-0.45, -0.45}, {0.45, -0.45}, {0.45, 0.45}, {-0.45, 0.45}} {
+				plan[k] = pierAt(d+c[1], x+c[0], 0)
+			}
+			top := pierAt(d, x, -deckDepthM)
+			tops := [4]float64{}
+			for k := range tops {
+				tops[k] = plan[k][1] - deckDepthM - 0.8
+			}
+			block(p, plan, s.at(top[0], -top[2])-footM, tops, concrete)
+		}
+		var head [4][3]float64
+		for k, c := range [4][2]float64{{-f.left, -0.6}, {f.right, -0.6}, {f.right, 0.6}, {-f.left, 0.6}} {
+			head[k] = pierAt(d+c[1], c[0], 0)
+		}
+		tops := [4]float64{}
+		for k := range tops {
+			tops[k] = head[k][1] - deckDepthM
+		}
+		block(p, head, f.c[1]-deckDepthM-0.8, tops, concrete)
+	}
+}
+
+// pierClearM: no pier stands within this of a road's edge under its deck.
+const pierClearM = 0.6
+
+// roadsAt gives, for a deck (line l's samples i to j), whether a point lies
+// on a road under it (within the road's edge and pierClearM, the road
+// bridgeM lower than the deck's lowest).
+func roadsAt(lines []*roadLine) func(l *roadLine, i, j int) func(e, n float64) bool {
+	type ref struct{ l, i int }
+	const cellM = 10.0
+	grid := map[[2]int][]ref{}
+	key := func(e, n float64) [2]int { return [2]int{int(math.Floor(e / cellM)), int(math.Floor(n / cellM))} }
+	for li, l := range lines {
+		for i, s := range l.samples {
+			if !s.aloft && !s.tunnel {
+				grid[key(s.e, s.n)] = append(grid[key(s.e, s.n)], ref{li, i})
+			}
+		}
+	}
+	return func(l *roadLine, i, j int) func(e, n float64) bool {
+		low := math.Inf(1)
+		for k := i; k <= j; k++ {
+			low = math.Min(low, l.samples[k].ele)
+		}
+		return func(e, n float64) bool {
+			k := key(e, n)
+			for gx := k[0] - 2; gx <= k[0]+2; gx++ {
+				for gy := k[1] - 2; gy <= k[1]+2; gy++ {
+					for _, r := range grid[[2]int{gx, gy}] {
+						o := lines[r.l].samples[r.i]
+						if lines[r.l] != l && o.ele < low-bridgeM && math.Hypot(o.e-e, o.n-n) < o.edge+pierClearM {
+							return true
+						}
+					}
+				}
+			}
+			return false
 		}
 	}
 }

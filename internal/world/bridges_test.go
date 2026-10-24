@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/digimago/osscycler/internal/course"
+	"github.com/digimago/osscycler/internal/gltf"
+	"github.com/digimago/osscycler/internal/scenery"
 )
 
 func TestMarkDecks(t *testing.T) {
@@ -86,3 +88,49 @@ func TestDeckBeamEndsAreClosed(t *testing.T) {
 }
 
 func sub3(a, b [3]float64) [3]float64 { return [3]float64{a[0] - b[0], a[1] - b[1], a[2] - b[2]} }
+
+// A bridge's piers stand off the roads under it: in a median, beside the
+// shoulders (owner, 2026-10-24: spaced evenly, the Heideweg's piers stood
+// in the figure 8's motorway lanes). No pier's column stands over a road
+// under its deck.
+func TestPiersStayOffTheLanes(t *testing.T) {
+	// The figure 8 with its made-up map, as worlds.Builder builds it: the
+	// Heideweg over the motorway.
+	c := course.Tracks()[1]
+	ts := scenery.TrackScenery(c)
+	o := Options{Generator: "test", Land: scenery.NewLandMap(c, ts.Data), Scenery: scenery.Build(c, ts.Data),
+		Buildings: scenery.Footprints(c, ts.Data), Lawns: ts.Lawns, Fences: ts.Fences}
+	if ts.Roads != nil {
+		o.Scenery.Roads = ts.Roads
+	}
+	w, err := Build(c, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var roads []gltf.Primitive
+	for _, p := range w.prims {
+		if w.doc.MaterialName(p.Material) == "road" {
+			roads = append(roads, p)
+		}
+	}
+	ix := newSurfaceIndex(roads, func(int) bool { return true }, 200)
+	through := 0
+	for _, p := range w.prims {
+		if w.doc.MaterialName(p.Material) != "bridge" {
+			continue
+		}
+		for v := 0; v+2 < len(p.Positions); v += 3 {
+			e, y, n := float64(p.Positions[v]), float64(p.Positions[v+1]), -float64(p.Positions[v+2])
+			// A pier's column (under the crosshead, deckDepthM + 0.8 under
+			// the deck's road) over a lower road's surface: in its lanes.
+			top, ok := ix.top(e, n, true)
+			low, _ := ix.top(e, n, false)
+			if ok && top-low > 2 && y < top-deckDepthM-0.85 && y > low-1 {
+				through++
+			}
+		}
+	}
+	if through > 0 {
+		t.Errorf("%d pier vertices over a road under its deck: a pier in the lanes", through)
+	}
+}

@@ -2,6 +2,7 @@ package effort
 
 import (
 	"math"
+	"slices"
 	"testing"
 )
 
@@ -22,7 +23,7 @@ func TestSummarize(t *testing.T) {
 		}
 		ss = append(ss, Sample{T: float64(i), PowerW: p, HR: hr, Cadence: 90, SpeedMS: 8, DistM: 8 * float64(i+1)})
 	}
-	s := Summarize(ss, 200, 190)
+	s := Summarize(ss, 200, HRBasis{Bpm: 190})
 	if s.TimerS != 600 || s.DistanceM != 4800 {
 		t.Errorf("timer %.0f s, distance %.0f m; want 600 s, 4800 m", s.TimerS, s.DistanceM)
 	}
@@ -58,11 +59,31 @@ func TestSummarize(t *testing.T) {
 
 func TestSummarizeWithoutFTPOrMaxHR(t *testing.T) {
 	ss := []Sample{{PowerW: 100, HR: 100}, {PowerW: 100, HR: 100}}
-	s := Summarize(ss, 0, 0)
+	s := Summarize(ss, 0, HRBasis{})
 	if s.PowerZoneS != nil || s.HRZoneS != nil {
 		t.Errorf("zones without FTP or max HR: %v, %v", s.PowerZoneS, s.HRZoneS)
 	}
-	if len(Summarize(nil, 200, 190).Curve) != 0 {
+	if len(Summarize(nil, 200, HRBasis{Bpm: 190}).Curve) != 0 {
 		t.Error("a curve with no samples")
+	}
+}
+
+// Zones from a threshold heart rate (owner, 2026-10-21: Friel's five,
+// as a fraction of the threshold): 160 bpm a threshold of 170 is Z3, 175
+// is Z5; with a maximum of 190 the same are Z4 and Z4.
+func TestThresholdHRZones(t *testing.T) {
+	var ss []Sample
+	for _, hr := range []int{120, 140, 155, 160, 165, 175} {
+		ss = append(ss, Sample{PowerW: -1, HR: hr})
+	}
+	th := Summarize(ss, 0, HRBasis{Threshold: true, Bpm: 170})
+	// 120/170 0.71 Z1; 140 0.82 Z2; 155 0.91 Z3; 160 0.94 Z4; 165 0.97 Z4; 175 1.03 Z5.
+	if want := []float64{1, 1, 1, 2, 1}; !slices.Equal(th.HRZoneS, want) || !th.HR.Threshold {
+		t.Errorf("threshold zones %v, want %v", th.HRZoneS, want)
+	}
+	mx := Summarize(ss, 0, HRBasis{Bpm: 190})
+	// 120/190 0.63 Z2; 140 0.74 Z3; 155 0.82 Z4; 160 0.84 Z4; 165 0.87 Z4; 175 0.92 Z5.
+	if want := []float64{0, 1, 1, 3, 1}; !slices.Equal(mx.HRZoneS, want) || mx.HR.Threshold {
+		t.Errorf("maximum zones %v, want %v", mx.HRZoneS, want)
 	}
 }

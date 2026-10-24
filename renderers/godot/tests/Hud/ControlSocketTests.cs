@@ -96,7 +96,11 @@ public class ControlSocketTests
         var s = new ControlSocket(0);
         using var c = new Conn(s.Port);
         c.Out.WriteLine("""{"id": 2, "cmd": "state"}""");
-        await Task.Delay(200); // queued, not taken
+        // Queued, not taken: wait for it (a fixed 200 ms wasn't always
+        // enough on CI, and the request came in after the view closed).
+        for (var waited = 0; s.Waiting == 0 && waited < 5000; waited += 10)
+            await Task.Delay(10);
+        Assert.Equal(1, s.Waiting);
         s.Dispose();
         var a = await c.Read();
         Assert.False((bool)a["ok"]!);

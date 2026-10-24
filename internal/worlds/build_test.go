@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -26,6 +27,24 @@ func track(t *testing.T, id string) *course.Course {
 	return nil
 }
 
+// shortCourse is a real course (not one of the test tracks: map data and a
+// ground model to look for) 1.5 km long, a gentle bend in the polder. Any
+// real course shows what a build of one does without its data, and the
+// shortest included one took a minute under the race detector.
+func shortCourse(t *testing.T) *course.Course {
+	t.Helper()
+	var pts []course.Point
+	for i := 0; i <= 15; i++ {
+		f := float64(i) / 15
+		pts = append(pts, course.Point{Lat: 52.0 + 0.009*f, Lon: 5.0 + 0.012*f*f, Ele: 2 + 3*f})
+	}
+	c, err := course.New("short", "Short", pts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
 // A world is the same every build (the world-assets rule: seeded, never
 // random), so a stamp names its contents and a change shows only what it
 // changed. The figure 8 has everything added per chunk: terrain, roads,
@@ -40,16 +59,14 @@ func TestBuildIsTheSameEveryTime(t *testing.T) {
 		return 20 + 3*math.Sin(e/60) + 2*math.Sin(n/90), true
 	}
 	for _, tc := range []struct {
-		name, engine string
-		o            world.Options
+		name string
+		o    world.Options
 	}{
-		{"no ground model", world.EngineClassic, world.Options{Generator: "test"}},
-		{"ground model", world.EngineClassic, world.Options{Generator: "test", Elevation: ground}},
-		{"graph, no ground model", world.EngineGraph, world.Options{Generator: "test"}},
-		{"graph, ground model", world.EngineGraph, world.Options{Generator: "test", Elevation: ground}},
+		{"no ground model", world.Options{Generator: "test"}},
+		{"ground model", world.Options{Generator: "test", Elevation: ground}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			b := &Builder{Ground: "none", Options: tc.o, Engine: tc.engine}
+			b := &Builder{Ground: "none", Options: tc.o}
 			var files [2]map[string][]byte
 			for i := range files {
 				res, err := b.Build(context.Background(), c, nil)
@@ -72,7 +89,7 @@ func TestBuildIsTheSameEveryTime(t *testing.T) {
 					t.Errorf("%s differs between two builds", f)
 				}
 			}
-			if !bytes.Contains(files[0][world.ManifestFile], []byte(`"stamp":"`+EngineStamp(c, tc.engine)+`"`)) {
+			if !bytes.Contains(files[0][world.ManifestFile], []byte(`"stamp":"`+Stamp(c)+`"`)) {
 				t.Error("the manifest lacks the course's stamp")
 			}
 		})
@@ -96,12 +113,7 @@ func TestPreview(t *testing.T) {
 	// A preview of a real course takes neither ground model nor map data
 	// (none to be had here: no caches, no fetching), has made-up
 	// countryside, and a stamp of its own, never taken for the world's.
-	var c *course.Course
-	for _, x := range course.Included() {
-		if !x.Builtin {
-			c = x
-		}
-	}
+	c := shortCourse(t)
 	b := &Builder{Ground: "auto", DEMCache: t.TempDir(), Preview: true, Options: world.Options{Generator: "test"}}
 	res, err := b.Build(context.Background(), c, nil)
 	if err != nil {
@@ -123,46 +135,16 @@ func TestPreview(t *testing.T) {
 	}
 }
 
-// Each builder's worlds have their own stamp and directory, so both can
-// be kept and neither is taken for the other's; the classic builder's are
-// what they always were.
-func TestEngineStampsAndDirs(t *testing.T) {
+// A world's stamp is the graph builder's as it was while there were two
+// builders (owner, 2026-10-21: the classic one retired), so the worlds it
+// built stay current; a preview's is its own; worlds go in out/id.
+func TestStampsAndDirs(t *testing.T) {
 	c := track(t, "oval-400")
-	classic, graph := EngineStamp(c, world.EngineClassic), EngineStamp(c, world.EngineGraph)
-	if classic != Stamp(c) {
-		t.Errorf("the classic builder's stamp %q, want the course's %q", classic, Stamp(c))
+	if s := Stamp(c); !strings.HasPrefix(s, fmt.Sprintf("g%d-", BuilderVersion)) || PreviewStamp(c) == s {
+		t.Errorf("stamp %q, preview %q", s, PreviewStamp(c))
 	}
-	if graph == classic || !strings.HasPrefix(graph, "g") || EngineStamp(c, "") != graph {
-		t.Errorf("the graph builder's stamp %q (classic %q, default %q)", graph, classic, EngineStamp(c, ""))
-	}
-	if got := Dir("/w", "oval-400", world.EngineClassic); got != filepath.Join("/w", ".classic", "oval-400") {
-		t.Errorf("classic dir %s", got)
-	}
-	if got := Dir("/w", "oval-400", world.EngineGraph); got != filepath.Join("/w", "oval-400") || Dir("/w", "oval-400", "") != got {
-		t.Errorf("graph dir %s (default %s)", got, Dir("/w", "oval-400", ""))
-	}
-}
-
-// When the graph builder fails, the classic one builds the world in its
-// place, under the graph builder's stamp (so it isn't tried again and
-// again), and the result says so.
-func TestBuilderFallsBackToClassic(t *testing.T) {
-	c := track(t, "oval-400")
-	was := world.Engines[world.EngineGraph]
-	world.Engines[world.EngineGraph] = func(*course.Course, world.Options) (*world.World, error) {
-		return nil, errors.New("no network")
-	}
-	defer func() { world.Engines[world.EngineGraph] = was }()
-	b := &Builder{Ground: "none"}
-	r, err := b.Build(context.Background(), c, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !r.FellBack || r.World.Manifest.Builder != world.EngineClassic {
-		t.Errorf("fell back %v, builder %q: want the classic builder in the graph builder's place", r.FellBack, r.World.Manifest.Builder)
-	}
-	if r.World.Manifest.Stamp != EngineStamp(c, world.EngineGraph) {
-		t.Errorf("stamp %q, want the graph builder's %q", r.World.Manifest.Stamp, EngineStamp(c, world.EngineGraph))
+	if got := Dir("/w", "oval-400"); got != filepath.Join("/w", "oval-400") {
+		t.Errorf("dir %s", got)
 	}
 }
 
@@ -186,5 +168,33 @@ func TestCompleteBuildNeedsEverythingCached(t *testing.T) {
 		if _, err := b.Build(context.Background(), c, nil); !errors.Is(err, ErrIncomplete) {
 			t.Errorf("ground %s, empty caches: %v, want ErrIncomplete", ground, err)
 		}
+	}
+}
+
+// A world built while map data was missing (not cached, the server
+// down) is stamped partial: never current, so it is built again, fetching,
+// when next asked for (owner, 2026-10-22: the Lakes Route's world, built
+// while the map data server failed, had a path over grass where the D486
+// runs, and stamped current it was never built again).
+func TestPartialWorldIsNeverCurrent(t *testing.T) {
+	c := shortCourse(t)
+	maps := scenery.NewStore(scenery.Config{CacheDir: t.TempDir(), Fetch: false}, nil)
+	b := &Builder{Ground: "none", DEMCache: t.TempDir(), Maps: maps, Options: world.Options{Generator: "test"}}
+	res, err := b.Build(context.Background(), c, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Partial || res.World.Manifest.Stamp != PartialStamp(c) {
+		t.Fatalf("partial %v, stamp %q, want %q", res.Partial, res.World.Manifest.Stamp, PartialStamp(c))
+	}
+	dir := t.TempDir()
+	if err := res.World.Write(Dir(dir, c.ID)); err != nil {
+		t.Fatal(err)
+	}
+	if Find([]string{dir}, c.ID, Stamp(c)) != "" {
+		t.Error("the partial world was taken for a current one")
+	}
+	if PartialStamp(c) == Stamp(c) || PartialStamp(c) == PreviewStamp(c) {
+		t.Errorf("stamps %q %q %q", PartialStamp(c), Stamp(c), PreviewStamp(c))
 	}
 }

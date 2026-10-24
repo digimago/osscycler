@@ -12,8 +12,8 @@ import (
 // changes roads only where the network joins them (gnet.between); a road
 // it can't reach from the last costs as much as leaving the roads. So the
 // rider can't hop between roads side by side, onto a road below, or back
-// and forth: what the classic builder mends afterwards (keepToConnected,
-// unfold, keepOnRoad, settleOnRoad, openRuns) has nothing to mend.
+// and forth: what the classic builder mended afterwards has nothing to
+// mend.
 
 // gstate is one step's place: on a road, or off.
 type gstate struct {
@@ -46,10 +46,20 @@ const (
 	gCloseM     = 8.0                 // a road this near the route is likely the one it rides
 	gFarCost    = 0.05                // per square metre further out
 	gAcrossCost = 16.0                // a road across the route's way (it turns there, through a node, not along it)
+	gHopM       = 15.0                // a hop off the roads this long, with roads either side, takes their heights
 	gSpurM      = 15.0                // a spur of the line through the network, out and back over the same way, this long goes; a longer one is the course's own turn-back
 	gSpurTipCos = -0.7                // the line turns more than 135° at a spur's tip (the way back may start a metre aside)
 	gSpurOffM   = 1.5                 // the way back keeps within this of the way out (a twin line runs a metre beside; a turn within it is a hairpin anyway)
 	gAgainstCos = -0.3                // a net move more than 107° against the route's way is a step back (a hop up a crossing piece to the other carriageway was 116°)
+	// A step onto another road, or off the roads or back onto them, that
+	// climbs or drops more than gDropM plus gDropGrade of a path step is a
+	// road passing over or under, not one to change onto (roads that meet
+	// share their node's height). Of a step, not the hop's length: a hop
+	// off the roads 29 m across onto a road in a cutting 7.7 m below would
+	// pass by its length.
+	gDropM     = 0.5
+	gDropGrade = 0.25
+	gDropCost  = 1e6 // never, whatever the rest costs (a one-way road against its traffic over 250 m costs more than a gBackCost)
 )
 
 // alongOf is how much line l runs the way (re, rn) at t: 1 along it
@@ -88,6 +98,9 @@ func (g *gnet) matchCourse(steps int, step float64, own [][4]float64, heading []
 	grid := map[cell][]sampleRef{}
 	key := func(e, n float64) cell { return cell{int(math.Floor(e / cellM)), int(math.Floor(n / cellM))} }
 	for _, l := range g.lines {
+		if l.motorway {
+			continue // never ridden
+		}
 		for i, s := range l.samples {
 			k := key(s.e, s.n)
 			grid[k] = append(grid[k], sampleRef{l, i})
@@ -175,7 +188,7 @@ func (g *gnet) matchCourse(steps int, step float64, own [][4]float64, heading []
 		// A closed course keeps to the main road: where a road of a higher
 		// class runs alongside within ventM, an access road beside it
 		// (ventweg) or a road the route took for its cycle path costs more
-		// (as the classic builder's courseRoads).
+		// (as the classic builder's matching did).
 		top := -1
 		for _, c := range cands[i][1:] {
 			if r := rank(c.line, c.t); r > top && math.Hypot(c.x-ox, c.y-oy) <= ventM && alongOf(g.lines[c.line], c.t, re, rn) >= parallelCosine {
@@ -216,6 +229,13 @@ func (g *gnet) matchCourse(steps int, step float64, own [][4]float64, heading []
 		// sees).
 		if mx, my := c.x-p.x, c.y-p.y; math.Hypot(mx, my) > gJitterM && (mx*c.he+my*c.hn)/math.Hypot(mx, my) < gAgainstCos {
 			return gBackCost
+		}
+		// Never onto a road metres above or below (owner, 2026-10-10: at
+		// Zandvoort the course hopped 27 m sideways onto the beach access
+		// road 8 m below the boulevard, and the rider fell off stairs; the
+		// classic builder's rule, kept when it was retired, 2026-10-21).
+		if !(p.on && c.on && p.line == c.line) && math.Abs(c.z-p.z) > gDropM+gDropGrade*step {
+			return gDropCost
 		}
 		switch {
 		case !p.on && !c.on:
@@ -500,6 +520,28 @@ func (g *gnet) trace(st []gstate) gpathOut {
 	out.s = make([]float64, len(pts))
 	for i := 1; i < len(pts); i++ {
 		out.s[i] = out.s[i-1] + math.Hypot(pts[i].x-pts[i-1].x, pts[i].y-pts[i-1].y)
+	}
+	// A hop off the roads between two points on them, up to gHopM along
+	// the line (a step the matcher found no road for as the course turns
+	// onto a roundabout), keeps to the heights between theirs: the
+	// ground's there can lie metres off a road graded above or below it (a
+	// roundabout levelled on a hillside).
+	for i := 0; i < len(pts); {
+		if pts[i].on {
+			i++
+			continue
+		}
+		j := i
+		for j < len(pts) && !pts[j].on {
+			j++
+		}
+		if i > 0 && j < len(pts) && out.s[j]-out.s[i-1] <= gHopM {
+			a, b, L := pts[i-1].z, pts[j].z, out.s[j]-out.s[i-1]
+			for k := i; k < j; k++ {
+				pts[k].z = a + (out.s[k]-out.s[i-1])/L*(b-a)
+			}
+		}
+		i = j
 	}
 	for _, k := range atIdx {
 		out.at = append(out.at, out.s[kept[k]])

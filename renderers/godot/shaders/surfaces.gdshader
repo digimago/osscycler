@@ -18,6 +18,10 @@
 //     winLayout), with
 //     shutters in a French world (owner, 2026-10-16: La Bresse's houses
 //     face the valley with rows of shuttered windows).
+//   6 slope paving: grey concrete pavers under a deck (owner, 2026-10-23:
+//     a brick texture for some character; concrete, not red clay; no
+//     mortar, dry-laid, held by their weight, minimal seams), 20 × 10 cm
+//     in stretcher bond, each a shade of its own, hairline seams.
 // Detail fades out with distance before it would shimmer.
 shader_type spatial;
 render_mode cull_back;
@@ -150,6 +154,27 @@ void fragment() {
 			rough = 0.9 - 0.2 * mesh;
 			h = 0.12 * rk + 0.01 * mesh;
 		}
+	} else if (kind == 6) {
+		// From above on the slopes (at 1:1.5 a paver looks a fifth longer
+		// down them), on a vertical plane where steeper, as a wall's
+		// courses: projected from above there they stretched into stripes.
+		// (Laid on each slope's own plane they faded out up close: its
+		// basis turned from pixel to pixel at world coordinates in the
+		// thousands of metres.)
+		if (abs(wnrm.y) < 0.65) {
+			p = abs(wnrm.x) > abs(wnrm.z) ? vec2(wpos.z, wpos.y) : vec2(wpos.x, wpos.y);
+		}
+		vec2 q = vec2(p.x / 0.2, p.y / 0.1);
+		float row = floor(q.y);
+		q.x += 0.5 * mod(row, 2.0);
+		vec2 s = floor(q);
+		vec2 r = fract(q) - 0.5;
+		float fine = near(p, 0.03);
+		float joint = 1.0 - inside(r.x, 1.0 - 0.003 / 0.2) * inside(r.y, 1.0 - 0.003 / 0.1);
+		c = base * (0.9 + 0.16 * h21(s)) * (0.95 + 0.1 * vnoise(p * 11.0));
+		c = mix(c, base * 0.62, joint * fine);
+		h = 0.002 * (1.0 - joint) * fine;
+		rough = 0.95;
 	} else if (kind == 3) {
 		// Setts 10 cm in rows, grey granite, domed, dark sandy joints.
 		vec2 q = p / 0.11;

@@ -5,22 +5,49 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
+	"sync"
 	"testing"
 
 	"github.com/digimago/osscycler/internal/course"
-	"github.com/digimago/osscycler/internal/gltf"
 	"github.com/digimago/osscycler/internal/scenery"
 )
 
+// trackWorlds holds each test track's world built with the plain test
+// options, built once for the tests that only look at it (a figure 8 takes
+// about 9 s under the race detector). The tests never change a world.
+var trackWorlds struct {
+	sync.Mutex
+	m map[string]*World
+}
+
+// trackWorld is test track c's world built with Options{Generator: "test"}.
+func trackWorld(t *testing.T, c *course.Course) *World {
+	t.Helper()
+	trackWorlds.Lock()
+	defer trackWorlds.Unlock()
+	if w := trackWorlds.m[c.ID]; w != nil {
+		return w
+	}
+	w, err := Build(c, Options{Generator: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if trackWorlds.m == nil {
+		trackWorlds.m = map[string]*World{}
+	}
+	trackWorlds.m[c.ID] = w
+	return w
+}
+
+// The builder builds the test tracks whole, and says it made them.
 func TestBuildTracks(t *testing.T) {
 	for _, c := range course.Tracks() {
 		t.Run(c.ID, func(t *testing.T) {
-			w, err := Build(c, Options{Generator: "test"})
-			if err != nil {
-				t.Fatal(err)
-			}
+			w := trackWorld(t, c)
 			m := w.Manifest
+			if m.Builder != Engine {
+				t.Errorf("manifest says builder %q, want %q", m.Builder, Engine)
+			}
 			if m.Terrain.Source != "course profile" || m.Terrain.Chunks == 0 || w.Vertices == 0 {
 				t.Errorf("terrain %+v, %d vertices", m.Terrain, w.Vertices)
 			}
@@ -106,13 +133,14 @@ func (t *terrain) at(e, n float64) float64 {
 
 func TestBridge(t *testing.T) {
 	// The figure of eight crosses itself a quarter of the way round, under
-	// the bridge it comes back over at three quarters, 10 m higher.
+	// the bridge it comes back over at three quarters, 4 m higher (a cycle
+	// underpass's headroom and the deck: owner, 2026-10-24).
 	c := course.Tracks()[1]
 	tr := testTerrain(c, Options{})
 	e, n := c.Project(c.Position(c.Distance / 4))
 	under, _ := c.At(c.Distance / 4)
 	over, _ := c.At(3 * c.Distance / 4)
-	if over-under < 8 {
+	if over-under < 3.6 {
 		t.Fatalf("the fixture changed: roads at %.1f and %.1f m", under, over)
 	}
 	if h := tr.at(e, n); math.Abs(h-(under-sinkM)) > 0.3 {
@@ -199,167 +227,6 @@ func TestNoCliffsBetweenPasses(t *testing.T) {
 	if worst > 1.5*step {
 		t.Errorf("ground steps %.2f m between points %.1f m apart", worst, step)
 	}
-}
-
-func TestLandCover(t *testing.T) {
-	// 2 km due north, flat at 10 m. Forest on the left all along; a pond
-	// right of the road from 900 to 1100 m, 60 to 160 m out, where the
-	// ground model has no heights (as AHN over water). The ground rises
-	// eastwards, so the pond's banks lie between 10.6 and 11.6 m.
-	var pts []course.Point
-	const lat0, lon0 = 52.0, 5.0
-	for i := range 201 {
-		pts = append(pts, course.Point{Lat: lat0 + float64(i)*10/111195, Lon: lon0, Ele: 10})
-	}
-	c, err := course.New("pond", "Pond", pts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	kx := 111195 * math.Cos(lat0*math.Pi/180)
-	ring := func(x0, y0, x1, y1 float64) []scenery.LatLon {
-		p := func(x, y float64) scenery.LatLon { return scenery.LatLon{Lat: lat0 + y/111195, Lon: lon0 + x/kx} }
-		return []scenery.LatLon{p(x0, y0), p(x1, y0), p(x1, y1), p(x0, y1), p(x0, y0)}
-	}
-	inPond := func(e, n float64) bool { return e > 60 && e < 160 && n > 900 && n < 1100 }
-	ground := func(lat, lon float64) (float64, bool) {
-		e, n := c.Project(lat, lon)
-		if inPond(e, n) {
-			return 0, false
-		}
-		return 10 + 0.01*math.Max(0, e), true
-	}
-	lm := scenery.NewLandMap(c, &scenery.Data{Elements: []scenery.Element{
-		{Type: "way", ID: 1, Tags: map[string]string{"landuse": "forest"}, Geometry: ring(-400, -100, -3, 2100)},
-		{Type: "way", ID: 2, Tags: map[string]string{"natural": "water"}, Geometry: ring(60, 900, 160, 1100)},
-	}})
-	tr := testTerrain(c, Options{Elevation: ground, Land: lm})
-
-	g, w := tr.chunk([2]int{0, 4}, 0, 1) // 0..250 m east, 1000..1250 m north
-	// The vertex at e, no, by position (blocks far from the route have
-	// fewer: lod.go).
-	vertex := func(e, no float64) int {
-		for v := 0; 3*v < len(g.Positions); v++ {
-			if math.Abs(float64(g.Positions[3*v])-e) < 0.01 && math.Abs(float64(-g.Positions[3*v+2])-no) < 0.01 {
-				return v
-			}
-		}
-		t.Fatalf("no terrain vertex at %.0f, %.0f", e, no)
-		return -1
-	}
-	color := func(v int) [3]float32 { return [3]float32{g.Colors[3*v], g.Colors[3*v+1], g.Colors[3*v+2]} }
-	if got := color(vertex(200, 1200)); got != landColors[scenery.LandNone] {
-		t.Errorf("open ground: colour %v, want grass", got)
-	}
-	if len(w.Positions) == 0 {
-		t.Fatal("no water in the pond's chunk")
-	}
-	level := float64(w.Positions[1])
-	for k := 1; k < len(w.Positions); k += 3 {
-		if float64(w.Positions[k]) != level {
-			t.Fatalf("water not flat: %v and %v", w.Positions[k], level)
-		}
-	}
-	if level < 10.6-freeboardM-0.1 || level >= 10.6 {
-		t.Errorf("water level %.2f m, want just below the lowest bank (10.6 m)", level)
-	}
-	if h := float64(g.Positions[3*vertex(110, 1050)+1]); h > level-bedM+0.01 {
-		t.Errorf("ground under the pond at %.2f m, above the bed (level %.2f)", h, level)
-	}
-	for _, e := range []float64{55, 165} {
-		if bank := float64(g.Positions[3*vertex(e, 1050)+1]); bank <= level {
-			t.Errorf("bank %v m out at %.2f m, not above the water at %.2f", e, bank, level)
-		}
-	}
-
-	// The forest on the left, the verge beside the road grass.
-	g, _ = tr.chunk([2]int{-1, 4}, 0, 1) // 250..0 m west
-	if got := color(vertex(-100, 1100)); got != landColors[scenery.LandForest] {
-		t.Errorf("forest: colour %v, want the forest floor", got)
-	}
-	if got := color(vertex(0, 1100)); got != landColors[verdure] {
-		t.Errorf("the road's edge: colour %v, want the verge", got)
-	}
-}
-
-func TestRiverFalls(t *testing.T) {
-	// A road 2 km due north rising 1 m per km, a river beside it 60 to
-	// 120 m out, its banks 0.6 m above the road's height there.
-	var pts []course.Point
-	const lat0, lon0 = 52.0, 5.0
-	for i := range 201 {
-		pts = append(pts, course.Point{Lat: lat0 + float64(i)*10/111195, Lon: lon0, Ele: 10 + float64(i)*0.01})
-	}
-	c, err := course.New("river", "River", pts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	kx := 111195 * math.Cos(lat0*math.Pi/180)
-	p := func(x, y float64) scenery.LatLon { return scenery.LatLon{Lat: lat0 + y/111195, Lon: lon0 + x/kx} }
-	ground := func(lat, lon float64) (float64, bool) {
-		e, n := c.Project(lat, lon)
-		if e > 60 && e < 120 {
-			return 0, false // water
-		}
-		return 10 + 0.001*n + 0.01*math.Max(0, e), true
-	}
-	lm := scenery.NewLandMap(c, &scenery.Data{Elements: []scenery.Element{{Type: "way", ID: 1,
-		Tags:     map[string]string{"natural": "water", "water": "river"},
-		Geometry: []scenery.LatLon{p(60, -300), p(120, -300), p(120, 2300), p(60, 2300), p(60, -300)}}}})
-	tr := testTerrain(c, Options{Elevation: ground, Land: lm})
-
-	levelAt := func(key [2]int) float64 {
-		_, w := tr.chunk(key, 0, 1)
-		if len(w.Positions) == 0 {
-			t.Fatalf("no water in chunk %v", key)
-		}
-		var sum float64
-		for k := 1; k < len(w.Positions); k += 3 {
-			sum += float64(w.Positions[k])
-		}
-		return sum / float64(len(w.Positions)/3)
-	}
-	low, high := levelAt([2]int{0, 1}), levelAt([2]int{0, 5}) // around 375 m and 1375 m
-	if d := high - low; d < 0.7 || d > 1.3 {
-		t.Errorf("the river falls %.2f m over 1 km, want about 1 m (%.2f to %.2f)", d, low, high)
-	}
-
-	// Chunks meet: the ground on their shared edge is the same on both
-	// sides, water or not.
-	a, _ := tr.chunk([2]int{0, 1}, 0, 1)
-	b, _ := tr.chunk([2]int{0, 2}, 0, 1)
-	edge := 2 * tr.o.ChunkM
-	for _, pair := range [][2]gltf.Primitive{{a, b}, {b, a}} {
-		for _, v := range edgeVertices(pair[0], edge) {
-			if other := edgeHeight(pair[1], edge, v[0]); math.Abs(other-v[1]) > 1e-4 {
-				t.Fatalf("crack at %v m east: %.3f against %.3f", v[0], v[1], other)
-			}
-		}
-	}
-}
-
-// edgeVertices are p's vertices on the line north = no: east and height,
-// west to east.
-func edgeVertices(p gltf.Primitive, no float64) [][2]float64 {
-	var out [][2]float64
-	for v := 0; 3*v < len(p.Positions); v++ {
-		if math.Abs(float64(-p.Positions[3*v+2])-no) < 1e-3 {
-			out = append(out, [2]float64{float64(p.Positions[3*v]), float64(p.Positions[3*v+1])})
-		}
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i][0] < out[j][0] })
-	return out
-}
-
-// edgeHeight is p's edge along north = no at east e, between its
-// vertices there.
-func edgeHeight(p gltf.Primitive, no, e float64) float64 {
-	vs := edgeVertices(p, no)
-	for k := 0; k+1 < len(vs); k++ {
-		if a, b := vs[k], vs[k+1]; e >= a[0]-1e-3 && e <= b[0]+1e-3 {
-			return a[1] + (e-a[0])/math.Max(b[0]-a[0], 1e-9)*(b[1]-a[1])
-		}
-	}
-	return math.NaN()
 }
 
 func TestWaterLiesBelowTheRoadBesideIt(t *testing.T) {

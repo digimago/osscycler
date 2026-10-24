@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/digimago/osscycler/internal/course"
+	"github.com/digimago/osscycler/internal/gltf"
 	"github.com/digimago/osscycler/internal/scenery"
 )
 
@@ -46,33 +47,6 @@ func routeOn(L float64, way func(d float64) int) []int {
 	return out
 }
 
-// Both builders build the test tracks whole, and say which they are.
-func TestEnginesBuildTheTracks(t *testing.T) {
-	for _, engine := range EngineNames() {
-		for _, c := range course.Tracks() {
-			t.Run(engine+"/"+c.ID, func(t *testing.T) {
-				w, err := BuildWith(engine, c, Options{Generator: "test"})
-				if err != nil {
-					t.Fatal(err)
-				}
-				if w.Manifest.Builder != engine {
-					t.Errorf("manifest says builder %q, want %q", w.Manifest.Builder, engine)
-				}
-				if want := 3 * (int(math.Ceil(c.Distance/pathStep)) + 1); len(w.Manifest.Path.XYZ) != want {
-					t.Errorf("path has %d numbers, want %d", len(w.Manifest.Path.XYZ), want)
-				}
-				if r := w.Check(); r.HolesM2 > 0.5 || r.LandOverRoadM2 > 0.5 || r.OffRoadM > 0 {
-					t.Errorf("check: holes %.2f m² %v, land over road %.2f m² %v, off road %.0f m %v",
-						r.HolesM2, r.Holes, r.LandOverRoadM2, r.LandOverRoad, r.OffRoadM, r.OffRoad)
-				}
-			})
-		}
-	}
-	if _, err := BuildWith("nonesuch", course.Tracks()[0], Options{}); err == nil {
-		t.Error("an unknown builder built a world")
-	}
-}
-
 // The course changes roads only where the network joins them: a route
 // down the middle between two roads 12 m apart, which the map's own match
 // puts on one, then the other, every 150 m, stays on one road until a
@@ -85,7 +59,7 @@ func TestGraphCourseChangesRoadsOnlyWhereTheyMeet(t *testing.T) {
 		{Line: [][2]float64{{-6, 500}, {6, 500}}, Nodes: []int64{2, 5}, Name: "Link", Class: "residential", WidthM: 5},
 	}
 	on := routeOn(c.Distance, func(d float64) int { return int(d/150) % 2 })
-	w, err := BuildGraph(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	w, err := Build(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +123,7 @@ func TestGraphRidesOverTheRoundabout(t *testing.T) {
 	}
 	c := graphCourse(t, "roundabout", pts)
 	on := routeOn(c.Distance, func(float64) int { return -1 })
-	w, err := BuildGraph(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	w, err := Build(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,6 +140,89 @@ func TestGraphRidesOverTheRoundabout(t *testing.T) {
 	}
 }
 
+// A roundabout on a hillside lies on a plane tilted no more than
+// rbMaxTilt, its roads eased onto it, and the rider rides round on its
+// surface (owner, 2026-10-23: on the Lakes Route's ring on a 14.6 % plane
+// the rider went 3 m up and down over a quarter of it, the ring's edge
+// over its island).
+func TestRoundaboutOnAHillsideLiesNearLevel(t *testing.T) {
+	const r = 22.0 // an island
+	var ring [][2]float64
+	var ringNodes []int64
+	for k := 0; k <= 16; k++ {
+		a := -math.Pi/2 + 2*math.Pi*float64(k%16)/16
+		ring = append(ring, [2]float64{r * math.Cos(a), 300 + r*math.Sin(a)})
+		ringNodes = append(ringNodes, int64(100+k%16))
+	}
+	ways := []scenery.Way{
+		{Line: [][2]float64{{0, -40}, {0, 300 - r}}, Nodes: []int64{1, 100}, Name: "South", Class: "secondary", WidthM: 7},
+		{Line: [][2]float64{{r, 300}, {300, 300}}, Nodes: []int64{104, 2}, Name: "East", Class: "secondary", WidthM: 7},
+		{Line: [][2]float64{{0, 300 + r}, {0, 600}}, Nodes: []int64{108, 3}, Name: "North", Class: "primary", WidthM: 7},
+		{Line: [][2]float64{{-r, 300}, {-400, 300}}, Nodes: []int64{112, 4}, Name: "West", Class: "secondary", WidthM: 7},
+		{Line: ring, Nodes: ringNodes, Class: "secondary", WidthM: 8, Roundabout: true, Oneway: 1},
+	}
+	// In from the south, round past the east and north roads, out west.
+	var pts [][2]float64
+	pts = append(pts, along([2]float64{0, 0}, [2]float64{0, 300 - r}, 20)...)
+	for k := 0; k <= 12; k++ {
+		a := -math.Pi/2 + 1.5*math.Pi*float64(k)/12
+		pts = append(pts, [2]float64{r * math.Cos(a), 300 + r*math.Sin(a)})
+	}
+	pts = append(pts, along([2]float64{-r - 5, 300}, [2]float64{-380, 300}, 20)...)
+	pts = append(pts, [2]float64{-380, 300})
+	c := graphCourse(t, "hillside roundabout", pts)
+	ground := func(lat, lon float64) (float64, bool) {
+		_, n := c.Project(lat, lon)
+		return 10 + 0.12*n, true // rising 12 % to the north
+	}
+	on := routeOn(c.Distance, func(d float64) int {
+		switch {
+		case d < 300-r:
+			return 0
+		case d < 300-r+1.5*math.Pi*r:
+			return 4
+		}
+		return 3
+	})
+	w, err := Build(c, Options{Generator: "test", Elevation: ground, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The ring's surface round its centre line: no more than the tilt
+	// allows across it.
+	lo, hi := math.Inf(1), math.Inf(-1)
+	for k := 0; k < 32; k++ {
+		a := 2 * math.Pi * float64(k) / 32
+		y, ok := surfaceTop(w, "road", r*math.Cos(a), 300+r*math.Sin(a))
+		if !ok {
+			t.Fatalf("no ring at %.0f°", a*180/math.Pi)
+		}
+		lo, hi = math.Min(lo, y), math.Max(hi, y)
+	}
+	if hi-lo > rbMaxTilt*2*r+0.1 {
+		t.Errorf("the ring rises %.2f m across, more than %.0f %% over its %.0f m", hi-lo, 100*rbMaxTilt, 2*r)
+	}
+	// The rider on it, all the way round.
+	xyz := w.Manifest.Path.XYZ
+	round := 0
+	for i := 0; 3*i < len(xyz); i++ {
+		e, n, y := xyz[3*i], -xyz[3*i+2], xyz[3*i+1]
+		if math.Abs(math.Hypot(e, n-300)-r) > 3 {
+			continue
+		}
+		round++
+		// Within 0.15 m: where the turn onto the ring is swept up to 3 m off
+		// the network's line, the path keeps the line's height, 0.12 m off
+		// the plane at 4 %.
+		if top, ok := surfaceTop(w, "road", e, n); !ok || math.Abs(y-top) > 0.15 {
+			t.Errorf("the rider at %.0f, %.0f is at %.2f m, the ring's surface at %.2f (%v)", e, n, y, top, ok)
+		}
+	}
+	if round < 10 {
+		t.Errorf("only %d path points on the ring, want the course round it", round)
+	}
+}
+
 // The land meets the road: a road in a cutting 3 m deep, its banks rising
 // within metres of its edge, has no holes beside it and no land over it.
 func TestGraphLandMeetsTheRoad(t *testing.T) {
@@ -176,7 +233,7 @@ func TestGraphLandMeetsTheRoad(t *testing.T) {
 	}
 	ways := []scenery.Way{{Line: [][2]float64{{0, -40}, {0, 440}}, Nodes: []int64{1, 2}, Name: "Holle Weg", Class: "unclassified", WidthM: 5}}
 	on := routeOn(c.Distance, func(float64) int { return 0 })
-	w, err := BuildGraph(c, Options{Generator: "test", Elevation: ground, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	w, err := Build(c, Options{Generator: "test", Elevation: ground, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +256,7 @@ func TestGraphNodesShareAHeight(t *testing.T) {
 		{Line: [][2]float64{{-100, 0}, {0, 0}, {100, 0}}, Nodes: []int64{1, 2, 3}, Name: "Main", WidthM: 6},
 		{Line: [][2]float64{{0, 0}, {0, 100}}, Nodes: []int64{2, 4}, Name: "Side", WidthM: 4},
 	}
-	ls := networkLines(ways, nil, func(e, n float64) bool { return true })
+	ls := networkLines(ways, nil, func(e, n float64, _ bool) bool { return true })
 	for _, l := range ls {
 		for i := range l.samples {
 			s := &l.samples[i]
@@ -243,7 +300,7 @@ func TestGraphOwnWayMeetsTheRoad(t *testing.T) {
 		}
 		return -1
 	})
-	w, err := BuildGraph(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	w, err := Build(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -336,7 +393,7 @@ func TestGraphRoadEndingAtAnotherJoinsIt(t *testing.T) {
 		return out
 	}
 	on := routeOn(c.Distance, func(float64) int { return 0 })
-	w, err := BuildGraph(c, Options{Generator: "test", Elevation: ground, Scenery: &scenery.Scenery{Ways: shift(ways[:2]), RouteOn: on, RouteStepM: 5}})
+	w, err := Build(c, Options{Generator: "test", Elevation: ground, Scenery: &scenery.Scenery{Ways: shift(ways[:2]), RouteOn: on, RouteStepM: 5}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -384,7 +441,7 @@ func TestGraphDitchBesideTheRoad(t *testing.T) {
 	}
 	ways := []scenery.Way{{Line: [][2]float64{{0, -40}, {0, 340}}, Nodes: []int64{1, 2}, Name: "Dike road", Class: "unclassified", WidthM: 5}}
 	on := routeOn(c.Distance, func(float64) int { return 0 })
-	w, err := BuildGraph(c, Options{Generator: "test", Elevation: ground, Land: lm, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	w, err := Build(c, Options{Generator: "test", Elevation: ground, Land: lm, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -462,7 +519,7 @@ func TestGraphLongCanalBesideTheRoad(t *testing.T) {
 	}
 	ways := []scenery.Way{{Line: [][2]float64{{0, -40}, {0, 740}}, Nodes: []int64{1, 2}, Name: "Main street", Class: "secondary", WidthM: 7}}
 	on := routeOn(c.Distance, func(float64) int { return 0 })
-	w, err := BuildGraph(c, Options{Generator: "test", Elevation: ground, Land: lm, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	w, err := Build(c, Options{Generator: "test", Elevation: ground, Land: lm, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -535,7 +592,7 @@ func TestGraphRoadGoesUnderNotOverInATunnel(t *testing.T) {
 		}
 		return 2
 	})
-	w, err := BuildGraph(c, Options{Generator: "test", Elevation: ground, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	w, err := Build(c, Options{Generator: "test", Elevation: ground, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -565,7 +622,7 @@ func TestTownTrees(t *testing.T) {
 	}}
 	ways := []scenery.Way{{Line: [][2]float64{{0, -40}, {0, 440}}, Nodes: []int64{1, 2}, Name: "Main street", Class: "secondary", WidthM: 7}}
 	on := routeOn(c.Distance, func(float64) int { return 0 })
-	w, err := BuildGraph(c, Options{Generator: "test", Land: scenery.NewLandMap(c, data), Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	w, err := Build(c, Options{Generator: "test", Land: scenery.NewLandMap(c, data), Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -624,7 +681,7 @@ func TestJunctionsStopAtTheNext(t *testing.T) {
 		{Line: [][2]float64{{-80, 40}, {-17, 40}, {-3, 40}, {3, 40}, {80, 40}}, Nodes: []int64{7, 8, 3, 6, 9}, Name: "Side street", Class: "residential", WidthM: 5},
 		{Line: [][2]float64{{-17, -100}, {-17, 40}, {-17, 200}}, Nodes: []int64{10, 8, 11}, Name: "the next side street", Class: "residential", WidthM: 5},
 	}
-	ls := networkLines(ways, nil, func(e, n float64) bool { return true })
+	ls := networkLines(ways, nil, func(e, n float64, _ bool) bool { return true })
 	for _, l := range ls {
 		finishRoad(l.samples, 5)
 	}
@@ -655,7 +712,7 @@ func TestShortLinkOntoARoundaboutIsDrawn(t *testing.T) {
 		{Line: [][2]float64{{20, 0}, {120, 0}}, Nodes: []int64{1, 2}, Name: "Street", Class: "residential", WidthM: 5},
 		{Line: [][2]float64{{20, 0}, {20, 30}}, Nodes: []int64{1, 3}, Name: "Zijstraat", Class: "residential", WidthM: 5},
 	}
-	ls := networkLines(ways, nil, func(e, n float64) bool { return true })
+	ls := networkLines(ways, nil, func(e, n float64, _ bool) bool { return true })
 	drawn := map[int]bool{}
 	for _, l := range ls {
 		for _, s := range l.samples {
@@ -687,7 +744,7 @@ func TestGraphTurnAtANodeIsRounded(t *testing.T) {
 		}
 		return 1
 	})
-	w, err := BuildGraph(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	w, err := Build(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -728,7 +785,7 @@ func TestGraphLeavingTheRoadIsSmooth(t *testing.T) {
 		}
 		return -1
 	})
-	w, err := BuildGraph(c, Options{Generator: "test", Elevation: ground, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	w, err := Build(c, Options{Generator: "test", Elevation: ground, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -764,7 +821,7 @@ func TestGraphDoglegAtANodeIsOneTurn(t *testing.T) {
 		}
 		return 2
 	})
-	w, err := BuildGraph(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	w, err := Build(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -796,7 +853,7 @@ func TestGraphOwnWayGoesUnderABridge(t *testing.T) {
 		{Line: [][2]float64{{20, 200}, {150, 200}}, Nodes: []int64{3, 4}, Name: "N1", Class: "primary", WidthM: 8},
 	}
 	on := routeOn(c.Distance, func(float64) int { return -1 })
-	w, err := BuildGraph(c, Options{Generator: "test", Elevation: ground, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	w, err := Build(c, Options{Generator: "test", Elevation: ground, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -827,7 +884,7 @@ func TestGraphFarLandIsSimplifiedWhereFlat(t *testing.T) {
 		}
 		ways := []scenery.Way{{Line: [][2]float64{{0, -40}, {0, 640}}, Nodes: []int64{1, 2}, Name: "Weg", Class: "unclassified", WidthM: 5}}
 		on := routeOn(c.Distance, func(float64) int { return 0 })
-		w, err := BuildGraph(c, Options{Generator: "test", Elevation: el, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+		w, err := Build(c, Options{Generator: "test", Elevation: el, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -881,7 +938,7 @@ func TestGraphNoDipIntoAStub(t *testing.T) {
 		{Line: [][2]float64{{0, 200}, {11, 200}}, Nodes: []int64{2, 4}, Name: "Stub twin", Class: "service", WidthM: 3},
 	}
 	on := routeOn(c.Distance, func(float64) int { return -1 })
-	w, err := BuildGraph(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	w, err := Build(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -912,7 +969,7 @@ func TestTraceRemovesSpurs(t *testing.T) {
 		{Line: [][2]float64{{0, 100}, {5, 100.4}, {10, 100}}, Nodes: []int64{2, 5, 4}, Name: "Stub", Class: "service", WidthM: 3},
 		{Line: [][2]float64{{0, 100}, {10, 100}}, Nodes: []int64{2, 4}, Name: "Stub twin", Class: "service", WidthM: 3},
 	}
-	ls := networkLines(ways, nil, func(e, n float64) bool { return true })
+	ls := networkLines(ways, nil, func(e, n float64, _ bool) bool { return true })
 	g := newGnet(ls, ways, nil)
 	road, stub := -1, -1
 	for k, l := range g.lines[:g.virtual] {
@@ -960,7 +1017,7 @@ func TestGraphPathAcrossADualRoadKeepsItsWay(t *testing.T) {
 		{Line: [][2]float64{{124, 300}, {124, -100}}, Nodes: []int64{3, 4}, Name: "Parnassiaweg", Class: "unclassified", WidthM: 3.1, Oneway: 1},
 	}
 	on := routeOn(c.Distance, func(float64) int { return -1 })
-	w, err := BuildGraph(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	w, err := Build(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -987,7 +1044,7 @@ func TestGraphFreeTurnIsSweptWide(t *testing.T) {
 	// A road 120 m off, so the course is matched (off the roads).
 	ways := []scenery.Way{{Line: [][2]float64{{120, -100}, {120, 400}}, Nodes: []int64{1, 2}, Name: "Elders", Class: "residential", WidthM: 5}}
 	on := routeOn(c.Distance, func(float64) int { return -1 })
-	w, err := BuildGraph(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	w, err := Build(c, Options{Generator: "test", Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1005,7 +1062,7 @@ func TestGraphFreeTurnIsSweptWide(t *testing.T) {
 func TestPathStepIsThePointsSpacing(t *testing.T) {
 	pts := along([2]float64{0, 0}, [2]float64{0, 1003}, 20)
 	c := graphCourse(t, "step", append(pts, [2]float64{0, 1003}))
-	for _, build := range []func(*course.Course, Options) (*World, error){Build, BuildGraph} {
+	for _, build := range []func(*course.Course, Options) (*World, error){Build, Build} {
 		w, err := build(c, Options{Generator: "test"})
 		if err != nil {
 			t.Fatal(err)
@@ -1115,5 +1172,204 @@ func TestLandBetweenCloseRoadsIsLevel(t *testing.T) {
 	far.gap = 8
 	if _, ok := island([]gPiece{main, far}, 0, 0, wall); ok {
 		t.Error("roads 9.5 m apart made an island")
+	}
+}
+
+// A loop whose own way runs across its start and finish (a map road
+// elsewhere on it) has one way there, not two ending at the line with
+// grass between them (2026-10-22, the figure 8 after its village was
+// mapped: 2 m off the road at 5.0 km).
+func TestLoopOwnWayCrossesItsLine(t *testing.T) {
+	c := course.Tracks()[0] // the oval, its line at the home straight's start
+	el := scenery.Element{Type: "way", ID: 1, Tags: map[string]string{"highway": "unclassified"}}
+	for d := 210.0; d <= 280; d += 5 { // along the back straight
+		lat, lon := c.Position(d)
+		el.Geometry = append(el.Geometry, scenery.LatLon{Lat: lat, Lon: lon})
+		el.Nodes = append(el.Nodes, int64(len(el.Nodes)+1))
+	}
+	data := &scenery.Data{Elements: []scenery.Element{el}}
+	w, err := Build(c, Options{Generator: "test", Land: scenery.NewLandMap(c, data), Scenery: scenery.Build(c, data)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := w.Check(); r.OffRoadM > 0 {
+		t.Errorf("the riding line %.1f m off the road: %+v", r.OffRoadM, r.OffRoad)
+	}
+}
+
+// A dual carriageway's two short bridges over the course's own way (owner,
+// 2026-10-22, the N348 over the Posbank Loop's cycle underpass at 26.8
+// km): the way stays down between them, as low as under them, with no
+// bump; each deck rests on a bank seat (nothing of it reaches down to the
+// way, where its abutment had stood out of the bank as a pillar), and the
+// slopes under the decks are paved.
+func TestGraphOwnWayUnderTwoShortBridges(t *testing.T) {
+	c := graphCourse(t, "underpass2", append(along([2]float64{0, 0}, [2]float64{0, 400}, 20), [2]float64{0, 400}))
+	ground := func(lat, lon float64) (float64, bool) {
+		_, n := c.Project(lat, lon)
+		// An embankment 4 m high from 172 to 233 m, both carriageways on it.
+		return 10 + 4*smoothstep(math.Max(0, math.Min(1, (30.5-math.Abs(n-202.5))/6))), true
+	}
+	var ways []scenery.Way
+	for k, n := range []float64{190, 215} {
+		id := int64(10 * (k + 1))
+		ways = append(ways,
+			scenery.Way{Line: [][2]float64{{-150, n}, {-15, n}}, Nodes: []int64{id, id + 1}, Name: "N1", Class: "primary", WidthM: 7, Oneway: 1},
+			scenery.Way{Line: [][2]float64{{-15, n}, {15, n}}, Nodes: []int64{id + 1, id + 2}, Name: "N1", Class: "primary", WidthM: 7, Oneway: 1, Bridge: true, Layer: 1},
+			scenery.Way{Line: [][2]float64{{15, n}, {150, n}}, Nodes: []int64{id + 2, id + 3}, Name: "N1", Class: "primary", WidthM: 7, Oneway: 1})
+	}
+	on := routeOn(c.Distance, func(float64) int { return -1 })
+	w, err := Build(c, Options{Generator: "test", Elevation: ground, Scenery: &scenery.Scenery{Ways: ways, RouteOn: on, RouteStepM: 5}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	xyz := w.Manifest.Path.XYZ
+	height := func(n float64) float64 {
+		best, h := math.Inf(1), 0.0
+		for i := 0; 3*i < len(xyz); i++ {
+			if d := math.Abs(-xyz[3*i+2] - n); d < best {
+				best, h = d, xyz[3*i+1]
+			}
+		}
+		return h
+	}
+	a, b := height(190), height(215)
+	for n := 190.0; n <= 215; n += 5 {
+		if h := height(n); h > math.Max(a, b)+0.02 {
+			t.Errorf("between the bridges at %.0f m the way is %.2f m high, over %.2f and %.2f under them: a bump", n, h, a, b)
+		}
+	}
+	low := math.Inf(1)
+	for _, p := range w.prims {
+		if w.doc.MaterialName(p.Material) != "bridge" {
+			continue
+		}
+		for v := 1; v < len(p.Positions); v += 3 {
+			low = math.Min(low, float64(p.Positions[v]))
+		}
+	}
+	deck, _ := surfaceTop(w, "road", 8, 190) // the bridge's road, beside the way
+	// The lowest of a short span is its bank seat's foot, whatever the
+	// ground at its ends.
+	if seat := deck - deckDepthM - bankSeatM; math.Abs(low-seat) > 0.02 {
+		t.Errorf("the bridges reach down to %.2f m, not a bank seat's %.2f: an abutment down to the ground", low, seat)
+	}
+	// Beside the way under the deck: paved (owner, 2026-10-22), the
+	// paving its own surface, nothing over it but the deck.
+	for _, e := range []float64{-4, 4} {
+		pave, ok := surfaceTop(w, "slope paving", e, 190)
+		if !ok {
+			t.Fatalf("the land under the bridge at %.0f, 190 isn't paved", e)
+		}
+		if land, ok := surfaceTop(w, "terrain", e, 190); ok && land > pave+0.01 {
+			t.Errorf("land %.2f m over the paving under the bridge at %.0f, 190", land-pave, e)
+		}
+	}
+}
+
+// A cycle underpass the map lacks, under a dual carriageway's two short
+// bridges on an embankment, takes service vehicles and two cycle paths,
+// and its banks stand as packed sand does (owner, 2026-10-23: the Posbank
+// Loop's under the N348 was 2.2 m under the decks, 3.5 m across, its
+// banks at 50-60°).
+func TestCycleUnderpassTakesServiceVehicles(t *testing.T) {
+	c := graphCourse(t, "underpass3", append(along([2]float64{0, 0}, [2]float64{0, 400}, 20), [2]float64{0, 400}))
+	ground := func(lat, lon float64) (float64, bool) {
+		_, n := c.Project(lat, lon)
+		return 10 + 4*smoothstep(math.Max(0, math.Min(1, (30.5-math.Abs(n-202.5))/6))), true
+	}
+	var ways []scenery.Way
+	for k, n := range []float64{190, 215} {
+		id := int64(10 * (k + 1))
+		ways = append(ways,
+			scenery.Way{Line: [][2]float64{{-150, n}, {-15, n}}, Nodes: []int64{id, id + 1}, Name: "N1", Class: "primary", WidthM: 7, Oneway: 1},
+			scenery.Way{Line: [][2]float64{{-15, n}, {15, n}}, Nodes: []int64{id + 1, id + 2}, Name: "N1", Class: "primary", WidthM: 7, Oneway: 1, Bridge: true, Layer: 1},
+			scenery.Way{Line: [][2]float64{{15, n}, {150, n}}, Nodes: []int64{id + 2, id + 3}, Name: "N1", Class: "primary", WidthM: 7, Oneway: 1})
+	}
+	w, err := Build(c, Options{Generator: "test", Elevation: ground, RoadWidthM: 3,
+		Scenery: &scenery.Scenery{Ways: ways, RouteOn: routeOn(c.Distance, func(float64) int { return -1 }), RouteStepM: 5}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	xyz := w.Manifest.Path.XYZ
+	height := func(n float64) float64 {
+		best, h := math.Inf(1), 0.0
+		for i := 0; 3*i < len(xyz); i++ {
+			if d := math.Abs(-xyz[3*i+2] - n); d < best {
+				best, h = d, xyz[3*i+1]
+			}
+		}
+		return h
+	}
+	maxGrade := math.Tan(47 * math.Pi / 180)
+	// The land, paved under the decks.
+	landTop := func(e, n float64) (float64, bool) {
+		a, okA := surfaceTop(w, "terrain", e, n)
+		b, okB := surfaceTop(w, "slope paving", e, n)
+		switch {
+		case okA && okB:
+			return math.Max(a, b), true
+		case okB:
+			return b, true
+		}
+		return a, okA
+	}
+	// Two cycle paths wide, between the decks and on the ramp down (no deck
+	// over it there to find instead).
+	for _, n := range []float64{202.5, 175} {
+		for _, side := range []float64{-1, 1} {
+			if y, ok := surfaceTop(w, "road", side*1.8, n); !ok || math.Abs(y-height(n)) > 0.3 {
+				t.Errorf("no way 1.8 m %s of its middle at %.1f m (%.2f, %v): narrower than two cycle paths", map[float64]string{-1: "left", 1: "right"}[side], n, y, ok)
+			}
+		}
+	}
+	// Paved through the open strip between the decks too, no land over it
+	// (owner, 2026-10-23: one paved plane each side for the underpass).
+	for _, side := range []float64{-1, 1} {
+		pave, ok := surfaceTop(w, "slope paving", side*4, 202.5)
+		if !ok {
+			t.Errorf("no paving 4 m %s of the way between the decks", map[float64]string{-1: "left", 1: "right"}[side])
+		} else if land, ok := surfaceTop(w, "terrain", side*4, 202.5); ok && land > pave+0.01 {
+			t.Errorf("land %.2f m over the paving between the decks, %.0f m out", land-pave, side*4)
+		}
+	}
+	for _, n := range []float64{190, 215} {
+		path := height(n)
+		deck, _ := surfaceTop(w, "road", 8, n) // the bridge's road, beside the way
+		if clear := deck - deckDepthM - path; clear < gUnderClearM-0.05 {
+			t.Errorf("under the bridge at %.0f m: %.2f m under its slab, want %.1f", n, clear, gUnderClearM)
+		}
+		for _, side := range []float64{-1, 1} {
+			last := math.NaN()
+			for e := 1.0; e <= 10; e++ {
+				land, ok := landTop(side*e, n)
+				if !ok {
+					last = math.NaN()
+					continue
+				}
+				if !math.IsNaN(last) && land-last > maxGrade+0.05 {
+					t.Errorf("the bank at %.0f m, %.0f m out: rises %.2f m in a metre, steeper than packed sand", n, side*e, land-last)
+				}
+				last = land
+			}
+		}
+	}
+}
+
+// A block is closed on all six sides (owner, 2026-10-22: a pier's
+// crosshead had no bottom face).
+func TestBoxIsClosed(t *testing.T) {
+	var p gltf.Primitive
+	f := deckFrame{c: [3]float64{0, 10, 0}, r: [3]float64{1, 0, 0}, along: [3]float64{0, 0, -1}}
+	box(&p, f, -1, 1, -0.5, 0.5, 8, -0.5, [3]float32{1, 1, 1})
+	if n := len(p.Indices) / 3; n != 12 {
+		t.Fatalf("%d triangles, want 12 (six faces)", n)
+	}
+	down := false
+	for v := 1; v < len(p.Normals); v += 3 {
+		down = down || p.Normals[v] < -0.99
+	}
+	if !down {
+		t.Error("no face looks down")
 	}
 }

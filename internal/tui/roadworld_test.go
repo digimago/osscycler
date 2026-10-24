@@ -86,3 +86,31 @@ func TestMapCreditInTheMenuOnly(t *testing.T) {
 		}
 	}
 }
+
+// Side roads lie along their own lines (owner, 2026-10-22: in the first km
+// of a route through a town, side roads drawn straight along their bearing
+// ran through houses where they bend, and appeared out of nowhere where the
+// junction had been merged from nodes metres apart).
+func TestBranchesFollowTheirLines(t *testing.T) {
+	sc := straightScene(t, &scenery.Scenery{Land: make([]scenery.Land, 4*201),
+		Junctions: []scenery.Junction{{DistanceM: 540, Kind: scenery.JunctionCrossing, Branches: []scenery.Branch{
+			// East for 15 m, then north: a side street that bends.
+			{BearingDeg: 90, WidthM: 5, LengthM: 55, Line: [][2]float64{{0, 540}, {15, 540}, {15, 580}}},
+			// West from 13 m further on: a node merged into this junction.
+			{BearingDeg: 270, WidthM: 5, LengthM: 30, Line: [][2]float64{{0, 553}, {-30, 553}}},
+		}}}})
+	ex := sc.extras(500)
+	for _, c := range []struct {
+		x, y float64
+		on   bool
+	}{
+		{15, 565, true},  // round the bend
+		{35, 540, false}, // where a straight strip would have run on
+		{-10, 553, true}, // the merged node's road, where it is
+		{-10, 540, false},
+	} {
+		if got := ex.onBranch(c.x, c.y, 0); got != c.on {
+			t.Errorf("at %v, %v: on a side road %v, want %v", c.x, c.y, got, c.on)
+		}
+	}
+}

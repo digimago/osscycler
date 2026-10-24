@@ -73,7 +73,12 @@ void vertex() {
 		// A crop's card faces along its row (a little either way), the rest
 		// any way.
 		float yaw = crop ? -row_angle(s.ground) + 0.3 * (unit(s.h2, 8u) - 0.5) : unit(s.h2, 8u) * 6.2831853;
-		vec3 v = yawed(vec3(VERTEX.x * w, VERTEX.y * hgt, VERTEX.z * w), yaw);
+		// Never reaching over a road: a card no wider than twice its spot's
+		// clearance, whichever way it faces (owner, 2026-10-24: a far
+		// layer's wide cards on the verge stood out over the road, in front
+		// of the ghost riding on it, the first 200 m of the figure 8).
+		float wc = min(w, 2.0 * s.clear);
+		vec3 v = yawed(vec3(VERTEX.x * wc, VERTEX.y * hgt, VERTEX.z * wc), yaw);
 		v.x += sway(p, TIME) * (crop ? 0.02 : 0.05) * (1.0 - UV.y) * hgt;
 		VERTEX = vec3(p.x, s.y - 0.02, p.y) + v;
 	}

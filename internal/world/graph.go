@@ -14,12 +14,13 @@ import (
 	"github.com/digimago/osscycler/internal/scenery"
 )
 
-// BuildGraph is the graph builder (owner, 2026-10-11): the road network
-// first, the land last. The classic builder (Build) lays the terrain,
-// fits the roads into it, cuts them out of it and matches the rider's path
-// to them point by point, then mends what that leaves (holes, land over
-// the road, the rider off the road or hopping between roads). Here each
-// stage is settled before the next and never revisited:
+// Build makes the world for c, road network first, land last (owner,
+// 2026-10-11; the one builder since 2026-10-21). The classic builder it
+// replaced laid the terrain, fitted the roads into it, cut them out of it
+// and matched the rider's path to them point by point, then mended what
+// that left (holes, land over the road, the rider off the road or hopping
+// between roads). Here each stage is settled before the next and never
+// revisited:
 //
 //  1. The network: the map's roads near the route (as the classic builder
 //     draws them), joined into a graph where they share a node and across
@@ -41,7 +42,7 @@ import (
 //
 // Riding over interesting roads matters more than copying the place: the
 // course keeps to the network, and the land gives way to the roads.
-func BuildGraph(c *course.Course, o Options) (*World, error) {
+func Build(c *course.Course, o Options) (*World, error) {
 	o.defaults()
 	o.regionScenery()
 	if c.Distance < 2*fineStep {
@@ -113,13 +114,21 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 		// Roads that nearly meet, meet (the same ways, by index, so the
 		// map's own match still points into them).
 		ways = joinNearEnds(ways, ridden)
-		clip := newRouteGrid(route, clipM)
-		near := func(e, no float64) bool {
+		clip, far := newRouteGrid(route, clipM), newRouteGrid(route, motorwayClipM)
+		near := func(e, no float64, motorway bool) bool {
+			g, r := clip, clipM
+			if motorway {
+				g, r = far, motorwayClipM
+			}
 			found := false
-			clip.within(e, no, clipM, func(int) { found = true })
+			g.within(e, no, r, func(int) { found = true })
 			return found
 		}
 		lines = networkLines(ways, ridden, near)
+		var onRoute *routeGrid
+		if o.Elevation == nil {
+			onRoute = newRouteGrid(route, gFollowM)
+		}
 		for _, l := range lines {
 			finishRoad(l.samples, o.CellM)
 			// Bridges span over, tunnels keep low under what lies over them
@@ -127,6 +136,19 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 			// railway embankment where it goes under the track through a
 			// tunnel, polder ride 5.17 km).
 			heightsStraight(l, &t, ways, func(w scenery.Way) bool { return w.Bridge || w.Tunnel }, true)
+			// A sample's way is that of the segment on from it: the sample
+			// at a tunnel's last node is its end, the portal.
+			for i := range l.samples {
+				if wk := l.samples[i].way; wk >= 0 && wk < len(ways) && ways[wk].Tunnel {
+					l.samples[i].tunnel = true
+					if i+1 < len(l.samples) {
+						l.samples[i+1].tunnel = true
+					}
+				}
+			}
+			if onRoute != nil {
+				followRoute(l, ridden, route, onRoute)
+			}
 		}
 		// After the heights: smoothed over the whole road, a road's end at
 		// a car park's edge keeps its grade (trimmed first, the one-sided
@@ -135,8 +157,11 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 		lines = trimLinesInLots(lines, o.Scenery.Parking)
 		net := newGnet(lines, ways, rbs)
 		net.anchorHeights(ways)
+		net.levelRoundabouts(rbs, func(e, n float64) float64 { return t.base(e, n, coarse) })
+		net.separateLayers(ways, ridden)
 		progress(0.05)
 
+		var wide [][2]float64 // stretches of the course's own way under bridges, with their ramps
 		own := make([][4]float64, steps+1)
 		heading := make([][2]float64, steps+1)
 		fineD := c.Distance / float64(len(route)-1)
@@ -200,7 +225,7 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 					}
 				}
 			}
-			var lowered []int
+			var lowered, under []int
 			for i := range own {
 				low := math.Inf(1)
 				for _, b := range bs {
@@ -208,9 +233,57 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 						low = math.Min(low, b.ele-gUnderM)
 					}
 				}
+				if math.IsInf(low, 1) {
+					continue
+				}
+				under = append(under, i)
+				d := step * float64(i)
+				if k := len(wide) - 1; k >= 0 && d-gUnderRampM <= wide[k][1] {
+					wide[k][1] = d + gUnderRampM
+				} else {
+					wide = append(wide, [2]float64{d - gUnderRampM, d + gUnderRampM})
+				}
 				if low < own[i][2] {
 					own[i][2] = low
 					lowered = append(lowered, i)
+				}
+			}
+			// Between two underpasses close together (a dual carriageway's
+			// two bridges) the way stays down, straight from under one to
+			// under the other, whether or not either needed lowering
+			// (owner, 2026-10-22: a bump between the N348's decks at the
+			// Posbank Loop's cycle underpass).
+			for k := 0; k+1 < len(under); k++ {
+				a, b := under[k], under[k+1]
+				if b-a < 2 || float64(b-a)*step > gUnderJoinM {
+					continue
+				}
+				for j := a + 1; j < b; j++ {
+					f := float64(j-a) / float64(b-a)
+					own[j][2] = math.Min(own[j][2], own[a][2]+f*(own[b][2]-own[a][2]))
+				}
+			}
+			// The approaches only go down into an underpass and up out of it
+			// (where they come from higher): a hump on the ground model's
+			// toe of the embankment had stood 0.3 m over the way just before
+			// the N348's first deck at 26.77 km on the Posbank Loop.
+			ramp := int(gUnderRampM / step)
+			for k := range under {
+				if k == 0 || float64(under[k]-under[k-1])*step > gUnderJoinM {
+					a, s := under[k], max(0, under[k]-ramp)
+					if own[s][2] >= own[a][2] {
+						for j := s + 1; j < a; j++ {
+							own[j][2] = math.Min(own[j][2], own[j-1][2])
+						}
+					}
+				}
+				if k == len(under)-1 || float64(under[k+1]-under[k])*step > gUnderJoinM {
+					b, e := under[k], min(len(own)-1, under[k]+ramp)
+					if own[e][2] >= own[b][2] {
+						for j := e - 1; j > b; j-- {
+							own[j][2] = math.Min(own[j][2], own[j+1][2])
+						}
+					}
 				}
 			}
 			// The ramps: within gUnderRampM of the underpass no point stands
@@ -252,8 +325,8 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 				f[i] = 1
 			}
 		}
-		n := &network{lines: lines, stretches: stretches, o: o}
-		lines = append(lines, n.ownWays(pd, px, py, pz, f)...)
+		n := &network{lines: lines, stretches: stretches, o: o, underpasses: wide}
+		lines = append(lines, n.ownWays(pd, px, py, pz, f, c.Loop)...)
 	} else {
 		// No map roads: the road is the route's, as in the classic builder.
 		lines = routeLines(c, line, stretches, func(float64) int { return -1 }, func(int) bool { return false }, true, o, t.liftAt)
@@ -278,8 +351,7 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 		for _, p := range patches {
 			nodes = append(nodes, p.nodes...)
 		}
-		rbs[i].absorb(nodes, lines)
-		rbs[i].fit(lines, t.base(rbs[i].c[0], rbs[i].c[1], coarse))
+		rbs[i].absorb(nodes, lines) // its plane set with the heights (levelRoundabouts)
 		kept := patches[:0]
 		for _, p := range patches {
 			if math.Hypot(p.node[0]-rbs[i].c[0], p.node[1]-rbs[i].c[1]) > rbs[i].outer()+5 {
@@ -321,7 +393,10 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 			}
 		}
 	}
-	markDecks(lines, c.Distance, styleFor(o.Region).junctionLevelM > 0)
+	markDecks(lines, c.Distance, styleFor(o.Region).junctionLevelM > 0, o.Elevation == nil)
+	if o.Elevation == nil {
+		markDikes(lines)
+	}
 	// After markDecks: a deck stays open beneath.
 	deepSkirts(lines)
 	hideOwnWaysInLots(lines, patches, o.Scenery) // before t.fine: the roadside reads those samples
@@ -331,8 +406,23 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 		}
 		t.fine = append(t.fine, l.samples...)
 		t.loops = append(t.loops, l.loop)
+		t.motorways = append(t.motorways, l.motorway)
 	}
-	roads, decks := roadPrims(lines, patches, o.ChunkM, roadMats, nil)
+	roads, decks, tunnels := roadPrims(lines, patches, o.ChunkM, roadMats, nil)
+	runs := tunnelRuns(lines)
+	headroom(runs, lines, func(e, n float64) float64 {
+		_, cn := t.lists([2]int{int(math.Floor(e / o.ChunkM)), int(math.Floor(n / o.ChunkM))})
+		return t.base(e, n, cn)
+	})
+	floors := newTunnelFloors(runs)
+	t.pavings = pavings(lines)
+	tunnelMat := -1
+	if len(runs) > 0 {
+		tunnelMat = w.doc.AddMaterial(gltf.Material{Name: "tunnel", Color: [4]float32{1, 1, 1, 1}, Roughness: 0.9})
+		for k, ps := range aprons(runs, o.ChunkM, tunnelMat) {
+			roads[k] = append(roads[k], ps...)
+		}
+	}
 	for k, p := range pavedIslands(roads, ground, roadMats.surface[scenery.SurfaceAsphalt], o.ChunkM) {
 		roads[k] = append(roads[k], p)
 	}
@@ -348,6 +438,9 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 	for _, k := range chunkOrder(decks) {
 		all = append(all, decks[k]...)
 	}
+	for _, k := range chunkOrder(tunnels) {
+		all = append(all, tunnels[k]...)
+	}
 	ix := newRoadIndex(all, func(mat int) bool { return carriageway[w.doc.MaterialName(mat)] })
 	if placed != nil {
 		pd, px, py, pz, pw, _ = placed.place(steps, step, ix.on)
@@ -358,6 +451,14 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 	var under []gltf.Primitive
 	for _, k := range chunkOrder(roads) {
 		under = append(under, roads[k]...)
+	}
+	// An underpass's paving too: the land meets its edges as a road's,
+	// rather than lying under it in cells that spanned over it.
+	if len(t.pavings) > 0 {
+		pav := drawPavings(t.pavings, o.ChunkM, w.pavingMaterial())
+		for _, k := range chunkOrder(pav) {
+			under = append(under, *pav[k])
+		}
 	}
 	// Car parks first take their heights from the land as it will be: the
 	// ground eased to the roads (gland's heights, which don't depend on
@@ -371,7 +472,7 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 		deckIx = newSurfaceIndex(deckPrims, func(mat int) bool { return carriageway[w.doc.MaterialName(mat)] }, 200)
 	}
 	pre := newGland(&t, newSurfaceIndex(under, func(int) bool { return true }, 200), lines)
-	pre.decks, pre.water = deckIx, waterMat
+	pre.decks, pre.water, pre.tunnels = deckIx, waterMat, floors
 	t.landAt = pre.heightAt
 	lots := parkingLots(&t, sc, roadMats, roads)
 	for _, l := range lots {
@@ -429,7 +530,7 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 	// them nor sank under them (owner, 2026-10-11: land standing through
 	// the canal beside the main street at 0.35 km of the polder ride).
 	land := newGland(&t, newSurfaceIndex(under, func(int) bool { return true }, gOutlineMaxTriM), lines)
-	land.decks, land.water = deckIx, waterMat
+	land.decks, land.water, land.tunnels = deckIx, waterMat, floors
 	if len(allSheets) > 0 {
 		land.waters, land.dry = newSurfaceIndex(allSheets, func(int) bool { return true }, gOutlineMaxTriM), dryIx
 	}
@@ -462,8 +563,24 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 		if len(p.Positions) == 0 {
 			continue // a chunk wholly under roads or water (the river at Rotterdam)
 		}
+		// The slopes under decks are paved, with a material of their own
+		// for the renderer's brick pattern (owner, 2026-10-23).
+		isPaved := func(v uint32) bool {
+			return [3]float32{p.Colors[3*v], p.Colors[3*v+1], p.Colors[3*v+2]} == slopePaving
+		}
+		ps := []gltf.Primitive{p}
+		anyPaved := false
+		for v := range uint32(len(p.Colors) / 3) {
+			anyPaved = anyPaved || isPaved(v)
+		}
+		if anyPaved { // else the chunk as laid, byte for byte
+			if ground, paved := splitPrim(p, isPaved); len(paved.Indices) > 0 {
+				paved.Material = w.pavingMaterial()
+				ps = []gltf.Primitive{ground, paved}
+			}
+		}
 		if err := w.add(fmt.Sprintf("terrain %d %d", keys[k][0], keys[k][1]),
-			map[string]any{"kind": "terrain", "chunk": keys[k]}, p); err != nil {
+			map[string]any{"kind": "terrain", "chunk": keys[k]}, ps...); err != nil {
 			return nil, err
 		}
 	}
@@ -499,6 +616,9 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 	for k, ps := range decks {
 		roads[k] = append(roads[k], ps...)
 	}
+	for _, k := range chunkOrder(tunnels) {
+		roads[k] = append(roads[k], tunnels[k]...)
+	}
 	for _, ps := range roads {
 		stitchSlivers(ps) // each chunk's own, decks too; any order
 		joinsWalk := func(mat int) bool { return carriageway[w.doc.MaterialName(mat)] || mat == roadMats.walk }
@@ -519,6 +639,12 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 	}
 
 	if err := w.addBridges(&t, lines, ways); err != nil {
+		return nil, err
+	}
+	if err := w.addTunnels(&t, runs, tunnelMat, t.landAt); err != nil {
+		return nil, err
+	}
+	if err := w.addMotorways(&t, lines); err != nil {
 		return nil, err
 	}
 	if c.Loop {
@@ -671,6 +797,7 @@ func BuildGraph(c *course.Course, o Options) (*World, error) {
 	}
 	m.Attribution = append([]string{}, o.Attribution...)
 	progress(1)
+	w.Manifest.Builder = Engine
 	return w, nil
 }
 
@@ -691,6 +818,54 @@ func routeWay(line *smoothLine, d float64) (float64, float64) {
 		return de, dn
 	}
 	return (bx - ax) / l, (by - ay) / l
+}
+
+// Without a ground model, a road the route rides takes the route's own
+// heights where the route runs along it within gFollowM (fully within
+// gFollowM/2): the mean of the profile around it (fromProfile) lay 0.7 m
+// under the course near the figure 8's summit, a step where the course's
+// own way joined the Heideweg (3.30 km).
+const gFollowM = 6.0
+
+// followRoute brings line l's heights to the route's where the route runs
+// along it, if the route rides any of its ways.
+func followRoute(l *roadLine, ridden map[int]bool, route []sample, g *routeGrid) {
+	rides := false
+	for _, k := range l.ways {
+		rides = rides || ridden[k]
+	}
+	if !rides {
+		return
+	}
+	ss := l.samples
+	for i := range ss {
+		s := &ss[i]
+		a, b := ss[max(0, i-1)], ss[min(len(ss)-1, i+1)]
+		de, dn := b.e-a.e, b.n-a.n
+		dl := math.Hypot(de, dn)
+		if dl == 0 {
+			continue
+		}
+		best, ele := math.Inf(1), 0.0
+		g.within(s.e, s.n, gFollowM, func(k int) {
+			if k+1 >= len(route) {
+				return
+			}
+			p, q := route[k], route[k+1]
+			re, rn := q.e-p.e, q.n-p.n
+			l2 := re*re + rn*rn
+			if l2 == 0 || math.Abs(re*de+rn*dn)/(math.Sqrt(l2)*dl) < parallelCosine {
+				return // across: the other pass at a crossing
+			}
+			f := math.Max(0, math.Min(1, ((s.e-p.e)*re+(s.n-p.n)*rn)/l2))
+			if d := math.Hypot(s.e-p.e-f*re, s.n-p.n-f*rn); d < best {
+				best, ele = d, p.ele+f*(q.ele-p.ele)
+			}
+		})
+		if w := math.Max(0, math.Min(1, (gFollowM-best)/(gFollowM/2))); w > 0 {
+			s.ele = w*ele + (1-w)*s.ele
+		}
+	}
 }
 
 // riddenWays are the map's ways the route rides on (its own match), and
@@ -714,7 +889,7 @@ func riddenWays(sc *scenery.Scenery, route []sample) map[int]bool {
 
 const (
 	// A turn at a node (more than gTurnMinRad over gTurnLookM either way)
-	// is swept as the classic builder's smoothTurns does (owner,
+	// is swept as the classic builder's did (owner,
 	// 2026-10-10: a tight right turn at 25.95 km on the Posbank Loop): its
 	// rounding has the line gTurnClearM either way, and keeps within the
 	// first of gTurnDevs of the node that keeps it on the drawn road.
@@ -756,10 +931,17 @@ const (
 	// The course's own way under a bridge the map has: this far below the
 	// bridge's road (more than bridgeM, so the bridge is a deck), where the
 	// course crosses it (the bridge's way within gUnderCos of across), the
-	// approaches at most gUnderGrade over gUnderRampM.
-	gUnderM     = 3.0
-	gUnderGrade = 0.08
-	gUnderRampM = 60.0
+	// approaches at most gUnderGrade over gUnderRampM. A cycle underpass
+	// takes service vehicles and two cycle paths (owner, 2026-10-23: the
+	// Posbank Loop's under the N348 was neither deep nor wide enough, 2.2 m
+	// under the deck and 3.5 m across): gUnderClearM under the deck's
+	// slab, gUnderHalfM either side of its middle, ramps included.
+	gUnderClearM = 2.7 // 2.4-2.7 m for service vehicles
+	gUnderHalfM  = 2.0 // two cycle paths of 1.5-1.8 m, and a margin
+	gUnderM      = gUnderClearM + deckDepthM
+	gUnderGrade  = 0.08
+	gUnderRampM  = 60.0
+	gUnderJoinM  = 40.0 // underpasses this close are one
 	// The riding line keeps this far inside the drawn carriageway's edge
 	// (owner's A/B, 2026-10-12: single metres off road on the the polder ride
 	// ride at 0.93 and 7.89 km, the rider on the edge of a 2.4 m road).

@@ -67,7 +67,8 @@ sealed class Calls : ICommands
     {
         var t = Add($"choice {name} {value}");
         return t.IsFaulted ? Task.FromException<RiderProfile>(t.Exception!.GetBaseException())
-            : Task.FromResult(new RiderProfile { View = View, WorldBuild = name == "world_build" ? value : "idle", WorldFetch = name == "world_fetch" ? value : "cached" });
+            : Task.FromResult(new RiderProfile { View = View, WorldBuild = name == "world_build" ? value : "idle", WorldFetch = name == "world_fetch" ? value : "cached",
+                HrZones = name == "hr_zones" ? value : Profile.HrZones, MaxHrBpm = Profile.MaxHrBpm, ThresholdHrBpm = Profile.ThresholdHrBpm });
     }
     public WorkoutDef? SavedWorkout;
     public Task<string> SaveWorkout(string id, WorkoutDef w)
@@ -87,9 +88,10 @@ sealed class Calls : ICommands
     public Task StartCalibration() => Add("calibrate");
     public Task CancelCalibration() => Add("cancel calibration");
     public RiderProfile Profile = new() { SuggestedFtpW = 190 };
-    public Task<RiderProfile> SetProfile(double? weightKg, double? ftpW, double? heightCm, double? maxHrBpm)
+    public Task<RiderProfile> SetProfile(double? weightKg, double? ftpW, double? heightCm, double? maxHrBpm, double? thresholdHrBpm)
     {
-        Add($"profile {weightKg} {ftpW} {heightCm}" + (maxHrBpm is double m ? $" hr {m}" : ""));
+        Add($"profile {weightKg} {ftpW} {heightCm}" + (maxHrBpm is double m ? $" hr {m}" : "") + (thresholdHrBpm is double t ? $" threshold {t}" : ""));
+        if (thresholdHrBpm is double th) Profile.ThresholdHrBpm = th;
         if (weightKg is double w) Profile.WeightKg = w;
         if (ftpW is double f) Profile.FtpW = f;
         if (heightCm is double h) Profile.HeightCm = h;
@@ -168,6 +170,45 @@ public class HeadTests
         Assert.Equal("press x again to end the ride", h.Asking(20));
         h.Key("x", Riding(loop: true), 20 + Controller.AbortConfirmS + 1); // too late: asks again
         Assert.Single(c.Sent);
+    }
+
+    // The threshold heart rate (owner, 2026-10-21): typed, told from the
+    // rides as 95 % of the best 20-minute average; with both heart rates
+    // the rider chooses which the zones come from.
+    [Fact]
+    public void ThresholdHeartRateAndTheZonesChoice()
+    {
+        var c = new Calls();
+        c.Activities.Add(new Activity { Name = "x.fit", HeldThresholdHeartRateBpm = 158 });
+        c.Profile = new RiderProfile { WeightKg = 75, FtpW = 200, MaxHrBpm = 188, View = "chase" };
+        var h = new Controller(c);
+        var st = new State { Profile = c.Profile };
+        h.Key("m", st, 0);
+        h.Key("p", st, 0);
+        foreach (var _ in new[] { "weight", "height", "ftp" })
+            h.Key("enter", st, 0);
+        h.Key("enter", st, 0); // the maximum as it is: saved
+        Thread.Sleep(30); // commands are sent on other threads too
+        var d = h.Dialog(st, 0)!;
+        Assert.StartsWith("Your threshold heart rate", d.Big);
+        Assert.Contains(d.Lines, l => l.Contains("20-minute average is 158 bpm"));
+        Assert.All(d.Lines, l => Assert.True(l.Length < 80, l));
+        foreach (var k in new[] { "2", "5", "0", "enter" })
+            h.Key(k, st, 0);
+        Assert.Contains("80 to 220", h.Notice(0));
+        foreach (var k in new[] { "backspace", "backspace", "backspace", "1", "6", "5", "enter" })
+            h.Key(k, st, 0);
+        Thread.Sleep(30); // commands are sent on other threads too
+        Assert.Equal("profile    threshold 165", c.Sent[^1]);
+        var st2 = new State { Profile = c.Profile }; // both set now
+        d = h.Dialog(st2, 0)!;
+        Assert.Equal("Heart rate zones from: ▸ your maximum ◂   your threshold", d.Big);
+        Assert.Contains("step 6 of 7", d.Hint);
+        h.Key("right", st2, 0);
+        h.Key("enter", st2, 0);
+        Thread.Sleep(30); // commands are sent on other threads too
+        Assert.Equal("choice hr_zones threshold", c.Sent[^1]);
+        Assert.Contains("behind the rider", h.Dialog(st2, 0)!.Big); // on to the view
     }
 
     static State OnCourse(string id, double at, bool lapped = false) => new()
@@ -352,6 +393,25 @@ public class MenuTests
         Assert.Null(h.List());
     }
 
+    // The course picker says which courses' 3D worlds are ready (owner's
+    // list), from what the 3D view knows; without that, nothing.
+    [Fact]
+    public void ThePickerSaysWhichWorldsAreReady()
+    {
+        var h = new Controller(new Calls()) { WorldReady = id => id switch { "posbank" => true, "oval-400" => false, _ => null } };
+        h.Key("r", new State(), 0);
+        Loaded(h);
+        var rows = h.List()!.Rows;
+        Assert.EndsWith(" · world ready", rows.Single(r => r.Label == "Posbank Loop").Detail);
+        Assert.EndsWith(" · world built when ridden", rows.Single(r => r.Label.EndsWith("Oval 400 m")).Detail);
+        Assert.DoesNotContain(rows, r => r.Label != "Posbank Loop" && !r.Label.EndsWith("Oval 400 m") && r.Detail.Contains("world"));
+
+        var plain = new Controller(new Calls());
+        plain.Key("r", new State(), 0);
+        Loaded(plain);
+        Assert.DoesNotContain(plain.List()!.Rows, r => r.Detail.Contains("world"));
+    }
+
     [Fact]
     public void CoursesHistoryActivities()
     {
@@ -452,6 +512,8 @@ public class SetupTests
         Assert.All(d.Lines, l => Assert.True(l.Length < 80, l)); // they fit the panel
         Assert.Contains(d.Lines, l => l.Contains("not medical advice"));
         h.Key("enter", st, 0); // skipped
+        Assert.StartsWith("Your threshold heart rate", h.Dialog(st, 0)!.Big);
+        h.Key("enter", st, 0); // skipped too
         Assert.Null(h.Dialog(st, 0));
         Assert.Equal(new[] { "profile 75  ", "profile  195 " }, c.Sent);
         Assert.Equal("profile saved", h.Notice(1));
@@ -884,6 +946,8 @@ public class ViewTests
             h.Key(k, st, 0);
         Thread.Sleep(30);
         Assert.Equal("profile    hr 188", c.Sent[^1]);
+        Assert.StartsWith("Your threshold heart rate", h.Dialog(st, 0)!.Big);
+        h.Key("enter", st, 0); // skipped
         Assert.Contains("behind the rider", h.Dialog(st, 0)!.Big);
         h.Key("right", st, 0);
         h.Key("enter", st, 0);
@@ -942,13 +1006,14 @@ public class ViewTests
         h.Key("enter", st, 0); // FTP
         Thread.Sleep(30);
         h.Key("enter", st, 0); // maximum heart rate: skipped
+        h.Key("enter", st, 0); // threshold heart rate: skipped (no choice of zones without both)
         Assert.Contains("behind the rider", h.Dialog(st, 0)!.Big);
-        Assert.Contains("of 7", h.Dialog(st, 0)!.Hint);
+        Assert.Contains("step 6 of 8", h.Dialog(st, 0)!.Hint);
         h.Key("enter", st, 0); // the view as it is
         Thread.Sleep(30);
         var d = h.Dialog(st, 0)!;
         Assert.Equal("Build worlds ahead: ▸ while not riding ◂   also while riding", d.Big);
-        Assert.Contains("step 6 of 7", d.Hint);
+        Assert.Contains("step 7 of 8", d.Hint);
         h.Key("right", st, 0);
         h.Key("enter", st, 0);
         Thread.Sleep(30);

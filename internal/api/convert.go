@@ -117,7 +117,7 @@ func profileToProto(p telemetry.Profile) *pb.RiderProfile {
 		Complete: p.Complete, WeightKg: p.WeightKg, FtpW: p.FTPW, DifficultyPct: p.DifficultyPct,
 		WeightForced: p.WeightForced, FtpForced: p.FTPForced, DifficultyForced: p.DifficultyForced,
 		Path: p.Path, SuggestedFtpW: p.SuggestedFTPW,
-		HeightCm: p.HeightCm, MaxHrBpm: p.MaxHRBpm, Cda: p.CdA, HeightForced: p.HeightForced, CdaForced: p.CdAForced,
+		HeightCm: p.HeightCm, MaxHrBpm: p.MaxHRBpm, ThresholdHrBpm: p.ThresholdHRBpm, HrZones: p.HRZones, Cda: p.CdA, HeightForced: p.HeightForced, CdaForced: p.CdAForced,
 		View: p.View, WorldBuild: p.WorldBuild, WorldFetch: p.WorldFetch,
 	}
 	if p.NeedWeight {
@@ -179,7 +179,11 @@ func CourseToProto(c *course.Course, sc *scenery.Scenery) *pb.Course {
 		for _, j := range sc.Junctions {
 			pj := &pb.Junction{DistanceM: j.DistanceM, Kind: pb.JunctionKind(j.Kind)}
 			for _, b := range j.Branches {
-				pj.Branches = append(pj.Branches, &pb.JunctionBranch{BearingDeg: b.BearingDeg, WidthM: b.WidthM, LengthM: b.LengthM})
+				br := &pb.JunctionBranch{BearingDeg: b.BearingDeg, WidthM: b.WidthM, LengthM: b.LengthM}
+				for _, q := range b.Line {
+					br.LineEastM, br.LineNorthM = append(br.LineEastM, float32(q[0])), append(br.LineNorthM, float32(q[1]))
+				}
+				pj.Branches = append(pj.Branches, br)
 			}
 			pc.Junctions = append(pc.Junctions, pj)
 		}

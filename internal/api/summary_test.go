@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"io"
+	"slices"
 	"testing"
 
 	"google.golang.org/grpc/codes"
@@ -86,5 +87,17 @@ func TestActivityHistoryAndSummary(t *testing.T) {
 	}
 	if _, err := cl.GetActivitySummary(ctx, &pb.GetActivitySummaryRequest{Name: "nope.fit"}); status.Code(err) != codes.NotFound {
 		t.Errorf("unknown activity: %v, want NOT_FOUND", err)
+	}
+	// From a threshold heart rate when the rider chose it (owner,
+	// 2026-10-21): Friel's zones, 150 bpm of a 160 threshold is Z3.
+	hub.Update(func(st *telemetry.State) bool {
+		st.Profile.ThresholdHRBpm, st.Profile.HRZones = 160, "threshold"
+		return true
+	})
+	s, err = cl.GetActivitySummary(ctx, &pb.GetActivitySummaryRequest{Name: "2026-10-10-090000.fit"})
+	sum = s.GetSummary()
+	if err != nil || sum.GetThresholdHrBpm() != 160 || sum.GetMaxHrBpm() != 0 || sum.GetHeartRateZoneS()[2] != 600 ||
+		!slices.Equal(sum.GetHeartRateZoneUpper(), effort.HRThresholdZones) {
+		t.Errorf("threshold summary: %v, %v", sum, err)
 	}
 }

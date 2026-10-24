@@ -23,13 +23,11 @@ import (
 )
 
 // BuilderVersion goes up when a change to the builder should rebuild the
-// worlds riders have (a fix they'd ride into, not every commit).
-const BuilderVersion = 63
-
-// GraphVersion is BuilderVersion for the graph builder (world.EngineGraph),
-// which goes its own way: it goes up when that builder changes what it
-// builds.
-const GraphVersion = 72
+// worlds riders have (a fix they'd ride into, not every commit). It goes
+// on from the graph builder's own version (72) when it became the only
+// one (owner, 2026-10-21; the classic builder's was 63), so the worlds it
+// built stay current.
+const BuilderVersion = 77
 
 // Builder builds worlds.
 type Builder struct {
@@ -58,16 +56,6 @@ type Builder struct {
 	// time left (Progress); Timing keeps this machine's build rate for it.
 	Progress func(Progress)
 	Timing   *Timing
-	// Engine is the builder (world.Engines): "" the default (the graph
-	// builder), world.EngineGraph or world.EngineClassic. A preview is
-	// always the classic builder's. When the builder asked for fails, the
-	// classic one builds the world instead (Result.FellBack), with the
-	// stamp of the one asked for, so it isn't tried again and again.
-	Engine string
-	// Stamp, when set, is the world's stamp instead of EngineStamp's: a
-	// fallback build by osscycler-world keeps the stamp of the builder
-	// asked for.
-	Stamp string
 	// Complete builds only from complete data: with Fetch off, a ground
 	// model tile, a stretch of map data or the coastline missing from the
 	// caches is ErrIncomplete rather than a world with grass there, which
@@ -119,9 +107,12 @@ const (
 
 // Result is a built world with what went into it.
 type Result struct {
-	World    *world.World
-	MapInfo  string // "1234 map elements", "no map data", ...
-	FellBack bool   // the builder asked for failed; the classic one built it
+	World   *world.World
+	MapInfo string // "1234 map elements", "no map data", ...
+	// Partial: map data or the coastline was missing (not fetched, the
+	// server down): grass where roads and land should be. Its stamp is
+	// PartialStamp, so it is built again, fetching, when next asked for.
+	Partial bool
 }
 
 // Build builds course c's world; phase reports progress.
@@ -135,10 +126,7 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 	}
 	o := b.Options
 	o.Attribution = append([]string(nil), o.Attribution...)
-	o.Stamp = EngineStamp(c, b.Engine)
-	if b.Stamp != "" {
-		o.Stamp = b.Stamp
-	}
+	o.Stamp = Stamp(c)
 	if b.Preview {
 		o.Stamp = PreviewStamp(c)
 	}
@@ -228,6 +216,7 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 		}
 	}
 	mapInfo := "no map data"
+	partial := false
 	if b.Maps != nil && !c.Builtin && !b.Preview {
 		enter(PhaseMaps)
 		// A stretch missing is no reason to stop; the world shows grass
@@ -251,6 +240,7 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 				return Result{}, fmt.Errorf("%w: map data: %v", ErrIncomplete, err)
 			}
 			log.Warn("map data incomplete", "course", c.ID, "err", err)
+			partial = true
 		}
 		if len(d.Elements) > 0 {
 			o.Land = scenery.NewLandMap(c, d)
@@ -301,6 +291,7 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 				return Result{}, fmt.Errorf("%w: coastline: %v", ErrIncomplete, err)
 			}
 			log.Warn("coastline incomplete", "course", c.ID, "err", err)
+			partial = !b.Preview
 		}
 		o.SeaDistance = co.Distance
 		// Sand, scrub and heath by the sea are dunes (scenery/dunes.go).
@@ -323,30 +314,20 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 	if c.Credit != "" {
 		o.Attribution = append(o.Attribution, "route: "+c.Credit)
 	}
+	if partial {
+		o.Stamp = PartialStamp(c)
+	}
 	enter(PhaseBuild)
 	o.Progress = func(f float64) { tr.step(0, 0, f) }
 	buildAt := time.Now()
-	engine := b.Engine
-	if engine == "" {
-		engine = world.DefaultEngine
-	}
-	if b.Preview {
-		engine = world.EngineClassic
-	}
-	w, err := world.BuildWith(engine, c, o)
-	fellBack := false
-	if err != nil && engine != world.EngineClassic && ctx.Err() == nil {
-		log.Warn("the builder failed; building with the classic builder instead", "course", c.ID, "builder", engine, "err", err)
-		w, err = world.BuildWith(world.EngineClassic, c, o)
-		fellBack = true
-	}
+	w, err := world.Build(c, o)
 	if err == nil && !b.Preview && c.Distance > 1000 {
 		b.Timing.learn(time.Since(buildAt).Seconds() / (c.Distance / 1000))
 	}
 	if err != nil {
 		return Result{}, err
 	}
-	return Result{World: w, MapInfo: mapInfo, FellBack: fellBack}, nil
+	return Result{World: w, MapInfo: mapInfo, Partial: partial}, nil
 }
 
 // Anchor is the regional frame's origin for a course starting at lat, lon:
@@ -363,40 +344,31 @@ func Anchor(lat, lon float64) (float64, float64) {
 // PreviewStamp is the stamp of course c's preview world.
 func PreviewStamp(c *course.Course) string { return "preview-" + Stamp(c) }
 
-// EngineStamp is Stamp for the named builder ("" the default): the classic
-// builder's is Stamp itself (as the worlds built before there were two),
-// the graph builder's has its own version and a "g" in front, so a world
-// from one is never taken for the other's (a classic world where the graph
-// builder's should be is stale, and rebuilt).
-func EngineStamp(c *course.Course, engine string) string {
-	if engine == "" {
-		engine = world.DefaultEngine
-	}
-	if engine == world.EngineClassic {
-		return Stamp(c)
-	}
-	return fmt.Sprintf("%s%d-%s", engine[:1], GraphVersion, stampHash(c, engine+" "+strconv.Itoa(GraphVersion)))
-}
-
-// Dir is where course id's world from the named builder ("" the default)
-// goes in the worlds directory out: the default builder's in out/id, the
-// others' in out/.<engine>/id (the classic builder's in out/.classic/id
-// since the graph builder became the default), so both can be kept and
-// compared.
-func Dir(out, id, engine string) string {
-	if engine == "" || engine == world.DefaultEngine {
-		return filepath.Join(out, id)
-	}
-	return filepath.Join(out, "."+engine, id)
-}
+// PartialStamp is the stamp of course c's world built with map data or
+// the coastline missing (owner, 2026-10-22: the Lakes Route's world was
+// built while the map data server failed, grass and a path in place of
+// the D486 from 5 km on, and stamped current it was never built again).
+// It is never current, so -if-stale builds it again, fetching; until
+// then it is the course's preview.
+func PartialStamp(c *course.Course) string { return "partial-" + Stamp(c) }
 
 // Stamp identifies what course c's world is built from: the course as
 // loaded (its line every 10 m, its profile, its name and length) and the
-// builder's version. A GPX edited or a builder that builds differently
-// gives another stamp.
+// builder's version, and for a test track the version of its made-up
+// surroundings. A GPX edited, a builder that builds differently or a
+// track's surroundings remade gives another stamp.
 func Stamp(c *course.Course) string {
-	return fmt.Sprintf("%d-%s", BuilderVersion, stampHash(c, strconv.Itoa(BuilderVersion)))
+	// As the graph builder's were while there were two builders: "g", its
+	// version, and a hash with its name.
+	version := world.Engine + " " + strconv.Itoa(BuilderVersion)
+	if c.Builtin {
+		version += " tracks " + strconv.Itoa(scenery.TracksVersion)
+	}
+	return fmt.Sprintf("g%d-%s", BuilderVersion, stampHash(c, version))
 }
+
+// Dir is where course id's world goes in the worlds directory out.
+func Dir(out, id string) string { return filepath.Join(out, id) }
 
 // stampHash hashes course c as loaded, with the builder's version.
 func stampHash(c *course.Course, version string) string {

@@ -29,7 +29,7 @@ func frenchFork(t *testing.T, class string, side [][2]float64) (map[[2]int][]glt
 		{Line: [][2]float64{{mouthX - 100, 0}, {mouthX, 0}, {mouthX + 100, 0}}, Nodes: []int64{1, 2, 3}, Name: "Main", Class: "secondary", WidthM: 6, Sidewalk: [2]bool{true, true}},
 		{Line: side, Nodes: []int64{2, 4}, Class: class, WidthM: 4},
 	}
-	ls := networkLines(ways, nil, func(e, n float64) bool { return true })
+	ls := networkLines(ways, nil, func(e, n float64, _ bool) bool { return true })
 	for _, l := range ls {
 		finishRoad(l.samples, 5)
 	}
@@ -40,7 +40,7 @@ func frenchFork(t *testing.T, class string, side [][2]float64) (map[[2]int][]glt
 	cutRoads(ls, ps)
 	walksOnSpans(ls, ps, ways)
 	m := addRoadMaterials(gltf.New("test"), &styleFR)
-	by, _ := roadPrims(ls, ps, 250, m, nil)
+	by, _, _ := roadPrims(ls, ps, 250, m, nil)
 	return by, m, ps[0]
 }
 

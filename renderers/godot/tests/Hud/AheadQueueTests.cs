@@ -22,6 +22,18 @@ public class AheadQueueTests
     }
 
     [Fact]
+    public void SaysHowEachCoursesWorldTurnedOut()
+    {
+        var q = new AheadQueue();
+        q.Courses(Menu, System.Array.Empty<(string, long)>());
+        q.Done("figure-8", AheadQueue.Outcome.Ready);
+        q.Done("oval-400", AheadQueue.Outcome.Skipped);
+        Assert.Equal(AheadQueue.Outcome.Ready, q.Of("figure-8"));
+        Assert.Equal(AheadQueue.Outcome.Skipped, q.Of("oval-400"));
+        Assert.Null(q.Of("posbank")); // not tried yet
+    }
+
+    [Fact]
     public void TriesEachCourseOnceASessionEvenWhenListedAgain()
     {
         var q = new AheadQueue();

@@ -22,10 +22,12 @@ type Profile struct {
 	FTPW     float64 `json:"ftp_w,omitempty"`
 	// HeightCm sizes the rider's drag; optional (zero: unknown).
 	HeightCm float64 `json:"height_cm,omitempty"`
-	// MaxHRBpm sets the heart rate zones; optional (zero: unknown).
-	MaxHRBpm      float64 `json:"max_hr_bpm,omitempty"`
-	DifficultyPct float64 `json:"difficulty_pct"`
-	BikeKg        float64 `json:"bike_kg"`
+	// MaxHRBpm and ThresholdHRBpm set the heart rate zones (HRZoneBasis);
+	// optional (zero: unknown), and never filled in for the rider.
+	MaxHRBpm       float64 `json:"max_hr_bpm,omitempty"`
+	ThresholdHRBpm float64 `json:"threshold_hr_bpm,omitempty"`
+	DifficultyPct  float64 `json:"difficulty_pct"`
+	BikeKg         float64 `json:"bike_kg"`
 	// View is how a 3D renderer shows the ride (ViewChase, ViewEyes; ""
 	// is the default, ViewChase).
 	View string `json:"view,omitempty"`
@@ -36,6 +38,10 @@ type Profile struct {
 	// profile so they follow the rider to any screen (owner, 2026-10-13).
 	WorldBuild string `json:"world_build,omitempty"`
 	WorldFetch string `json:"world_fetch,omitempty"`
+	// HRZones is what heart rate zones are taken from when both a maximum
+	// and a threshold are set (HRZonesMax, HRZonesThreshold; owner,
+	// 2026-10-21: the rider chooses).
+	HRZones string `json:"hr_zones,omitempty"`
 }
 
 // Views a 3D renderer offers: behind and above the rider, or the rider's
@@ -55,6 +61,30 @@ const (
 	WorldFetchAllowed = "allowed"
 )
 
+// Heart rate zones from the maximum heart rate, or from the threshold
+// heart rate (Friel's: what can be held for about an hour; owner,
+// 2026-10-11: many riders don't know their maximum, and riders who hold
+// back never reach it).
+const (
+	HRZonesMax       = "max"
+	HRZonesThreshold = "threshold"
+)
+
+// HRZoneBasis is what the heart rate zones are taken from: the one the
+// rider chose when it is set, else whichever is set (the maximum when
+// both are); threshold false and bpm 0 when neither is.
+func (p Profile) HRZoneBasis() (threshold bool, bpm float64) {
+	switch {
+	case p.HRZones == HRZonesThreshold && p.ThresholdHRBpm > 0:
+		return true, p.ThresholdHRBpm
+	case p.MaxHRBpm > 0:
+		return false, p.MaxHRBpm
+	case p.ThresholdHRBpm > 0:
+		return true, p.ThresholdHRBpm
+	}
+	return false, 0
+}
+
 // Choices are the profile's settings with a fixed set of values, by their
 // names in the API (SetProfileRequest's fields); the first value is the
 // default.
@@ -62,6 +92,7 @@ var Choices = map[string][]string{
 	"view":        {ViewChase, ViewEyes},
 	"world_build": {WorldBuildIdle, WorldBuildAlways},
 	"world_fetch": {WorldFetchCached, WorldFetchAllowed},
+	"hr_zones":    {HRZonesMax, HRZonesThreshold},
 }
 
 // field is choice name's place in p.
@@ -73,6 +104,8 @@ func (p *Profile) field(name string) *string {
 		return &p.WorldBuild
 	case "world_fetch":
 		return &p.WorldFetch
+	case "hr_zones":
+		return &p.HRZones
 	}
 	return nil
 }
@@ -148,6 +181,9 @@ const (
 	MaxHeightCm = 220
 	MinMaxHRBpm = 100
 	MaxMaxHRBpm = 230
+	// A threshold heart rate lies well under any maximum.
+	MinThresholdHRBpm = 80
+	MaxThresholdHRBpm = 220
 )
 
 // Complete reports whether onboarding has what it needs.
@@ -162,6 +198,7 @@ const (
 	Difficulty
 	Height
 	MaxHR
+	ThresholdHR
 	numFields
 )
 
@@ -239,6 +276,8 @@ func field(p *Profile, f Field) *float64 {
 		return &p.HeightCm
 	case MaxHR:
 		return &p.MaxHRBpm
+	case ThresholdHR:
+		return &p.ThresholdHRBpm
 	}
 	return &p.DifficultyPct
 }
@@ -273,6 +312,10 @@ func Check(f Field, v float64) error {
 	case MaxHR:
 		if v < MinMaxHRBpm || v > MaxMaxHRBpm {
 			return rangeError(fmt.Sprintf("maximum heart rate %.0f bpm: want %d to %d bpm", v, MinMaxHRBpm, MaxMaxHRBpm))
+		}
+	case ThresholdHR:
+		if v < MinThresholdHRBpm || v > MaxThresholdHRBpm {
+			return rangeError(fmt.Sprintf("threshold heart rate %.0f bpm: want %d to %d bpm", v, MinThresholdHRBpm, MaxThresholdHRBpm))
 		}
 	case Difficulty:
 		if v < 0 || v > 100 {

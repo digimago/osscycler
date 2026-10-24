@@ -1,6 +1,7 @@
 package scenery
 
 import (
+	"math"
 	"reflect"
 	"testing"
 
@@ -115,4 +116,144 @@ func inRing(p [2]float64, ring [][2]float64) bool {
 		}
 	}
 	return in
+}
+
+// The figure 8 has a village and a river on mapped roads (owner,
+// 2026-10-22: the demo track has every kind of thing a world is built
+// from): its streets meet at shared nodes, the roundabout is one ring of
+// one lane, the river has two bridges over it, and the route is on the
+// map's roads in the village and over the northern bridge, its own way
+// everywhere else (the crossing above all).
+func TestFigureEightVillage(t *testing.T) {
+	c := course.Tracks()[1]
+	data := TrackScenery(c).Data
+	nodes := map[string]map[int64]bool{} // by street name
+	ring := map[int64]bool{}
+	var bridges, rings, parking, river, school int
+	for _, el := range data.Elements {
+		tg := el.Tags
+		switch {
+		case tg["junction"] == "roundabout":
+			rings++
+			for _, n := range el.Nodes {
+				ring[n] = true
+			}
+		case tg["highway"] != "":
+			if nodes[tg["name"]] == nil {
+				nodes[tg["name"]] = map[int64]bool{}
+			}
+			for _, n := range el.Nodes {
+				nodes[tg["name"]][n] = true
+			}
+			if tg["bridge"] == "yes" && tg["name"] != "Heideweg" { // the motorway's (TestFigureEightMotorway)
+				bridges++
+			}
+		case tg["amenity"] == "parking":
+			parking++
+		case tg["water"] == "river":
+			river++
+		case tg["building"] == "school":
+			school++
+		}
+	}
+	if rings != 4 || len(ring) != 16 || bridges != 2 || parking != 1 || river < 2 || school != 1 {
+		t.Errorf("%d ring pieces of %d nodes, %d bridges, %d car parks, %d river pieces, %d schools", rings, len(ring), bridges, parking, river, school)
+	}
+	meets := func(a map[int64]bool, b map[int64]bool) bool {
+		for n := range a {
+			if b[n] {
+				return true
+			}
+		}
+		return false
+	}
+	for _, name := range []string{"Dorpsstraat", "Kerkstraat", "Polderweg"} {
+		if !meets(nodes[name], ring) {
+			t.Errorf("%s doesn't meet the roundabout", name)
+		}
+	}
+	for _, name := range []string{"Schoolstraat", ""} { // "": the car park's entrance
+		if !meets(nodes[name], nodes["Dorpsstraat"]) {
+			t.Errorf("%q doesn't meet Dorpsstraat", name)
+		}
+	}
+	if len(nodes["Rivierdijk"]) == 0 {
+		t.Error("no road over the river on the northern arc")
+	}
+	sc := Build(c, data)
+	on := func(d float64) bool { return sc.RouteOn[int(d/sc.RouteStepM)] >= 0 }
+	south, north := motorwayCrossings(c)
+	for d := 0.0; d < c.Distance; d += 50 {
+		mapped := d > villageFromM+20 && d < villageToM-20 || d > 560 && d < 620
+		free := d < 520 || d > 660 && d < villageFromM-20 || d > villageToM+20
+		if math.Abs(d-south) < crossMappedM+20 || math.Abs(d-north) < crossMappedM+20 {
+			continue
+		}
+		if mapped && !on(d) || free && on(d) {
+			t.Errorf("at %.0f m the route is on a map road: %v", d, on(d))
+		}
+	}
+}
+
+// motorwayCrossings is where the figure 8 crosses its motorway's axis.
+func motorwayCrossings(c *course.Course) (south, north float64) {
+	g := newTrackGen(c)
+	x := (g.lo[0]+g.hi[0])/2 + motorwayX
+	return g.riverAt(x, 1250, 2500), g.riverAt(x, 2500, 3750)
+}
+
+// The figure 8's motorway (owner, 2026-10-22): two one-way carriageways
+// straight across the forest lobe, on an embankment over the southern arc
+// and in a cutting under the northern one; the course goes through a
+// tunnel under the first and over a bridge above the second, on mapped
+// roads there and never on the motorway.
+func TestFigureEightMotorway(t *testing.T) {
+	c := course.Tracks()[1]
+	data := TrackScenery(c).Data
+	var north, south, bank, cut, tunnel, bridge int
+	for _, el := range data.Elements {
+		tg := el.Tags
+		switch {
+		case tg["highway"] == "motorway":
+			if tg["oneway"] != "yes" {
+				t.Errorf("motorway way %d isn't one-way", el.ID)
+			}
+			g := el.Geometry
+			if g[len(g)-1].Lat > g[0].Lat {
+				north++
+			} else {
+				south++
+			}
+			if tg["embankment"] == "yes" {
+				bank++
+			}
+			if tg["cutting"] == "yes" {
+				cut++
+			}
+		case tg["name"] == "Bosweg" && tg["tunnel"] == "yes" && tg["layer"] == "-1":
+			tunnel++
+		case tg["name"] == "Heideweg" && tg["bridge"] == "yes" && tg["layer"] == "1":
+			bridge++
+		}
+	}
+	if north != 5 || south != 5 || bank != 2 || cut != 2 || tunnel != 1 || bridge != 1 {
+		t.Errorf("%d northbound and %d southbound pieces, %d on the embankment, %d in the cutting, %d tunnels, %d bridges",
+			north, south, bank, cut, tunnel, bridge)
+	}
+	sc := Build(c, data)
+	s, n := motorwayCrossings(c)
+	for d := 0.0; d < c.Distance; d += sc.RouteStepM {
+		k := sc.RouteOn[min(int(d/sc.RouteStepM), len(sc.RouteOn)-1)]
+		if k >= 0 && sc.Ways[k].Motorway {
+			t.Fatalf("at %.0f m the route is on the motorway", d)
+		}
+		for _, x := range []struct {
+			at             float64
+			tunnel, bridge bool
+		}{{s, true, false}, {n, false, true}} {
+			if math.Abs(d-x.at) < 5 && (k < 0 || sc.Ways[k].Tunnel != x.tunnel || sc.Ways[k].Bridge != x.bridge) {
+				t.Errorf("at %.0f m the route isn't on the crossing's mapped road (%d)", d, k)
+			}
+		}
+	}
 }

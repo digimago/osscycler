@@ -150,7 +150,7 @@ func (s *stubCommands) SetSimulated(_ context.Context, on bool) error {
 	return nil
 }
 
-func (s *stubCommands) SetProfile(_ context.Context, w, f, h, hr *float64) (*pb.RiderProfile, error) {
+func (s *stubCommands) SetProfile(_ context.Context, w, f, h, hr, th *float64, zones *string) (*pb.RiderProfile, error) {
 	p := s.profile
 	if p == nil {
 		p = &pb.RiderProfile{}
@@ -167,6 +167,12 @@ func (s *stubCommands) SetProfile(_ context.Context, w, f, h, hr *float64) (*pb.
 	}
 	if hr != nil {
 		p.MaxHrBpm = *hr
+	}
+	if th != nil {
+		p.ThresholdHrBpm = *th
+	}
+	if zones != nil {
+		p.HrZones = *zones
 	}
 	s.profile = p
 	s.profileCalls = append(s.profileCalls, [2]*float64{w, f})
@@ -1275,14 +1281,14 @@ func TestGhostOnRideScreen(t *testing.T) {
 }
 
 func TestOnboarding(t *testing.T) {
-	cmds := &stubCommands{activities: []*pb.Activity{{Name: "a.fit", HeldMaxHeartRateBpm: 168}, {Name: "b.fit", HeldMaxHeartRateBpm: 176}}}
+	cmds := &stubCommands{activities: []*pb.Activity{{Name: "a.fit", HeldMaxHeartRateBpm: 168, HeldThresholdHeartRateBpm: 152}, {Name: "b.fit", HeldMaxHeartRateBpm: 176, HeldThresholdHeartRateBpm: 158}}}
 	m0, _ := New("x:1", cmds).Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	st := sample()
 	st.Profile = &pb.RiderProfile{Missing: []string{"weight_kg", "ftp_w"}, SuggestedFtpW: 200, Path: "/home/r/.config/osscycler/profile.json"}
 	next, _ := m0.Update(StateMsg{State: st})
 	m := next.(Model)
 	out := plain(m.render())
-	for _, want := range []string{"WELCOME TO OSSCYCLER", "1/4  Your weight:", "kg", "climbs feel", "profile.json", "esc later"} {
+	for _, want := range []string{"WELCOME TO OSSCYCLER", "1/6  Your weight:", "kg", "climbs feel", "profile.json", "esc later"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("onboarding lacks %q:\n%s", want, out)
 		}
@@ -1301,14 +1307,14 @@ func TestOnboarding(t *testing.T) {
 		t.Fatalf("calls %v", cmds.profileCalls)
 	}
 	// Height is optional: enter on the empty field skips it.
-	if out := plain(m.render()); !strings.Contains(out, "2/4  Your height:") || !strings.Contains(out, "Optional") {
+	if out := plain(m.render()); !strings.Contains(out, "2/6  Your height:") || !strings.Contains(out, "Optional") {
 		t.Errorf("height step:\n%s", out)
 	}
 	m = pressAll(m, "enter")
 	if len(cmds.profileCalls) != 1 || len(cmds.heights) != 0 {
 		t.Errorf("skipping the height sent %v", cmds.heights)
 	}
-	if out := plain(m.render()); !strings.Contains(out, "3/4  Your FTP: 220") || !strings.Contains(out, "2.5 W/kg") {
+	if out := plain(m.render()); !strings.Contains(out, "3/6  Your FTP: 220") || !strings.Contains(out, "2.5 W/kg") {
 		t.Errorf("FTP step:\n%s", out)
 	}
 	m, cmd = press(m, "enter")
@@ -1316,15 +1322,23 @@ func TestOnboarding(t *testing.T) {
 	if len(cmds.profileCalls) != 2 || *cmds.profileCalls[1][1] != 220 {
 		t.Errorf("after FTP: calls %d", len(cmds.profileCalls))
 	}
-	// The maximum heart rate is optional too, and the last step; the
-	// highest held in the rides is told, not filled in.
-	if out := plain(m.render()); !strings.Contains(out, "4/4  Your maximum heart rate:") || !strings.Contains(out, "heart rate zones") ||
+	// The maximum heart rate is optional too; the highest held in the
+	// rides is told, not filled in.
+	if out := plain(m.render()); !strings.Contains(out, "4/6  Your maximum heart rate:") || !strings.Contains(out, "heart rate zones") ||
 		!strings.Contains(out, "held for 10 s in your rides: 176 bpm") || !strings.Contains(out, "not medical advice") || m.onboarding.value != "" {
 		t.Errorf("max HR step:\n%s", out)
 	}
+	// So is the threshold (owner, 2026-10-21), told from the rides as 95 %
+	// of the best 20-minute average, not filled in; with neither heart rate
+	// there is no choice of zones, and the form is done.
+	m = pressAll(m, "enter")
+	if out := plain(m.render()); !strings.Contains(out, "5/6  Your threshold heart rate:") || !strings.Contains(out, "20-minute average is 158 bpm") ||
+		m.onboarding.value != "" {
+		t.Errorf("threshold step:\n%s", out)
+	}
 	m = pressAll(m, "enter")
 	if len(cmds.profileCalls) != 2 || m.onboarding != nil || m.notice != "profile saved" {
-		t.Errorf("skipping the max HR: calls %d, onboarding %v, notice %q", len(cmds.profileCalls), m.onboarding, m.notice)
+		t.Errorf("skipping both heart rates: calls %d, onboarding %v, notice %q", len(cmds.profileCalls), m.onboarding, m.notice)
 	}
 
 	// The core says it's complete: nothing more to ask; the menu's Profile
@@ -1354,11 +1368,11 @@ func TestOnboarding(t *testing.T) {
 	m = pressAll(m, "backspace", "backspace", "backspace", "183")
 	m, cmd = press(m, "enter")
 	m = run(m, cmd)
-	if fmt.Sprint(cmds.heights) != "[183]" || !strings.Contains(plain(m.render()), "3/4  Your FTP: 220") {
+	if fmt.Sprint(cmds.heights) != "[183]" || !strings.Contains(plain(m.render()), "3/6  Your FTP: 220") {
 		t.Errorf("height 183: sent %v\n%s", cmds.heights, plain(m.render()))
 	}
 	// esc goes back a step while editing, with the value in the profile.
-	if out := plain(pressAll(m, "esc").render()); !strings.Contains(out, "2/4  Your height: 183") {
+	if out := plain(pressAll(m, "esc").render()); !strings.Contains(out, "2/6  Your height: 183") {
 		t.Errorf("back to height:\n%s", out)
 	}
 	// On to the maximum heart rate: out of range caught, then saved.
@@ -1371,8 +1385,27 @@ func TestOnboarding(t *testing.T) {
 	m = pressAll(m, "backspace", "backspace", "backspace", "188")
 	m, cmd = press(m, "enter")
 	m = run(m, cmd)
-	if cmds.profile.GetMaxHrBpm() != 188 || m.onboarding != nil {
-		t.Errorf("max HR 188: profile %v, onboarding %v", cmds.profile, m.onboarding)
+	if cmds.profile.GetMaxHrBpm() != 188 || m.onboarding == nil || m.onboarding.step != stepThresholdHR {
+		t.Fatalf("max HR 188: profile %v, onboarding %v", cmds.profile, m.onboarding)
+	}
+	// A threshold too, out of range caught; with both, which the zones come
+	// from, the threshold chosen and saved.
+	m = pressAll(m, "250", "enter")
+	if !strings.Contains(m.notice, "80 to 220") {
+		t.Errorf("250 bpm: notice %q", m.notice)
+	}
+	m = pressAll(m, "backspace", "backspace", "backspace", "165")
+	m, cmd = press(m, "enter")
+	m = run(m, cmd)
+	if out := plain(m.render()); cmds.profile.GetThresholdHrBpm() != 165 || !strings.Contains(out, "6/6  Heart rate zones from") ||
+		!strings.Contains(out, "[maximum]") {
+		t.Fatalf("threshold 165: profile %v\n%s", cmds.profile, out)
+	}
+	m = pressAll(m, "right")
+	m, cmd = press(m, "enter")
+	m = run(m, cmd)
+	if cmds.profile.GetHrZones() != "threshold" || m.onboarding != nil {
+		t.Errorf("zones from the threshold: profile %v, onboarding %v", cmds.profile, m.onboarding)
 	}
 }
 

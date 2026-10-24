@@ -74,6 +74,15 @@ mkdir -p "$work/nocourses" "$RELEASE_CACHE"
 go run ./cmd/osscycler-world -courses "$work/nocourses" -out "$work/worlds" \
 	-osm-cache "$RELEASE_CACHE/osm" -dem-cache "$RELEASE_CACHE/dem" "${WORLDS[@]}" >&2
 rm -f "$work/worlds/.timing.json"
+# A world built while map data was missing is stamped partial: never ship
+# one (v0.5.1's first build had the Posbank Loop from 1,504 map elements of
+# 9,343, the map data server answering 502). Try again when it answers.
+for w in "${WORLDS[@]}"; do
+	if grep -q '"stamp":"partial-' "$work/worlds/$w/world.json"; then
+		echo "release: the ready-built world $w is partial (map data or coastline missing); run again when the map data server answers" >&2
+		exit 1
+	fi
+done
 
 # The 3D view per Linux architecture (preset name, Godot's arch name).
 with3d=0

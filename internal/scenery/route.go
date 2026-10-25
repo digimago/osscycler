@@ -297,6 +297,16 @@ func ways(roads []*road, built func(x, y float64) bool) []Way {
 			})
 			w.WalkGuessed = walkL || walkR
 		}
+		// A sidewalk mapped as a way of its own (separate) runs beside the
+		// road, not in the strip between it and another road alongside
+		// within separateReachM: a dual road's carriageways (owner,
+		// 2026-10-24: the Oranjeweg's two carriageways at the Velp loop's
+		// 2.47 km roundabout had a sidewalk each along the strip between
+		// them, round it and ending ragged at the ring).
+		if sepL, sepR, _ := sides(t, "sidewalk", "separate"); sepL || sepR {
+			l, r := roadBeside(rd, near, separateReachM)
+			walkL, walkR = walkL && !(sepL && l), walkR && !(sepR && r)
+		}
 		laneL, laneR, _ := sides(t, "cycleway", "lane", "opposite_lane")
 		w.Sidewalk, w.CycleLane = [2]bool{walkL, walkR}, [2]bool{laneL, laneR}
 		out[k] = w
@@ -304,9 +314,37 @@ func ways(roads []*road, built func(x, y float64) bool) []Way {
 	return out
 }
 
+// separateReachM: a road alongside this near (from the edge) leaves no
+// room for a separately mapped sidewalk between.
+const separateReachM = 10.0
+
+// roadBeside says whether another road runs alongside each side of rd
+// (left, right of its direction) within reach of its edge, at most of
+// its points every 10 m.
+func roadBeside(rd *road, near *segGrid, reach float64) (left, right bool) {
+	return sideVotes(rd, func(x, y, ox, oy float64) bool {
+		for off := 1.0; off <= reach; off += 1.5 {
+			if near.onRoad(x+ox*(rd.widthM/2+off), y+oy*(rd.widthM/2+off), rd) {
+				return true
+			}
+		}
+		return false
+	})
+}
+
 // builtBeside says whether the land on each side of a road (left, right
 // of its direction) is mostly built up, from points every 10 m along it.
 func builtBeside(rd *road, built func(x, y float64) bool) (left, right bool) {
+	return sideVotes(rd, func(x, y, ox, oy float64) bool {
+		off := rd.widthM/2 + 4
+		return built(x+ox*off, y+oy*off)
+	})
+}
+
+// sideVotes says, for each side of rd (left, right of its direction),
+// whether probe holds at most of its points every 10 m; ox, oy point out
+// to that side.
+func sideVotes(rd *road, probe func(x, y, ox, oy float64) bool) (left, right bool) {
 	var votes, all [2]int
 	for j := 0; j+1 < len(rd.x); j++ {
 		dx, dy := rd.x[j+1]-rd.x[j], rd.y[j+1]-rd.y[j]
@@ -315,12 +353,11 @@ func builtBeside(rd *road, built func(x, y float64) bool) (left, right bool) {
 			continue
 		}
 		rx, ry := dy/l, -dx/l
-		off := rd.widthM/2 + 4
 		for f := 0.0; f < l; f += 10 {
 			x, y := rd.x[j]+dx*f/l, rd.y[j]+dy*f/l
 			for side, sign := range []float64{-1, 1} {
 				all[side]++
-				if built(x+sign*rx*off, y+sign*ry*off) {
+				if probe(x, y, sign*rx, sign*ry) {
 					votes[side]++
 				}
 			}

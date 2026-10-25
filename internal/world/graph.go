@@ -399,6 +399,11 @@ func Build(c *course.Course, o Options) (*World, error) {
 	}
 	// After markDecks: a deck stays open beneath.
 	deepSkirts(lines)
+	// Splitter islands between a split road's carriageways (before the
+	// roads are drawn: an edge along an island's strip needs no skirt).
+	isls := splitterIslands(lines, patches)
+	t.islands = newIslandIndex(isls)
+	buttOnStrips(lines, isls)
 	hideOwnWaysInLots(lines, patches, o.Scenery) // before t.fine: the roadside reads those samples
 	for k, l := range lines {
 		for i := range l.samples {
@@ -423,7 +428,22 @@ func Build(c *course.Course, o Options) (*World, error) {
 			roads[k] = append(roads[k], ps...)
 		}
 	}
-	for k, p := range pavedIslands(roads, ground, roadMats.surface[scenery.SurfaceAsphalt], o.ChunkM) {
+	// Splitter islands between a split road's carriageways; land shut in
+	// between them and the roads is paved as between roads.
+	islPrims := islandPrims(isls, o.ChunkM, roadMats.surface[scenery.SurfaceAsphalt], roadMats.kerb, roadMats.island, w.islandPavingMaterial)
+	withIsl := roads
+	if len(islPrims) > 0 {
+		withIsl = map[[2]int][]gltf.Primitive{}
+		for k, ps := range roads {
+			withIsl[k] = append(append([]gltf.Primitive(nil), ps...), islPrims[k]...)
+		}
+		for k, ps := range islPrims {
+			if _, ok := roads[k]; !ok {
+				withIsl[k] = ps
+			}
+		}
+	}
+	for k, p := range pavedIslands(withIsl, ground, roadMats.surface[scenery.SurfaceAsphalt], o.ChunkM) {
 		roads[k] = append(roads[k], p)
 	}
 	for k, ps := range terracePrims(lines, roadMats, o.ChunkM) {
@@ -451,6 +471,9 @@ func Build(c *course.Course, o Options) (*World, error) {
 	var under []gltf.Primitive
 	for _, k := range chunkOrder(roads) {
 		under = append(under, roads[k]...)
+	}
+	for _, k := range chunkOrder(islPrims) {
+		under = append(under, islPrims[k]...)
 	}
 	// An underpass's paving too: the land meets its edges as a road's,
 	// rather than lying under it in cells that spanned over it.
@@ -625,6 +648,11 @@ func Build(c *course.Course, o Options) (*World, error) {
 		isRoad := func(mat int) bool { return carriageway[w.doc.MaterialName(mat)] }
 		stitchAcross(ps, joinsWalk, isRoad)
 		stitchSeams(ps, joinsWalk, isRoad)
+	}
+	// The islands after the stitching: their kerbs stand on the roads,
+	// joined to nothing.
+	for _, k := range chunkOrder(islPrims) {
+		roads[k] = append(roads[k], islPrims[k]...)
 	}
 	if err := w.addRoads(roads); err != nil {
 		return nil, err

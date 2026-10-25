@@ -264,6 +264,35 @@ func TestNoSidewalkOnADivideOrWhereWalkersMayNot(t *testing.T) {
 	}
 }
 
+// A sidewalk mapped as a way of its own (sidewalk=separate) isn't drawn in
+// the strip between a dual road's carriageways (2026-10-24: the
+// Oranjeweg's at the Velp loop's 2.47 km roundabout ran along both sides
+// of the strip between its carriageways and ended ragged at the ring).
+func TestSeparateSidewalkNotBetweenCarriageways(t *testing.T) {
+	built := func(x, y float64) bool { return false }
+	tags := func(oneway string) map[string]string {
+		return map[string]string{"oneway": oneway, "foot": "no", "sidewalk:both": "separate"}
+	}
+	// Northbound at x 0, southbound 6 m east (drawn northwards, oneway=-1);
+	// a lone street 100 m east, its sidewalks mapped apart too.
+	mk := func(x float64, t map[string]string) *road {
+		return &road{x: []float64{x, x}, y: []float64{0, 200}, class: "secondary", widthM: roadWidth("secondary", t), tags: t}
+	}
+	north, south := mk(0, tags("yes")), mk(6, tags("-1"))
+	lone := mk(100, map[string]string{"sidewalk:both": "separate"})
+	ws := ways([]*road{north, south, lone}, built)
+	// Going north, left is west.
+	if ws[0].Sidewalk != [2]bool{true, false} {
+		t.Errorf("northbound carriageway sidewalks %v, want only west, away from the other", ws[0].Sidewalk)
+	}
+	if ws[1].Sidewalk != [2]bool{false, true} {
+		t.Errorf("southbound carriageway sidewalks %v, want only east, away from the other", ws[1].Sidewalk)
+	}
+	if ws[2].Sidewalk != [2]bool{true, true} {
+		t.Errorf("lone street sidewalks %v, want both", ws[2].Sidewalk)
+	}
+}
+
 // A paved area mapped as a highway (area=yes) is a car park to the world,
 // not a road along its outline (the Hohneck col's apron, 16.1 km of the
 // Route des Américains: drawn as a ring road, its snow poles stood in a

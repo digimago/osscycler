@@ -66,6 +66,9 @@ const (
 	// and its service road) this wide has a low hedge down its middle
 	// (owner, 2026-10-09: so they do in Rheden).
 	hedgeMinM, hedgeMaxM = 1.0, 8.0
+	// hedgeSurfaceM: a hedge between roads stands this far from any
+	// surface drawn (a splitter island's nose, a junction's).
+	hedgeSurfaceM = 0.5
 	// Front gardens: plots this long along the road, each its own hedge
 	// or none, where a building stands within gardenDepthM behind the
 	// hedge line.
@@ -203,12 +206,15 @@ func hedges(t *terrain, s *surface, sp *spots, wp *wayPlaces) []plant {
 		}
 		return de / l, dn / l
 	}
-	put := func(kind int, e, n, de, dn, scale float64, h uint64) {
+	putAt := func(kind int, e, n, y, de, dn, scale float64, h uint64) {
 		// A centimetre or two between neighbours, so overlapping faces
 		// never lie in one plane.
 		scale *= 0.985 + 0.03*unit(h)
-		out = append(out, plant{kind: kHedge + kind, x: float32(e), y: float32(s.stand(e, n)), z: float32(-n),
+		out = append(out, plant{kind: kHedge + kind, x: float32(e), y: float32(y), z: float32(-n),
 			s: float32(scale), yaw: float32(math.Atan2(dn, de))})
+	}
+	put := func(kind int, e, n, de, dn, scale float64, h uint64) {
+		putAt(kind, e, n, s.stand(e, n), de, dn, scale, h)
 	}
 	free := func(e, n, margin float64) bool {
 		return sp.roadNear(e, n, margin, -1) < 0 && !sp.inArea(e, n) && !sp.cleared(e, n) &&
@@ -282,6 +288,13 @@ func hedges(t *terrain, s *surface, sp *spots, wp *wayPlaces) []plant {
 				off := a.edge + gap/2
 				for k := math.Ceil(math.Min(sa, sb) / hedgeStepM); k*hedgeStepM < math.Max(sa, sb); k++ {
 					e, n := at((k*hedgeStepM-sa)/(sb-sa), rx, rn, off)
+					// On a splitter island only on its grass, clear of its
+					// noses (splitters.go).
+					top, onGrass, onIsland := t.islands.at(e, n)
+					if onIsland && !onGrass ||
+						!onIsland && t.surfaces != nil && t.surfaces.dist(e, -n, hedgeSurfaceM) < hedgeSurfaceM {
+						continue // off an island: not on or by a surface drawn (past its nose)
+					}
 					if sp.roadNear(e, n, 0.4, -1) >= 0 || sp.inArea(e, n) || sp.cleared(e, n) {
 						continue // a motorway's central reservation is grass
 					}
@@ -294,6 +307,10 @@ func hedges(t *terrain, s *surface, sp *spots, wp *wayPlaces) []plant {
 					f := st - math.Floor(st)
 					f = f * f * (3 - 2*f)
 					scale := (0.9 + 0.2*(unit(hs(math.Floor(st)))*(1-f)+unit(hs(math.Floor(st)+1))*f)) * math.Min(1, gap/1.3)
+					if onIsland {
+						putAt(hHornbeam, e, n, top, de, dn, scale, splitmix(hs(st)^uint64(int64(k))))
+						continue
+					}
 					put(hHornbeam, e, n, de, dn, scale, splitmix(hs(st)^uint64(int64(k))))
 				}
 				continue

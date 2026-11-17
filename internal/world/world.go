@@ -65,6 +65,10 @@ type Options struct {
 	// Supports are bridges' supports as the map draws them (bridge:support):
 	// a deck over them stands on them.
 	Supports []scenery.Support
+	// Bridges are bridges' outlines as the map draws them (man_made=bridge),
+	// with what kind each is: a deck within one is all of it, and its kind
+	// says what stands on it (pylons and stays).
+	Bridges []scenery.Bridge
 	// Fences stand along the roads (the test tracks' polder).
 	Fences []scenery.Fence
 	// Lawns are mown grass where nothing grows (a pitch), in metres east

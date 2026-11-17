@@ -299,6 +299,32 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 		// Sand, scrub and heath by the sea are dunes (scenery/dunes.go).
 		o.Land.ByTheSea(c, o.SeaDistance)
 	}
+	// Bridges as structures: their outlines (what kind each is) and their
+	// supports, fetched by tile once and shared, as the coastline is; a
+	// preview takes only what is cached.
+	if b.Maps != nil && !c.Builtin && !b.Preview {
+		bd, err := b.Maps.BridgeData(ctx, c, true)
+		if err != nil {
+			if ctx.Err() != nil {
+				return Result{}, ctx.Err()
+			}
+			if b.Complete {
+				return Result{}, fmt.Errorf("%w: bridges: %v", ErrIncomplete, err)
+			}
+			log.Warn("bridges incomplete", "course", c.ID, "err", err)
+			partial = true
+		}
+		o.Bridges = scenery.Bridges(c, bd)
+		have := map[int64]bool{}
+		for _, sp := range o.Supports {
+			have[sp.ID] = true
+		}
+		for _, sp := range scenery.Supports(c, bd) {
+			if !have[sp.ID] {
+				o.Supports = append(o.Supports, sp)
+			}
+		}
+	}
 	if t := scenery.TrackScenery(c); t != nil {
 		// A test track's own made-up surroundings.
 		o.Land = scenery.NewLandMap(c, t.Data)

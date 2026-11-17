@@ -174,8 +174,9 @@ func onDeck(ss []sample, i int) bool { return ss[i].aloft && ss[i+1].aloft }
 // addBridges builds the decks' structure, a mesh per terrain chunk, and
 // the edge beams and railings of every bridge the map tags that stays a
 // road (ways: what the samples' way indices refer to), and the supports the
-// map draws under the decks (sups; cover: where the decks lie).
-func (w *World) addBridges(t *terrain, lines []*roadLine, ways []scenery.Way, sups []scenery.Support, cover *deckCover) error {
+// map draws under the decks (sups; cover: where the decks lie), and the
+// bridges' outlines as structures (structures.go).
+func (w *World) addBridges(t *terrain, lines []*roadLine, ways []scenery.Way, sups []scenery.Support, bridges []scenery.Bridge, cover *deckCover) error {
 	s := &surface{t: t, lists: map[[2]int]chunkLists{}}
 	concrete, steel := srgbLinear(0xa9a59c), srgbLinear(0x8e979c)
 	var mat int
@@ -236,6 +237,7 @@ func (w *World) addBridges(t *terrain, lines []*roadLine, ways []scenery.Way, su
 	for _, sp := range sups {
 		supportMesh(prim, s, cover, sp, concrete)
 	}
+	addStructures(prim, s, bridges, sups, lines, concrete, steel)
 	for _, k := range chunkOrder(byChunk) {
 		p := byChunk[k]
 		ps := []gltf.Primitive{*p}

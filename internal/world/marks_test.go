@@ -333,7 +333,7 @@ func TestTaggedBridgesHaveRailings(t *testing.T) {
 	ways := []scenery.Way{{}, {Bridge: true}}
 	w := &World{doc: gltf.New("test")}
 	tr := &terrain{o: Options{ChunkM: 250}}
-	if err := w.addBridges(tr, []*roadLine{l}, ways, nil, newDeckCover([]*roadLine{l})); err != nil {
+	if err := w.addBridges(tr, []*roadLine{l}, ways, nil, nil, newDeckCover([]*roadLine{l})); err != nil {
 		t.Fatal(err)
 	}
 	high := 0.0

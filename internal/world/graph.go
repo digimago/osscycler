@@ -383,7 +383,7 @@ func Build(c *course.Course, o Options) (*World, error) {
 	}
 	markPassesAgain(routeLs)
 	if o.Elevation != nil {
-		t.markAloft(lines)
+		t.markAloft(lines, func(s sample) bool { return s.way >= 0 && s.way < len(ways) && ways[s.way].Bridge })
 		// Under the ground isn't a bridge: no railings, no deck.
 		for _, l := range lines {
 			for i := range l.samples {
@@ -636,12 +636,13 @@ func Build(c *course.Course, o Options) (*World, error) {
 	// 6: what stands and grows on the land. A building under a deck stands
 	// below it, from here on for everything that keeps clear of buildings.
 	cover := newDeckCover(lines)
+	bridges := longBridges(o.Bridges, lines)
 	o.Buildings = underDecks(&surface{t: &t, lists: map[[2]int]chunkLists{}}, cover, o.Buildings)
 	if err := w.addBuildings(&t, o.Buildings); err != nil {
 		return nil, err
 	}
 
-	if err := w.addBridges(&t, lines, ways, o.Supports, cover); err != nil {
+	if err := w.addBridges(&t, lines, ways, o.Supports, bridges, cover); err != nil {
 		return nil, err
 	}
 	if err := w.addTunnels(&t, runs, tunnelMat, t.landAt); err != nil {
@@ -672,10 +673,19 @@ func Build(c *course.Course, o Options) (*World, error) {
 	if err := w.addFences(&t, fencesClearOfWalls(fences, t.walls)); err != nil {
 		return nil, err
 	}
+	// Nothing grows on a bridge or its supports: trees stood on the
+	// Erasmusbrug's piers and through its deck (owner, 2026-11-17).
+	clear := parks[:len(parks):len(parks)]
+	for _, b := range bridges {
+		clear = append(clear, scenery.Parking{Outline: b.Outline})
+	}
+	for _, sp := range o.Supports {
+		clear = append(clear, scenery.Parking{Outline: sp.Outline})
+	}
 	nearRoute := newRouteGrid(coarse, 400)
 	progress(0.75)
 	drawn := newLandSurface(w.prims, func(m int) bool { return w.doc.MaterialName(m) == "terrain" })
-	ps := plants(&t, &surface{t: &t, lists: map[[2]int]chunkLists{}, drawn: drawn}, o.Land, keys, o.Buildings, parks, ways, nearRoute)
+	ps := plants(&t, &surface{t: &t, lists: map[[2]int]chunkLists{}, drawn: drawn}, o.Land, keys, o.Buildings, clear, ways, nearRoute)
 	if len(ps) > 0 {
 		if err := w.addTemplates(o.Region); err != nil {
 			return nil, err
@@ -696,7 +706,7 @@ func Build(c *course.Course, o Options) (*World, error) {
 		}
 	}
 	progress(0.9)
-	if gm, index := groundMap(newSpots(&t, o.Land, o.Buildings, parks), &t, &surface{t: &t, lists: map[[2]int]chunkLists{}},
+	if gm, index := groundMap(newSpots(&t, o.Land, o.Buildings, clear), &t, &surface{t: &t, lists: map[[2]int]chunkLists{}},
 		drawn, groundKeys, o.ChunkM, nearRoute); len(index) > 0 {
 		w.ground = gm
 		g := &w.Manifest.Ground

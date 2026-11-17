@@ -205,10 +205,21 @@ type World struct {
 	Vertices, Triangles, Plants int
 	prims                       []gltf.Primitive // everything drawn, for Check
 	paving                      *int             // the "slope paving" material, once made
+	islandPaving                *int             // the "island paving" material, once made
 }
 
 // pavingMaterial is the material of paved slopes under decks, made on
 // first use (worlds without keep their bytes).
+// islandPavingMaterial is the splitter islands' pavers (splitters.go):
+// the renderer draws them as the slope paving, but they are no land.
+func (w *World) islandPavingMaterial() int {
+	if w.islandPaving == nil {
+		m := w.doc.AddMaterial(gltf.Material{Name: "island paving", Color: [4]float32{1, 1, 1, 1}, Roughness: 0.9})
+		w.islandPaving = &m
+	}
+	return *w.islandPaving
+}
+
 func (w *World) pavingMaterial() int {
 	if w.paving == nil {
 		m := w.doc.AddMaterial(gltf.Material{Name: "slope paving", Color: [4]float32{1, 1, 1, 1}, Roughness: 0.9})

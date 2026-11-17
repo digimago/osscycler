@@ -27,7 +27,7 @@ import (
 // on from the graph builder's own version (72) when it became the only
 // one (owner, 2026-10-21; the classic builder's was 63), so the worlds it
 // built stay current.
-const BuilderVersion = 77
+const BuilderVersion = 79
 
 // Builder builds worlds.
 type Builder struct {
@@ -246,6 +246,7 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 			o.Land = scenery.NewLandMap(c, d)
 			o.Scenery = scenery.Build(c, d)
 			o.Buildings = scenery.Footprints(c, d)
+			o.Supports = scenery.Supports(c, d)
 			o.Attribution = append(o.Attribution, scenery.Attribution+" (ODbL)")
 		}
 		mapInfo = fmt.Sprintf("%d map elements", len(d.Elements))
@@ -276,6 +277,7 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 		o.Land = scenery.NewLandMap(c, t.Data)
 		o.Scenery = scenery.Build(c, t.Data)
 		o.Buildings = scenery.Footprints(c, t.Data)
+		o.Supports = scenery.Supports(c, t.Data)
 		mapInfo = fmt.Sprintf("%d made-up map elements (preview)", len(t.Data.Elements))
 	}
 	// How far the sea is (trees grow lower towards it): the coastline
@@ -305,6 +307,7 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 			o.Scenery.Roads = t.Roads
 		}
 		o.Buildings = scenery.Footprints(c, t.Data)
+		o.Supports = scenery.Supports(c, t.Data)
 		o.Lawns = t.Lawns
 		o.Fences = t.Fences
 		mapInfo = fmt.Sprintf("%d made-up map elements", len(t.Data.Elements))

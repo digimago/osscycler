@@ -633,12 +633,15 @@ func Build(c *course.Course, o Options) (*World, error) {
 		return nil, err
 	}
 
-	// 6: what stands and grows on the land.
+	// 6: what stands and grows on the land. A building under a deck stands
+	// below it, from here on for everything that keeps clear of buildings.
+	cover := newDeckCover(lines)
+	o.Buildings = underDecks(&surface{t: &t, lists: map[[2]int]chunkLists{}}, cover, o.Buildings)
 	if err := w.addBuildings(&t, o.Buildings); err != nil {
 		return nil, err
 	}
 
-	if err := w.addBridges(&t, lines, ways); err != nil {
+	if err := w.addBridges(&t, lines, ways, o.Supports, cover); err != nil {
 		return nil, err
 	}
 	if err := w.addTunnels(&t, runs, tunnelMat, t.landAt); err != nil {
@@ -798,6 +801,7 @@ func Build(c *course.Course, o Options) (*World, error) {
 	m.Attribution = append([]string{}, o.Attribution...)
 	progress(1)
 	w.Manifest.Builder = Engine
+	w.blocked = blockedRide(m, &surface{t: &t, lists: map[[2]int]chunkLists{}}, o.Buildings)
 	return w, nil
 }
 

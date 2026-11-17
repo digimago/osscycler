@@ -173,8 +173,9 @@ func onDeck(ss []sample, i int) bool { return ss[i].aloft && ss[i+1].aloft }
 
 // addBridges builds the decks' structure, a mesh per terrain chunk, and
 // the edge beams and railings of every bridge the map tags that stays a
-// road (ways: what the samples' way indices refer to).
-func (w *World) addBridges(t *terrain, lines []*roadLine, ways []scenery.Way) error {
+// road (ways: what the samples' way indices refer to), and the supports the
+// map draws under the decks (sups; cover: where the decks lie).
+func (w *World) addBridges(t *terrain, lines []*roadLine, ways []scenery.Way, sups []scenery.Support, cover *deckCover) error {
 	s := &surface{t: t, lists: map[[2]int]chunkLists{}}
 	concrete, steel := srgbLinear(0xa9a59c), srgbLinear(0x8e979c)
 	var mat int
@@ -207,7 +208,7 @@ func (w *World) addBridges(t *terrain, lines []*roadLine, ways []scenery.Way) er
 			for j+1 < len(ss) && onDeck(ss, j) {
 				j++
 			}
-			deck(prim, s, l, i, j, below(l, i, j).way, roadsUnder(l, i, j), concrete, steel, true)
+			deck(prim, s, l, i, j, below(l, i, j).way, roadsUnder(l, i, j), concrete, steel, true, !supported(sups, l, i, j))
 			i = j
 		}
 		// A bridge in the map that isn't a deck (a low bridge over a canal
@@ -227,10 +228,13 @@ func (w *World) addBridges(t *terrain, lines []*roadLine, ways []scenery.Way) er
 				j++
 			}
 			if ss[j].d-ss[i].d >= railMinM {
-				deck(prim, s, l, i, j, [2]float64{}, nil, concrete, steel, false)
+				deck(prim, s, l, i, j, [2]float64{}, nil, concrete, steel, false, false)
 			}
 			i = j + 1
 		}
+	}
+	for _, sp := range sups {
+		supportMesh(prim, s, cover, sp, concrete)
 	}
 	for _, k := range chunkOrder(byChunk) {
 		p := byChunk[k]
@@ -336,8 +340,9 @@ func frameOf(l *roadLine, a sample) deckFrame {
 // the deck's ends run along it, through the ends' middles.
 //
 // onRoad says whether a point lies on (or within pierClearM of) a road under
-// the deck, where no pier may stand (nil: none).
-func deck(prim func(e, n float64) *gltf.Primitive, s *surface, l *roadLine, i, j int, skew [2]float64, onRoad func(e, n float64) bool, concrete, steel [3]float32, full bool) {
+// the deck, where no pier may stand (nil: none). piers: a long span gets
+// piers of its own (not where it stands on supports the map draws).
+func deck(prim func(e, n float64) *gltf.Primitive, s *surface, l *roadLine, i, j int, skew [2]float64, onRoad func(e, n float64) bool, concrete, steel [3]float32, full, piers bool) {
 	ss := l.samples
 	frames := make([]deckFrame, 0, j-i+1)
 	for k := i; k <= j; k++ {
@@ -496,7 +501,7 @@ func deck(prim func(e, n float64) *gltf.Primitive, s *surface, l *roadLine, i, j
 	// first in the middle of each strip between roads under the deck (a
 	// median), then, where a span is still longer than pierSpanM, beside
 	// the roads' outer edges (next to the shoulders), else anywhere free.
-	if span < pierSpanM {
+	if span < pierSpanM || !piers {
 		return
 	}
 	pierAt := func(d, x, up float64) [3]float64 {

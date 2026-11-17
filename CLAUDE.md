@@ -150,6 +150,8 @@ Packages live under `internal/` (names below mean `internal/<name>`); only `gen/
 
 ## Next up
 
+Now, in this order (owner, 2026-10-24): the builder's path on the Posbank Loop (first item below), the 3D view's graphics preferences pane, the Velp loop's roundabouts at 2.47 and 3.50 km (island or apron), then the 2.5 m wall trigger in French woods.
+
 1. The 3D world (build step 5), what is left:
    - The builder's path: a flat roundabout's crossing kinked where a dual carriageway's arm meets it (Posbank Loop reversed 15.45 km on the Coldenhovenseweg, 54° per step), the own way's centre up to 0.6 m off the swept path in tight bends (13.18, 18.0 km), junction surfaces sized for the course's sweep.
    - Areas: one road network and land per area built per tile, courses as paths over it (a course's own ways are still sampled by its own distance; courses starting in different degree squares get different frames).
@@ -175,14 +177,12 @@ Packages live under `internal/` (names below mean `internal/<name>`); only `gen/
 
 - 13. Planned routes and recorded rides: rerouting rules suit planned routes but must not break recorded rides imported as courses (follow those as ridden; timestamps on every point could be the switch). How a carried stretch rides (stairs at 30-50 % for a few metres): walking pace, perhaps.
 - 13b. After a one-way route (a planning session of its own): a corridor into a made-up world until a new ride is picked, more world generated from real terrain and roads, or a fixed world of appended real terrain with set intersections.
-- Faster world builds themselves (the Dunes course 48 s from the caches).
-- TUI: power and HR zone colours on the dashboard.
 - Workouts: repeat groups of 3+ blocks would only be an editing convenience (real files write sets as plain blocks).
-- Recorder: a workout_step / lap per workout segment.
 - Ghosts: choose another ghost than the PB (last ride, a friend's file); workout ghosts (power against the last attempt); several ghosts, other riders with multiplayer, kit colours from the profile; ghost cadence from the recording (a proto change).
 - HRM: R-R intervals (page 4) for HRV later.
 - Later (owner, 2026-10-21): internationalisation of the interface: the TUI's and the 3D view's text in other languages, chosen in the profile. First English, Dutch, German and French; later perhaps Spanish, Italian, Norwegian, Swedish and Danish (language codes en, nl, de, fr; es, it, nb, sv, da).
 - Courses: GPX without elevation, looked up from a ground model. Zwift GPX exports (Watopia lies in the Pacific, no OSM there): a synthetic scenery could come later.
+- Loose ends, for a cleanup pass (owner, 2026-10-24: not now): faster world builds themselves (the Dunes course 48 s from the caches); TUI power and HR zone colours on the dashboard; the recorder's workout_step / lap per workout segment.
 
 ## Known course data
 

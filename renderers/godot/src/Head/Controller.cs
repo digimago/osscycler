@@ -358,7 +358,7 @@ public sealed partial class Controller
             }, Concat(pause, common)));
         return ("FREE RIDE", Concat(new()
         {
-            ("m", "the menu: everything you can do from here"),
+            ("m / esc", "the menu: everything you can do from here"),
             ("r", "rides: courses, your history, recordings"),
             ("w", "workouts, or a fixed power (ERG)"),
             ("g / l", "ride at a fixed grade / brake level"),

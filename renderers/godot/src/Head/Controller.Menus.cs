@@ -97,7 +97,9 @@ public sealed partial class Controller
         bool working = st?.Workout?.Phase is WorkoutPhase.Armed or WorkoutPhase.Running or WorkoutPhase.Paused;
         switch (key)
         {
-            case "m" when !busy:
+            case "m" or "esc" when !busy:
+                // esc too (owner, 2026-11-18: after a ride had ended, esc did
+                // nothing until r started another): the menu is always a key away.
                 OpenMenu();
                 return true;
             case "r" when !busy:

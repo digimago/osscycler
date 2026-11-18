@@ -171,3 +171,27 @@ func TestAnnouncement(t *testing.T) {
 		t.Errorf("an expired announcement still shows:\n%s", out)
 	}
 }
+
+// esc opens the menu with nothing under way too (owner, 2026-11-18: after
+// a ride had ended, esc did nothing until r started another): on the
+// dashboard, over a finished ride and over an aborted one.
+func TestEscOpensTheMenuWithNothingUnderWay(t *testing.T) {
+	for name, st := range map[string]*pb.State{
+		"the dashboard":   sample(),
+		"a finished ride": rideState(pb.RidePhase_RIDE_PHASE_FINISHED, 3000),
+		"an aborted ride": rideState(pb.RidePhase_RIDE_PHASE_ABORTED, 1200),
+	} {
+		cmds := &stubCommands{}
+		st.Profile = &pb.RiderProfile{WeightKg: 80, FtpW: 200}
+		m, _ := New("x:1", cmds).Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+		m, _ = m.Update(StateMsg{State: st})
+		got, cmd := press(m.(Model), "esc")
+		got = run(got, cmd)
+		if got.menu == nil {
+			t.Errorf("esc on %s: no menu", name)
+		}
+		if len(cmds.pauses) != 0 {
+			t.Errorf("esc on %s: asked %v, want no pause", name, cmds.pauses)
+		}
+	}
+}

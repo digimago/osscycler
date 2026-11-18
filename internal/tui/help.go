@@ -160,7 +160,7 @@ func (m Model) helpContext() (string, []helpEntry) {
 		}, always...)
 	}
 	return "DASHBOARD", append([]helpEntry{
-		{"m", "the menu: everything you can do from here"},
+		{"m / esc", "the menu: everything you can do from here"},
 		{"p  space", "pause the recording (and anything you start carries on)"},
 		{"r", "rides: courses, your history, recordings"},
 		{"w", "workouts, or a fixed power (ERG)"},

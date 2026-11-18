@@ -47,6 +47,25 @@ public class PauseTests
         Assert.Equal(new[] { "paused True" }, c.Sent); // p pauses, also free riding
     }
 
+    // esc opens the menu with nothing under way too (owner, 2026-11-18:
+    // after a ride had ended, esc did nothing until r started another).
+    [Fact]
+    public void EscOpensTheMenuWithNothingUnderWay()
+    {
+        foreach (var st in new[] { new State(), new State { Ride = new Ride { Phase = RidePhase.Finished } }, new State { Ride = new Ride { Phase = RidePhase.Aborted } } })
+        {
+            var c = new Calls();
+            var h = new Controller(c);
+            h.Tick(st, 0);
+            h.Key("esc", st, 0);
+            Assert.Equal("OSSCYCLER", h.List()?.Title);
+            h.Key("esc", st, 0); // and out again
+            Assert.Null(h.List());
+            Settle();
+            Assert.DoesNotContain(c.Sent, s => s.StartsWith("paused"));
+        }
+    }
+
     [Fact]
     public void EscPausesIntoTheMenuAndOutAgain()
     {

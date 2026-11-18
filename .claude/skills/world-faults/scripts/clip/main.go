@@ -99,6 +99,7 @@ func main() {
 	o := world.Options{Generator: "clip"}
 	if len(d.Elements) > 0 {
 		o.Land, o.Scenery, o.Buildings = scenery.NewLandMap(cc, d), scenery.Build(cc, d), scenery.Footprints(cc, d)
+		o.Supports = scenery.Supports(cc, d)
 	}
 	// The sea from the cached coastline basemap, as worlds.Builder: trees
 	// lower by it, dunes along it.
@@ -140,8 +141,8 @@ func main() {
 		log.Fatal(err)
 	}
 	r := w.Check()
-	fmt.Printf("%s %.0f-%.0f m: %d map elements, %d triangles; check: holes %.2f m² %v, land over road %.2f m² %v, off road %.0f m %v, path height steps at most %.2f m %v, sharpest turn %.0f° %v, pace %.2f → %s\n",
-		*id, *from, end, len(d.Elements), w.Triangles, r.HolesM2, r.Holes, r.LandOverRoadM2, r.LandOverRoad, r.OffRoadM, r.OffRoad, r.StepM, r.Steps, r.TurnDeg, r.Turns, r.PaceMax, *out)
+	fmt.Printf("%s %.0f-%.0f m: %d map elements, %d triangles; check: holes %.2f m² %v, land over road %.2f m² %v, off road %.0f m %v, path height steps at most %.2f m %v, buildings on the riding line %.0f m %v, sharpest turn %.0f° %v, pace %.2f → %s\n",
+		*id, *from, end, len(d.Elements), w.Triangles, r.HolesM2, r.Holes, r.LandOverRoadM2, r.LandOverRoad, r.OffRoadM, r.OffRoad, r.StepM, r.Steps, r.BlockedM, r.Blocked, r.TurnDeg, r.Turns, r.PaceMax, *out)
 }
 
 // find is course id: an included one, or the .gpx of that name in dir.

@@ -27,7 +27,7 @@ import (
 // on from the graph builder's own version (72) when it became the only
 // one (owner, 2026-10-21; the classic builder's was 63), so the worlds it
 // built stay current.
-const BuilderVersion = 77
+const BuilderVersion = 79
 
 // Builder builds worlds.
 type Builder struct {
@@ -246,6 +246,7 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 			o.Land = scenery.NewLandMap(c, d)
 			o.Scenery = scenery.Build(c, d)
 			o.Buildings = scenery.Footprints(c, d)
+			o.Supports = scenery.Supports(c, d)
 			o.Attribution = append(o.Attribution, scenery.Attribution+" (ODbL)")
 		}
 		mapInfo = fmt.Sprintf("%d map elements", len(d.Elements))
@@ -276,6 +277,7 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 		o.Land = scenery.NewLandMap(c, t.Data)
 		o.Scenery = scenery.Build(c, t.Data)
 		o.Buildings = scenery.Footprints(c, t.Data)
+		o.Supports = scenery.Supports(c, t.Data)
 		mapInfo = fmt.Sprintf("%d made-up map elements (preview)", len(t.Data.Elements))
 	}
 	// How far the sea is (trees grow lower towards it): the coastline
@@ -297,6 +299,32 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 		// Sand, scrub and heath by the sea are dunes (scenery/dunes.go).
 		o.Land.ByTheSea(c, o.SeaDistance)
 	}
+	// Bridges as structures: their outlines (what kind each is) and their
+	// supports, fetched by tile once and shared, as the coastline is; a
+	// preview takes only what is cached.
+	if b.Maps != nil && !c.Builtin && !b.Preview {
+		bd, err := b.Maps.BridgeData(ctx, c, true)
+		if err != nil {
+			if ctx.Err() != nil {
+				return Result{}, ctx.Err()
+			}
+			if b.Complete {
+				return Result{}, fmt.Errorf("%w: bridges: %v", ErrIncomplete, err)
+			}
+			log.Warn("bridges incomplete", "course", c.ID, "err", err)
+			partial = true
+		}
+		o.Bridges = scenery.Bridges(c, bd)
+		have := map[int64]bool{}
+		for _, sp := range o.Supports {
+			have[sp.ID] = true
+		}
+		for _, sp := range scenery.Supports(c, bd) {
+			if !have[sp.ID] {
+				o.Supports = append(o.Supports, sp)
+			}
+		}
+	}
 	if t := scenery.TrackScenery(c); t != nil {
 		// A test track's own made-up surroundings.
 		o.Land = scenery.NewLandMap(c, t.Data)
@@ -305,6 +333,7 @@ func (b *Builder) Build(ctx context.Context, c *course.Course, phase func(string
 			o.Scenery.Roads = t.Roads
 		}
 		o.Buildings = scenery.Footprints(c, t.Data)
+		o.Supports = scenery.Supports(c, t.Data)
 		o.Lawns = t.Lawns
 		o.Fences = t.Fences
 		mapInfo = fmt.Sprintf("%d made-up map elements", len(t.Data.Elements))

@@ -62,6 +62,13 @@ type Options struct {
 	// Buildings are the footprints of the buildings near the road (from
 	// the same map data), built with walls and roofs.
 	Buildings []scenery.Footprint
+	// Supports are bridges' supports as the map draws them (bridge:support):
+	// a deck over them stands on them.
+	Supports []scenery.Support
+	// Bridges are bridges' outlines as the map draws them (man_made=bridge),
+	// with what kind each is: a deck within one is all of it, and its kind
+	// says what stands on it (pylons and stays).
+	Bridges []scenery.Bridge
 	// Fences stand along the roads (the test tracks' polder).
 	Fences []scenery.Fence
 	// Lawns are mown grass where nothing grows (a pitch), in metres east
@@ -205,6 +212,7 @@ type World struct {
 	Vertices, Triangles, Plants int
 	prims                       []gltf.Primitive // everything drawn, for Check
 	paving                      *int             // the "slope paving" material, once made
+	blocked                     map[int]float64  // metres of the riding line a building stands on, by check stretch
 }
 
 // pavingMaterial is the material of paved slopes under decks, made on

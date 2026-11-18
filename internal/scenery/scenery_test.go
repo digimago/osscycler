@@ -517,3 +517,35 @@ func TestStoreSharesMapDataWithTheReverse(t *testing.T) {
 		t.Errorf("%d stretches of the reverse missing, %d fetches", n, len(srv.asked()))
 	}
 }
+
+// A bridge's support is no building, though the Dutch register gives the
+// Erasmusbrug's piers building=yes (owner, 2026-11-17: they stood through
+// its deck as blocks of flats): it is a Support. Nor is a building
+// underground drawn (Rotterdam's metro stations stood on its streets).
+func TestSupportsAndUndergroundAreNoBuildings(t *testing.T) {
+	c := straightCourse(t)
+	d := &Data{Elements: []Element{
+		{Type: "way", ID: 1, Tags: map[string]string{"building": "yes"}, Geometry: rect(10, 100, 20, 110)},
+		{Type: "way", ID: 2, Tags: map[string]string{"building": "yes", "bridge:support": "pier"}, Geometry: rect(-5, 200, 5, 210)},
+		{Type: "way", ID: 3, Tags: map[string]string{"building": "station", "layer": "-1", "location": "underground"}, Geometry: rect(-10, 300, 10, 340)},
+		{Type: "way", ID: 4, Tags: map[string]string{"bridge:support": "pier"}, Geometry: rect(-3, 400, 3, 404)},
+		{Type: "way", ID: 5, Tags: map[string]string{"building": "yes", "bridge:support": "no"}, Geometry: rect(10, 500, 20, 510)},
+	}}
+	var ids []int64
+	for _, f := range Footprints(c, d) {
+		ids = append(ids, f.ID)
+	}
+	if len(ids) != 2 || ids[0] != 1 || ids[1] != 5 {
+		t.Errorf("buildings %v, want the house and the one tagged bridge:support=no (1, 5)", ids)
+	}
+	ids = nil
+	for _, s := range Supports(c, d) {
+		ids = append(ids, s.ID)
+		if s.Kind != "pier" || len(s.Outline) != 4 {
+			t.Errorf("support %d: kind %q, %d points; want a pier of 4", s.ID, s.Kind, len(s.Outline))
+		}
+	}
+	if len(ids) != 2 || ids[0] != 2 || ids[1] != 4 {
+		t.Errorf("supports %v, want the piers (2, 4)", ids)
+	}
+}

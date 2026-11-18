@@ -53,18 +53,25 @@ func (m Model) busy() bool {
 
 // canOpenMenu is when m opens the menu: on the plain dashboard.
 func (m Model) canOpenMenu() bool {
-	return !m.busy() && !m.showRide() && !m.showWorkout() && !m.picking &&
+	return m.escOpensMenu() && !m.showRide() && !m.showWorkout()
+}
+
+// escOpensMenu is when esc opens the menu with nothing under way (owner,
+// 2026-11-18: after a ride had ended, esc did nothing until r started
+// another): no dialog open, over a finished ride or workout too.
+func (m Model) escOpensMenu() bool {
+	return !m.busy() && !m.picking &&
 		m.draft == nil && m.input == nil && m.ending == nil && m.onboarding == nil && m.arranging == nil
 }
 
-// menuKey handles the menu, and m to open it. It reports whether it used
+// menuKey handles the menu, and m or esc to open it. It reports whether it used
 // the key.
 func (m Model) menuKey(key string) (Model, tea.Cmd, bool) {
 	if m.onboarding != nil {
 		return m, nil, false // the profile form has the keys; the menu waits
 	}
 	if m.menu == nil {
-		if key == "m" && m.canOpenMenu() {
+		if key == "m" && m.canOpenMenu() || key == "esc" && m.escOpensMenu() {
 			m.menu, m.notice = &menuState{}, ""
 			return m, nil, true
 		}

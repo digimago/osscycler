@@ -57,7 +57,12 @@ func nearRoute(c *course.Course, r float64) func(x, y float64) bool {
 	}
 }
 
-// Footprints are the buildings near the route with their outlines.
+// Footprints are the buildings near the route with their outlines. A
+// bridge's support (bridge:support) is no building, though the Dutch
+// register (BAG) gives the Erasmusbrug's piers in the Maas building=yes:
+// drawn as houses they stood through its deck (owner, 2026-11-17); they
+// are Supports. Nor is one underground (location=underground: a car park
+// under a square).
 func Footprints(c *course.Course, d *Data) []Footprint {
 	near := nearRoute(c, footprintRangeM)
 	var out []Footprint
@@ -67,43 +72,11 @@ func Footprints(c *course.Course, d *Data) []Footprint {
 		if b == "" || b == "no" || b == "roof" { // a roof on posts isn't a building to draw as one
 			continue
 		}
-		ring := el.Geometry
-		if el.Type == "relation" {
-			ring = nil
-			for _, m := range el.Members {
-				if m.Role == "outer" && len(m.Geometry) > len(ring) {
-					ring = m.Geometry
-				}
-			}
-		}
-		if len(ring) < 4 {
+		if sp := t["bridge:support"]; sp != "" && sp != "no" || t["location"] == "underground" {
 			continue
 		}
-		var pts [][2]float64
-		for k, p := range ring {
-			if k == len(ring)-1 && p == ring[0] {
-				break
-			}
-			x, y := c.Project(p.Lat, p.Lon)
-			pts = append(pts, [2]float64{x, y})
-		}
-		if len(pts) < 3 {
-			continue
-		}
-		area, cx, cy := 0.0, 0.0, 0.0
-		for i := range pts {
-			j := (i + 1) % len(pts)
-			area += pts[i][0]*pts[j][1] - pts[j][0]*pts[i][1]
-			cx, cy = cx+pts[i][0]/float64(len(pts)), cy+pts[i][1]/float64(len(pts))
-		}
-		if area < 0 { // clockwise: turn it round
-			for i, j := 0, len(pts)-1; i < j; i, j = i+1, j-1 {
-				pts[i], pts[j] = pts[j], pts[i]
-			}
-			area = -area
-		}
-		area /= 2
-		if area < footprintMinM2 || !near(cx, cy) {
+		pts, area, cx, cy := outlineOf(c, el)
+		if pts == nil || area < footprintMinM2 || !near(cx, cy) {
 			continue
 		}
 		kind, height := buildingShape(t, area)
@@ -120,6 +93,78 @@ func Footprints(c *course.Course, d *Data) []Footprint {
 			f.WallM = math.Max(2.2, height-f.RoofM)
 		}
 		out = append(out, f)
+	}
+	return out
+}
+
+// outlineOf is a closed way's (or a multipolygon's largest outer ring's)
+// outline in metres east and north of the course's start (course.Project),
+// counter-clockwise, the first point not repeated, with its area and the
+// mean of its points; nil when it has fewer than three.
+func outlineOf(c *course.Course, el Element) ([][2]float64, float64, float64, float64) {
+	ring := el.Geometry
+	if el.Type == "relation" {
+		ring = nil
+		for _, m := range el.Members {
+			if m.Role == "outer" && len(m.Geometry) > len(ring) {
+				ring = m.Geometry
+			}
+		}
+	}
+	if len(ring) < 4 {
+		return nil, 0, 0, 0
+	}
+	var pts [][2]float64
+	for k, p := range ring {
+		if k == len(ring)-1 && p == ring[0] {
+			break
+		}
+		x, y := c.Project(p.Lat, p.Lon)
+		pts = append(pts, [2]float64{x, y})
+	}
+	if len(pts) < 3 {
+		return nil, 0, 0, 0
+	}
+	area, cx, cy := 0.0, 0.0, 0.0
+	for i := range pts {
+		j := (i + 1) % len(pts)
+		area += pts[i][0]*pts[j][1] - pts[j][0]*pts[i][1]
+		cx, cy = cx+pts[i][0]/float64(len(pts)), cy+pts[i][1]/float64(len(pts))
+	}
+	if area < 0 { // clockwise: turn it round
+		for i, j := 0, len(pts)-1; i < j; i, j = i+1, j-1 {
+			pts[i], pts[j] = pts[j], pts[i]
+		}
+		area = -area
+	}
+	return pts, area / 2, cx, cy
+}
+
+// Support is a bridge's support as the map draws it (bridge:support: a
+// pier, an abutment, a pylon's foot), an outline in metres east and north
+// of the course's start, counter-clockwise.
+type Support struct {
+	ID      int64
+	Kind    string // the tag's value: pier, abutment, pylon, ...
+	Outline [][2]float64
+}
+
+// Supports are the bridges' supports near the route.
+func Supports(c *course.Course, d *Data) []Support {
+	near := nearRoute(c, footprintRangeM)
+	seen := map[int64]bool{}
+	var out []Support
+	for _, el := range d.Elements {
+		k := el.Tags["bridge:support"]
+		if k == "" || k == "no" || seen[el.ID] {
+			continue
+		}
+		pts, _, cx, cy := outlineOf(c, el)
+		if pts == nil || !near(cx, cy) {
+			continue
+		}
+		seen[el.ID] = true
+		out = append(out, Support{ID: el.ID, Kind: k, Outline: pts})
 	}
 	return out
 }

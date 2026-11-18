@@ -61,6 +61,13 @@ type CheckResult struct {
 	TurnDeg float64
 	Turns   []CheckSpot
 	PaceMax float64
+	// BlockedM is how much of the riding line a building stands on, within
+	// a rider's room over the road, in metres (Blocked: by stretch, Area
+	// in metres; owner, 2026-11-17: the Erasmusbrug's piers, drawn as
+	// buildings, stood through its deck, which the other measures don't
+	// see: the road under them is whole).
+	BlockedM float64
+	Blocked  []CheckSpot
 }
 
 // checkTurnDeg: a turn of the path in one step worth naming (a 10 m
@@ -309,6 +316,13 @@ func (w *World) Check() CheckResult {
 	r.Holes = list(holes, &r.HolesM2)
 	r.LandOverRoad = list(over, &r.LandOverRoadM2)
 	r.OffRoad = list(off, &r.OffRoadM)
+	blocked := make([]float64, spots)
+	for k, v := range w.blocked {
+		if k >= 0 && k < spots {
+			blocked[k] += v
+		}
+	}
+	r.Blocked = list(blocked, &r.BlockedM)
 	r.StepM, r.Steps = w.pathSteps()
 	r.TurnDeg, r.Turns, r.PaceMax = w.pathTurns()
 	return r

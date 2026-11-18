@@ -61,7 +61,8 @@ func run() error {
 		maxOver  = flag.Float64("max-land-over-road", 1, "fail when the check finds more land over road than this within 40 m of the path, m²")
 		maxOff   = flag.Float64("max-off-road", 1, "fail when the check finds more of the riding line than this with no road surface under it, m per km of course")
 		maxStep  = flag.Float64("max-path-step", 3, "fail when the rider's height changes more than this between two points of the path (5 m apart), m")
-		check    = flag.String("check", "fail", "after a build: fail past -max-holes, -max-land-over-road, -max-off-road or -max-path-step, or warn (the world is kept)")
+		maxBlock = flag.Float64("max-blocked", 0, "fail when the check finds more of the riding line than this with a building standing on it, m")
+		check    = flag.String("check", "fail", "after a build: fail past -max-holes, -max-land-over-road, -max-off-road, -max-path-step or -max-blocked, or warn (the world is kept)")
 		progress = flag.Bool("progress", false, "print each phase (\""+worlds.PhasePrefix+"…\") and the world's directory (\""+worlds.WorldPrefix+"…\"), for a program running this one")
 		ifCached = flag.Bool("if-cached", false, "build only from what the caches hold (implies -fetch=false): a course whose ground model, map data or coastline isn't all cached is skipped, saying so (\""+worlds.SkippedPrefix+"…\"); a renderer building worlds ahead of rides asks this way")
 		ifStale  = flag.Bool("if-stale", false, "build only when no current world is there (in -out or -prebuilt); a renderer asks this way")
@@ -191,12 +192,12 @@ func run() error {
 			return fmt.Errorf("%s: %w", id, err)
 		}
 		chk := r.check
-		if offPerKm := chk.OffRoadM / math.Max(c.Distance/1000, 1e-3); chk.HolesM2 > *maxHoles || chk.LandOverRoadM2 > *maxOver || offPerKm > *maxOff || chk.StepM > *maxStep {
+		if offPerKm := chk.OffRoadM / math.Max(c.Distance/1000, 1e-3); chk.HolesM2 > *maxHoles || chk.LandOverRoadM2 > *maxOver || offPerKm > *maxOff || chk.StepM > *maxStep || chk.BlockedM > *maxBlock {
 			if *check != "warn" {
-				return fmt.Errorf("%s: the check found more than -max-holes %g m², -max-land-over-road %g m², -max-off-road %g m/km or -max-path-step %g m", id, *maxHoles, *maxOver, *maxOff, *maxStep)
+				return fmt.Errorf("%s: the check found more than -max-holes %g m², -max-land-over-road %g m², -max-off-road %g m/km, -max-path-step %g m or -max-blocked %g m", id, *maxHoles, *maxOver, *maxOff, *maxStep, *maxBlock)
 			}
-			log.Warn("the check found more than -max-holes, -max-land-over-road, -max-off-road or -max-path-step", "course", id,
-				"holes_m2", chk.HolesM2, "land_over_road_m2", chk.LandOverRoadM2, "off_road_m", chk.OffRoadM, "off_road_m_per_km", offPerKm, "path_step_m", chk.StepM)
+			log.Warn("the check found more than -max-holes, -max-land-over-road, -max-off-road, -max-path-step or -max-blocked", "course", id,
+				"holes_m2", chk.HolesM2, "land_over_road_m2", chk.LandOverRoadM2, "off_road_m", chk.OffRoadM, "off_road_m_per_km", offPerKm, "path_step_m", chk.StepM, "blocked_m", chk.BlockedM)
 		}
 		if *progress {
 			fmt.Println(worlds.WorldPrefix + r.dir)
@@ -240,9 +241,9 @@ func buildOne(ctx context.Context, b *worlds.Builder, c *course.Course, dir stri
 	r.check = w.Check()
 	chk := r.check
 	offPerKm := chk.OffRoadM / math.Max(c.Distance/1000, 1e-3)
-	fmt.Printf("%s: [%s] check within 40 m of the path: holes %.1f m²%s, land over road %.1f m²%s; riding line off road %.0f m (%.1f m/km)%s; path height steps at most %.2f m%s; sharpest turn %.0f° per step%s, pace at most %.2f× (%s)\n",
+	fmt.Printf("%s: [%s] check within 40 m of the path: holes %.1f m²%s, land over road %.1f m²%s; riding line off road %.0f m (%.1f m/km)%s; path height steps at most %.2f m%s; buildings on the riding line %.0f m%s; sharpest turn %.0f° per step%s, pace at most %.2f× (%s)\n",
 		c.ID, world.Engine, chk.HolesM2, worst(chk.Holes), chk.LandOverRoadM2, worst(chk.LandOverRoad), chk.OffRoadM, offPerKm, worst(chk.OffRoad),
-		chk.StepM, worst(chk.Steps), chk.TurnDeg, worst(chk.Turns), chk.PaceMax, time.Since(cs).Round(100*time.Millisecond))
+		chk.StepM, worst(chk.Steps), chk.BlockedM, worst(chk.Blocked), chk.TurnDeg, worst(chk.Turns), chk.PaceMax, time.Since(cs).Round(100*time.Millisecond))
 	return r, nil
 }
 

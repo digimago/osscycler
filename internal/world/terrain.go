@@ -404,7 +404,7 @@ func sideEdge(s sample, side int) float64 {
 // markAloft marks the road samples more than bridgeM off the ground
 // model: bridges and viaducts, which cut nothing out of the terrain and
 // have no verges.
-func (t *terrain) markAloft(ls []*roadLine) {
+func (t *terrain) markAloft(ls []*roadLine, bridge func(s sample) bool) {
 	g := newRouteGrid(t.coarse, 400)
 	for _, l := range ls {
 		for i := range l.samples {
@@ -414,7 +414,15 @@ func (t *terrain) markAloft(ls []*roadLine) {
 			// Above the model: a bridge. Below it: a cutting, a tunnel, an
 			// underpass (the course's own way under a viaduct, graph builder,
 			// 2026-10-12: taken for a deck, it got a slab and the land over it).
-			if z, ok := t.model(s.e, s.n, near); ok && s.ele-z > bridgeM {
+			z, ok := t.model(s.e, s.n, near)
+			if ok && s.ele-z > bridgeM {
+				s.aloft = true
+			}
+			// A bridge the map tags over ground the model leaves out (the
+			// AHN has no heights over water): a deck too. The Erasmusbrug
+			// was a road on an embankment across the Maas, the land eased up
+			// to its edges (owner, 2026-11-17).
+			if !ok && t.o.Elevation != nil && bridge != nil && bridge(*s) {
 				s.aloft = true
 			}
 		}

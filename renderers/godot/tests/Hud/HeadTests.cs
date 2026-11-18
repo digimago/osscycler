@@ -977,7 +977,8 @@ public class ViewTests
         h.Key("x", At(RidePhase.Finished), 2);
         Thread.Sleep(30);
         Assert.Null(h.Summary);
-        Assert.Equal("stop ride", c.Sent[^1]);
+        Assert.Contains("stop ride", c.Sent);
+        Assert.Equal("OSSCYCLER", h.List()?.Title); // out of the ride, into the menu
 
         var loop = new Calls { Ride = new ActivitySummary() };
         var hl = new Controller(loop);
@@ -985,6 +986,56 @@ public class ViewTests
         hl.Tick(OnLoop(RidePhase.Riding), 0);
         hl.Tick(OnLoop(RidePhase.Finished), 1);
         Assert.DoesNotContain("ride summary", loop.Sent);
+    }
+
+    // A ride that ends any other way gets its summary too (owner,
+    // 2026-11-18: after a loop ride was ended with x x, the view stood
+    // still on the course and seemed to hang): a loop ended, a course
+    // aborted, a finish while no screen was drawing; each once.
+    [Fact]
+    public void EveryEndedRideOpensItsSummaryOnce()
+    {
+        State Ended(RidePhase p, bool loop, long at) => new()
+        {
+            Ride = new Ride { Phase = p, CourseId = "oval", CourseName = "Oval", Loop = loop, Lap = 4, ElapsedS = 600, DistanceM = 2000, CourseDistanceM = 5000, PhaseChangedNs = at },
+        };
+        foreach (var (st, heading) in new[]
+        {
+            (Ended(RidePhase.Aborted, true, 7), "RIDE ENDED  Oval  3 laps · 10:00"),
+            (Ended(RidePhase.Aborted, false, 7), "RIDE ENDED  Oval  2.00 of 5.00 km in 10:00"),
+            (Ended(RidePhase.Finished, false, 7), "FINISHED  Oval  10:00   first ride on this stretch"),
+        })
+        {
+            var c = new Calls { Ride = new ActivitySummary { TimerS = 600 } };
+            var h = new Controller(c);
+            h.Tick(st, 0); // the first state seen: the ride already over
+            Assert.NotNull(h.Summary);
+            Assert.Equal(heading, h.SummaryHeading);
+            h.Key("esc", st, 1);
+            Thread.Sleep(30);
+            Assert.Null(h.Summary);
+            Assert.Contains("stop ride", c.Sent);
+            Assert.Equal("OSSCYCLER", h.List()?.Title);
+            h.Key("esc", st, 2); // out of the menu: the same ride, still over, is no new summary
+            h.Tick(st, 3);
+            Assert.Null(h.Summary);
+            Assert.Single(c.Sent, s => s == "ride summary");
+        }
+    }
+
+    // A ride with nothing to sum up (simulated: nothing recorded) is
+    // dismissed at once, into the menu.
+    [Fact]
+    public void AnEndedRideWithoutASummaryIsDismissedIntoTheMenu()
+    {
+        var c = new Calls(); // no ride summary
+        var h = new Controller(c);
+        var st = new State { Ride = new Ride { Phase = RidePhase.Aborted, CourseId = "oval", Loop = true, PhaseChangedNs = 7 } };
+        h.Tick(st, 0);
+        Thread.Sleep(30);
+        Assert.Contains("stop ride", c.Sent);
+        h.Tick(new State(), 1);
+        Assert.Equal("OSSCYCLER", h.List()?.Title);
     }
 
     // Building worlds ahead is set in the profile, after the view (owner,

@@ -20,13 +20,13 @@ public sealed partial class Controller
     bool _fetchingHistory;
     ActivitySummary? _summary;
     bool _summaryFromPicker;
-    // The summary is a finished course ride's (owner, 2026-10-13: a ride
-    // ends at its line with its summary): its heading says how it went,
-    // and closing it ends the ride.
+    // The summary is an ended course ride's (owner, 2026-10-13: a ride
+    // ends at its line with its summary; 2026-11-18: and one the rider
+    // ended): its heading says how it went, and closing it ends the ride.
     bool _summaryRide;
     string _summaryHeading = "";
-    RidePhase _lastPhase;
-    string _lastCourse = "";
+    (string Course, long At) _summarised; // the ended ride last summed up
+    volatile bool _menuAfterRide;         // the ride had no summary: dismissed, the menu next
 
     // Graph is the activity being recorded as far as fetched, when the
     // graph is shown and there is something to draw (null otherwise).
@@ -47,7 +47,7 @@ public sealed partial class Controller
         }
     }
 
-    // SummaryHeading heads a finished course ride's summary ("" another's).
+    // SummaryHeading heads an ended course ride's summary ("" another's).
     public string SummaryHeading
     {
         get
@@ -57,28 +57,52 @@ public sealed partial class Controller
         }
     }
 
-    // RideEnds opens a course ride's summary when it finishes at its line
-    // (not a loop's: laps go on), and closes it when the ride was closed
-    // on another screen; Tick calls it.
+    // RideEnds opens the summary of a course ride that ended: finished at
+    // its line (not a loop's: laps go on) or ended by the rider, and also
+    // one that ended while no screen was drawing (owner, 2026-11-18: after a
+    // ride ended the view stood still on the course and seemed to hang).
+    // Each ride once; closing the summary dismisses the ride and opens the
+    // menu. A ride with no summary (nothing recorded) is dismissed at once.
+    // It closes the summary when the ride was closed on another screen;
+    // Tick calls it.
     void RideEnds(State? st)
     {
+        if (_menuAfterRide)
+        {
+            _menuAfterRide = false;
+            if (_screen == Screen.None)
+                OpenMenu();
+        }
         var r = st?.Ride;
         var phase = r?.Phase ?? RidePhase.Unspecified;
-        var course = r?.CourseId ?? "";
-        bool finished = phase == RidePhase.Finished && _lastPhase == RidePhase.Riding && course == _lastCourse && r is { Loop: false };
-        (_lastPhase, _lastCourse) = (phase, course);
         lock (_mu)
-            if (_summaryRide && phase != RidePhase.Finished)
+            if (_summaryRide && phase is not (RidePhase.Finished or RidePhase.Aborted))
                 (_summary, _summaryRide) = (null, false);
-        if (!finished)
+        bool ended = r is { CourseId.Length: > 0 } && (phase == RidePhase.Aborted || phase == RidePhase.Finished && !r.Loop);
+        if (!ended || _summarised == (r!.CourseId, r.PhaseChangedNs))
             return;
-        var heading = $"FINISHED  {r!.CourseName}  {Hud.Format.Clock(r.ElapsedS)}" + (r.Untimed ? "   turned round on the way: not timed" : r.Ghost is { } g
-            ? g.GapS < 0 ? $"   NEW PB  {Hud.Format.Secs(-g.GapS)} faster" : $"   {Hud.Format.Secs(g.GapS)} off your {g.Label}"
-            : "   first ride on this stretch");
+        _summarised = (r.CourseId, r.PhaseChangedNs);
+        var heading = phase == RidePhase.Aborted
+            ? $"RIDE ENDED  {r.CourseName}  " + (r.Loop
+                ? $"{Math.Max(0, (int)r.Lap - 1)} laps · {Hud.Format.Clock(r.ElapsedS)}"
+                : $"{Hud.Format.Fixed(r.DistanceM / 1000, 2)} of {Hud.Format.Fixed(r.CourseDistanceM / 1000, 2)} km in {Hud.Format.Clock(r.ElapsedS)}")
+            : $"FINISHED  {r.CourseName}  {Hud.Format.Clock(r.ElapsedS)}" + (r.Untimed ? "   turned round on the way: not timed" : r.Ghost is { } g
+                ? g.GapS < 0 ? $"   NEW PB  {Hud.Format.Secs(-g.GapS)} faster" : $"   {Hud.Format.Secs(g.GapS)} off your {g.Label}"
+                : "   first ride on this stretch");
         _cmds.RideSummary().ContinueWith(done =>
         {
             if (done.Exception != null)
-                return; // the result banner as before
+            {
+                // Nothing to sum up: out of the ride all the same.
+                _cmds.StopRide().ContinueWith(stop =>
+                {
+                    if (stop.Exception != null)
+                        Failed("closing the ride", stop.Exception.GetBaseException());
+                    else
+                        _menuAfterRide = true;
+                }, TaskContinuationOptions.ExecuteSynchronously);
+                return;
+            }
             lock (_mu)
                 (_summary, _summaryFromPicker, _summaryRide, _summaryHeading) = (done.Result, false, true, heading);
         }, TaskContinuationOptions.ExecuteSynchronously);
@@ -167,8 +191,9 @@ public sealed partial class Controller
                     _screen = Screen.Picker;
                 if (_summaryRide)
                 {
-                    // The course ride ends: back to free riding.
+                    // Out of the ride, into the menu: what next.
                     _summaryRide = false;
+                    OpenMenu();
                     _cmds.StopRide().ContinueWith(done =>
                     {
                         if (done.Exception != null)

@@ -426,3 +426,7 @@ Owner: grass cards drawn in front of the ghost, best seen in the figure 8's firs
 ### 2026-10-24: 0.5.1, and no partial worlds in a release
 
 v0.5.1 was tagged on #80's merge. The release workflow's first build drafted the release with a partial ready-built Posbank Loop: the map data server answered 502 to the route's changed stretches (1-5, not in the release cache after the route's last leg moved to the Hoofdstraat) and the coastline tiles, so the world came out of 1,504 map elements of 9,343 (33.5 MB against 62.2, stamped `partial-g77-…`), and every archive was about 14 MB smaller than 0.5.0's. The draft was deleted (the tag kept) and the run started again once the server answered: 9,345 map elements, 62.2 MB, the check as in local builds, every archive's worlds stamped current, the sums right. `scripts/release.sh` now stops when a ready-built world is stamped partial, rather than drafting a release with it.
+
+### 2026-11-18: esc opens the menu with nothing under way
+
+Owner: after a ride had ended (a loop ride ended with x x after a pause), esc did nothing in the 3D view until r started another ride. esc was only wired to pause into the menu while something was under way; with nothing under way only m opened the menu in the 3D view, and the TUI refused even m over a finished or aborted ride's screen. esc now opens the menu in both heads whenever nothing is under way and no dialog is open (`EscOpensTheMenuWithNothingUnderWay`, `TestEscOpensTheMenuWithNothingUnderWay`); the help lists `m / esc`.
